@@ -1,0 +1,212 @@
+# MTF Phase 3 Development Configuration
+# Конфигурация для разработки с более мягкими настройками
+
+# Context Builder Configuration (Development)
+context:
+  timeframes: ["1Dutc", "4H", "1H"]  # Упрощенный набор таймфреймов
+  validity_thresholds:
+    "1Dutc": 0.2
+    "4H": 0.2
+    "1H": 0.15
+  trend_weights:
+    ema_trend: 0.4
+    adx_strength: 0.25
+    rsi_momentum: 0.15
+    macd_signal: 0.1
+    volume_confirmation: 0.1
+  regime_thresholds:
+    trend_min_score: 0.2
+    range_max_score: 0.15
+    bull_min_score: 0.05
+    bear_max_score: -0.05
+  validation_settings:
+    min_data_points: 20
+    max_missing_ratio: 0.2
+    outlier_threshold: 4.0
+
+# Triggers Builder Configuration (Development)
+triggers:
+  timeframes: ["15m", "5m"]  # Упрощенный набор таймфреймов
+  reversal_weights:
+    "15m":
+      rsi: 0.3
+      macd: 0.3
+      bollinger: 0.2
+      stochastic: 0.1
+      volume: 0.05
+      momentum: 0.05
+    "5m":
+      rsi: 0.35
+      macd: 0.25
+      bollinger: 0.25
+      stochastic: 0.1
+      volume: 0.03
+      momentum: 0.02
+  noise_filter_thresholds:
+    "15m":
+      min_volume_ratio: 0.5
+      max_atr_ratio: 3.0
+      min_adx: 10
+      cluster_confirmation: 1
+    "5m":
+      min_volume_ratio: 0.4
+      max_atr_ratio: 4.0
+      min_adx: 8
+      cluster_confirmation: 1
+  micro_filter_settings:
+    liquidity_threshold: 0.3
+    spread_threshold: 0.002
+    volume_threshold: 0.2
+    volatility_threshold: 0.05
+  cluster_confirmation_settings:
+    min_cluster_size: 1
+    max_cluster_gap: 5
+    consistency_threshold: 0.4
+  validation_settings:
+    min_data_points: 10
+    max_missing_ratio: 0.3
+    probability_bounds: [0.0, 1.0]
+    acceleration_bounds: [-1, 1]
+
+# Consensus Builder Configuration (Development)
+consensus:
+  horizons: ["intraday", "swing"]  # Упрощенный набор горизонтов
+  horizon_weights:
+    intraday:
+      "1Dutc": 0.5
+      "4H": 0.3
+      "1H": 0.2
+    swing:
+      "1Dutc": 0.6
+      "4H": 0.4
+  decision_thresholds:
+    intraday:
+      context_min: 0.1
+      trigger_p_min: 0.5
+      consensus_min: 0.5
+      veto_threshold: 0.4
+    swing:
+      context_min: 0.15
+      trigger_p_min: 0.55
+      consensus_min: 0.55
+      veto_threshold: 0.35
+  score_weights:
+    context: 0.4
+    trigger: 0.4
+    consensus: 0.1
+    quality: 0.05
+    momentum: 0.05
+  veto_settings:
+    micro_filter_veto: false  # Отключен для разработки
+    context_conflict_threshold: 0.5
+    trigger_conflict_threshold: 0.4
+    threshold_veto_enabled: false  # Отключен для разработки
+    veto_override_threshold: 0.7
+  validation_settings:
+    min_context_timeframes: 1
+    min_trigger_timeframes: 1
+    max_disagreement_threshold: 0.7
+    min_coverage_threshold: 0.4
+    score_bounds: [0.0, 1.0]
+    confidence_bounds: [0.0, 1.0]
+
+# Pipeline Orchestrator Configuration (Development)
+pipeline:
+  context_timeframes: ["1Dutc", "4H", "1H"]
+  trigger_timeframes: ["15m", "5m"]
+  consensus_horizons: ["intraday", "swing"]
+  max_retries: 2
+  retry_delay_seconds: 0.5
+  timeout_seconds: 120.0
+  parallel_processing: false  # Отключено для отладки
+  max_workers: 2
+  enable_monitoring: true
+  enable_metrics: true
+  performance_settings:
+    memory_limit_mb: 512
+    cpu_limit_percent: 70
+    disk_space_limit_mb: 5000
+    network_timeout_seconds: 15
+
+# Integration Module Configuration (Development)
+integration:
+  features_settings:
+    enabled: true
+    module_path: "src.features.core"
+    function_name: "compute_features"
+    default_specs:
+      - "ema_21"
+      - "rsi_14"
+      - "macd"
+      - "volume"
+    volatility_normalize: false  # Отключено для разработки
+  market_meta_settings:
+    enabled: false  # Отключено для разработки
+    module_path: "src.market_meta.api"
+    function_name: "get_market_metadata"
+    cache_duration_seconds: 60
+    validate_orders: false
+    check_risk_limits: false
+    liquidity_check: false
+  database_settings:
+    enabled: false  # Отключено для разработки
+    connection_string: "postgresql://user:pass@localhost:5432/mtf_dev"
+    pool_size: 5
+    max_overflow: 10
+    pool_timeout: 15
+    pool_recycle: 1800
+    echo: true  # Включено для отладки
+  timeout_settings:
+    features_timeout: 15.0
+    market_meta_timeout: 5.0
+    database_timeout: 10.0
+    external_api_timeout: 10.0
+  retry_settings:
+    max_retries: 2
+    retry_delay: 0.5
+    backoff_factor: 1.5
+    retry_on_timeout: true
+    retry_on_connection_error: true
+  data_quality_settings:
+    min_completeness: 0.6
+    max_age_minutes: 60
+    outlier_threshold: 4.0
+    missing_data_threshold: 0.2
+    validate_ohlcv_logic: false  # Отключено для разработки
+    check_data_freshness: false
+  cache_settings:
+    enabled: false  # Отключено для разработки
+    cache_size_mb: 50
+    default_ttl_seconds: 60
+    features_cache_ttl: 120
+    market_meta_cache_ttl: 60
+    database_cache_ttl: 300
+
+# Global Settings (Development)
+global:
+  environment: "development"
+  log_level: "DEBUG"
+  enable_debug: true
+  enable_profiling: false
+  timezone: "UTC"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+# Monitoring Settings (Development)
+monitoring:
+  enable_metrics: true
+  metrics_interval_seconds: 120
+  enable_alerts: false  # Отключено для разработки
+  alert_thresholds:
+    error_rate: 0.3
+    response_time_ms: 10000
+    memory_usage_percent: 90
+    cpu_usage_percent: 90
+  health_check_interval_seconds: 60
+
+# Security Settings (Development)
+security:
+  enable_encryption: false  # Отключено для разработки
+  encryption_key: "dev-key-not-secure"
+  enable_audit_log: false
+  max_request_size_mb: 20
+  rate_limit_requests_per_minute: 1000

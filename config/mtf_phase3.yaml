@@ -1,0 +1,249 @@
+# MTF Phase 3 Configuration
+# Конфигурация для модулей Context, Triggers, Consensus, Pipeline и Integration
+
+# Context Builder Configuration
+context:
+  timeframes: ["1Mutc", "1Wutc", "1Dutc", "4H", "1H"]
+  validity_thresholds:
+    "1Mutc": 0.4
+    "1Wutc": 0.35
+    "1Dutc": 0.3
+    "4H": 0.3
+    "1H": 0.25
+  trend_weights:
+    ema_trend: 0.4
+    adx_strength: 0.25
+    rsi_momentum: 0.15
+    macd_signal: 0.1
+    volume_confirmation: 0.1
+  regime_thresholds:
+    trend_min_score: 0.3
+    range_max_score: 0.2
+    bull_min_score: 0.1
+    bear_max_score: -0.1
+  validation_settings:
+    min_data_points: 50
+    max_missing_ratio: 0.1
+    outlier_threshold: 3.0
+
+# Triggers Builder Configuration
+triggers:
+  timeframes: ["15m", "5m", "1m"]
+  reversal_weights:
+    "15m":
+      rsi: 0.25
+      macd: 0.25
+      bollinger: 0.2
+      stochastic: 0.15
+      volume: 0.1
+      momentum: 0.05
+    "5m":
+      rsi: 0.3
+      macd: 0.2
+      bollinger: 0.25
+      stochastic: 0.15
+      volume: 0.05
+      momentum: 0.05
+    "1m":
+      rsi: 0.35
+      macd: 0.15
+      bollinger: 0.3
+      stochastic: 0.1
+      volume: 0.05
+      momentum: 0.05
+  noise_filter_thresholds:
+    "15m":
+      min_volume_ratio: 0.8
+      max_atr_ratio: 2.0
+      min_adx: 15
+      cluster_confirmation: 2
+    "5m":
+      min_volume_ratio: 0.7
+      max_atr_ratio: 2.5
+      min_adx: 12
+      cluster_confirmation: 2
+    "1m":
+      min_volume_ratio: 0.6
+      max_atr_ratio: 3.0
+      min_adx: 10
+      cluster_confirmation: 3
+  micro_filter_settings:
+    liquidity_threshold: 0.5
+    spread_threshold: 0.001
+    volume_threshold: 0.3
+    volatility_threshold: 0.02
+  cluster_confirmation_settings:
+    min_cluster_size: 2
+    max_cluster_gap: 3
+    consistency_threshold: 0.6
+  validation_settings:
+    min_data_points: 20
+    max_missing_ratio: 0.15
+    probability_bounds: [0.0, 1.0]
+    acceleration_bounds: [-1, 1]
+
+# Consensus Builder Configuration
+consensus:
+  horizons: ["intraday", "swing", "week"]
+  horizon_weights:
+    intraday:
+      "1Dutc": 0.4
+      "4H": 0.3
+      "1H": 0.2
+      "15m": 0.1
+    swing:
+      "1Dutc": 0.5
+      "4H": 0.3
+      "1Wutc": 0.2
+    week:
+      "1Dutc": 0.4
+      "1Wutc": 0.3
+      "1Mutc": 0.3
+  decision_thresholds:
+    intraday:
+      context_min: 0.15
+      trigger_p_min: 0.55
+      consensus_min: 0.6
+      veto_threshold: 0.3
+    swing:
+      context_min: 0.2
+      trigger_p_min: 0.6
+      consensus_min: 0.65
+      veto_threshold: 0.25
+    week:
+      context_min: 0.25
+      trigger_p_min: 0.65
+      consensus_min: 0.7
+      veto_threshold: 0.2
+  score_weights:
+    context: 0.35
+    trigger: 0.35
+    consensus: 0.15
+    quality: 0.1
+    momentum: 0.05
+  veto_settings:
+    micro_filter_veto: true
+    context_conflict_threshold: 0.4
+    trigger_conflict_threshold: 0.3
+    threshold_veto_enabled: true
+    veto_override_threshold: 0.8
+  validation_settings:
+    min_context_timeframes: 2
+    min_trigger_timeframes: 1
+    max_disagreement_threshold: 0.5
+    min_coverage_threshold: 0.6
+    score_bounds: [0.0, 1.0]
+    confidence_bounds: [0.0, 1.0]
+
+# Pipeline Orchestrator Configuration
+pipeline:
+  context_timeframes: ["1Mutc", "1Wutc", "1Dutc", "4H", "1H"]
+  trigger_timeframes: ["15m", "5m", "1m"]
+  consensus_horizons: ["intraday", "swing", "week"]
+  max_retries: 3
+  retry_delay_seconds: 1.0
+  timeout_seconds: 300.0
+  parallel_processing: true
+  max_workers: 4
+  enable_monitoring: true
+  enable_metrics: true
+  performance_settings:
+    memory_limit_mb: 1024
+    cpu_limit_percent: 80
+    disk_space_limit_mb: 10000
+    network_timeout_seconds: 30
+
+# Integration Module Configuration
+integration:
+  features_settings:
+    enabled: true
+    module_path: "src.features.core"
+    function_name: "compute_features"
+    default_specs:
+      - "ema_21"
+      - "ema_55"
+      - "adx_14"
+      - "atr_14"
+      - "sma_50"
+      - "sma_200"
+      - "rsi_14"
+      - "macd"
+      - "macd_signal"
+      - "bb_upper"
+      - "bb_lower"
+      - "stoch_k"
+      - "stoch_d"
+      - "volume"
+      - "obv"
+      - "cmf"
+    volatility_normalize: true
+  market_meta_settings:
+    enabled: true
+    module_path: "src.market_meta.api"
+    function_name: "get_market_metadata"
+    cache_duration_seconds: 300
+    validate_orders: true
+    check_risk_limits: true
+    liquidity_check: true
+  database_settings:
+    enabled: true
+    connection_string: "postgresql://user:pass@localhost:5432/dbname"
+    pool_size: 10
+    max_overflow: 20
+    pool_timeout: 30
+    pool_recycle: 3600
+    echo: false
+  timeout_settings:
+    features_timeout: 30.0
+    market_meta_timeout: 10.0
+    database_timeout: 15.0
+    external_api_timeout: 20.0
+  retry_settings:
+    max_retries: 3
+    retry_delay: 1.0
+    backoff_factor: 2.0
+    retry_on_timeout: true
+    retry_on_connection_error: true
+  data_quality_settings:
+    min_completeness: 0.8
+    max_age_minutes: 30
+    outlier_threshold: 3.0
+    missing_data_threshold: 0.1
+    validate_ohlcv_logic: true
+    check_data_freshness: true
+  cache_settings:
+    enabled: true
+    cache_size_mb: 100
+    default_ttl_seconds: 300
+    features_cache_ttl: 600
+    market_meta_cache_ttl: 300
+    database_cache_ttl: 1800
+
+# Global Settings
+global:
+  environment: "development"  # development, staging, production
+  log_level: "INFO"          # DEBUG, INFO, WARNING, ERROR
+  enable_debug: true
+  enable_profiling: false
+  timezone: "UTC"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+# Monitoring Settings
+monitoring:
+  enable_metrics: true
+  metrics_interval_seconds: 60
+  enable_alerts: true
+  alert_thresholds:
+    error_rate: 0.1
+    response_time_ms: 5000
+    memory_usage_percent: 80
+    cpu_usage_percent: 80
+  health_check_interval_seconds: 30
+
+# Security Settings
+security:
+  enable_encryption: true
+  encryption_key: "your-encryption-key-here"
+  enable_audit_log: true
+  max_request_size_mb: 10
+  rate_limit_requests_per_minute: 100

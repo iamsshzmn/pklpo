@@ -1,0 +1,255 @@
+# Расширенная конфигурация весов для Scoring Engine
+# Использует большее количество доступных индикаторов
+version: 1.0
+
+# Веса отдельных индикаторов (расширенный набор)
+indicators:
+  # Осцилляторы (импульс и перекуп/перепрод)
+  rsi14: 0.08
+  stoch_k: 0.05
+  stoch_d: 0.05
+  macd: 0.06
+  macd_signal: 0.04
+  macd_histogram: 0.08
+
+  # Трендовые индикаторы
+  adx14: 0.06
+  adx_pos_di: 0.04
+  adx_neg_di: 0.04
+
+  # Moving Averages (разные периоды)
+  ema12: 0.03
+  ema26: 0.03
+  ema50: 0.04
+  ema200: 0.05
+  sma50: 0.03
+  sma200: 0.04
+
+  # EMA Ribbon (фибоначчи)
+  ema_8: 0.02
+  ema_13: 0.02
+  ema_34: 0.02
+  ema_55: 0.02
+  ema_89: 0.02
+  ema_144: 0.02
+  ema_233: 0.02
+
+  # Волатильность
+  bb_upper: 0.03
+  bb_middle: 0.02
+  bb_lower: 0.03
+  kc_upper: 0.03
+  kc_middle: 0.02
+  kc_lower: 0.03
+  atr14: 0.03
+
+  # Объемные индикаторы
+  obv: 0.04
+  cmf: 0.04
+  vwap: 0.03
+  vp_value_area_high: 0.02
+  vp_value_area_low: 0.02
+  vp_point_of_control: 0.02
+  volume_sma20: 0.02
+
+  # Ichimoku (тренд-структура)
+  ichimoku_tenkan: 0.03
+  ichimoku_kijun: 0.03
+  ichimoku_senkou_a: 0.02
+  ichimoku_senkou_b: 0.02
+
+# Веса комбинаций (расширенный набор)
+combinations:
+  # Существующие комбинации
+  bbands_kc_ttm: 0.08
+  ichimoku_macd_rsi: 0.10
+  macd_rsi_bbands: 0.08
+
+  # Дополнительные комбинации из pairs.py
+  macd_rsi: 0.06
+  macd_ichimoku: 0.05
+  ema_adx: 0.05
+  sma_stoch: 0.04
+  rsi_obv: 0.04
+  rsi_cmf: 0.04
+  rsi_vwap_vp: 0.04
+  obv_macd: 0.04
+  macd_bbands: 0.04
+
+# Параметры нормализации (границы для приведения к [0;1])
+normalization:
+  # Осцилляторы
+  rsi14:
+    min: 0
+    max: 100
+  stoch_k:
+    min: 0
+    max: 100
+  stoch_d:
+    min: 0
+    max: 100
+  macd:
+    min: -0.05
+    max: 0.05
+  macd_signal:
+    min: -0.05
+    max: 0.05
+  macd_histogram:
+    min: -0.05
+    max: 0.05
+
+  # Трендовые
+  adx14:
+    min: 0
+    max: 100
+  adx_pos_di:
+    min: 0
+    max: 100
+  adx_neg_di:
+    min: 0
+    max: 100
+
+  # Moving Averages (отношение к цене)
+  ema12:
+    min: 0.95
+    max: 1.05
+  ema26:
+    min: 0.95
+    max: 1.05
+  ema50:
+    min: 0.95
+    max: 1.05
+  ema200:
+    min: 0.95
+    max: 1.05
+  sma50:
+    min: 0.95
+    max: 1.05
+  sma200:
+    min: 0.95
+    max: 1.05
+
+  # EMA Ribbon
+  ema_8:
+    min: 0.95
+    max: 1.05
+  ema_13:
+    min: 0.95
+    max: 1.05
+  ema_34:
+    min: 0.95
+    max: 1.05
+  ema_55:
+    min: 0.95
+    max: 1.05
+  ema_89:
+    min: 0.95
+    max: 1.05
+  ema_144:
+    min: 0.95
+    max: 1.05
+  ema_233:
+    min: 0.95
+    max: 1.05
+
+  # Волатильность
+  bb_upper:
+    min: 0.95
+    max: 1.05
+  bb_middle:
+    min: 0.95
+    max: 1.05
+  bb_lower:
+    min: 0.95
+    max: 1.05
+  kc_upper:
+    min: 0.95
+    max: 1.05
+  kc_middle:
+    min: 0.95
+    max: 1.05
+  kc_lower:
+    min: 0.95
+    max: 1.05
+  atr14:
+    min: 0
+    max: 0.1
+
+  # Объемные
+  obv:
+    min: -1000000
+    max: 1000000
+  cmf:
+    min: -1
+    max: 1
+  vwap:
+    min: 0.95
+    max: 1.05
+  vp_value_area_high:
+    min: 0.95
+    max: 1.05
+  vp_value_area_low:
+    min: 0.95
+    max: 1.05
+  vp_point_of_control:
+    min: 0.95
+    max: 1.05
+  volume_sma20:
+    min: 0
+    max: 1000000
+
+  # Ichimoku
+  ichimoku_tenkan:
+    min: 0.95
+    max: 1.05
+  ichimoku_kijun:
+    min: 0.95
+    max: 1.05
+  ichimoku_senkou_a:
+    min: 0.95
+    max: 1.05
+  ichimoku_senkou_b:
+    min: 0.95
+    max: 1.05
+
+# Параметры торговли
+trading:
+  reward_risk_ratio: 2.0  # Соотношение риск/прибыль
+  cost: 0.003  # Комиссия + funding (константа)
+
+# Группы индикаторов для анализа
+indicator_groups:
+  momentum:
+    - rsi14
+    - stoch_k
+    - stoch_d
+    - macd
+    - macd_histogram
+
+  trend:
+    - adx14
+    - adx_pos_di
+    - adx_neg_di
+    - ema50
+    - ema200
+    - sma50
+    - sma200
+
+  volatility:
+    - bb_upper
+    - bb_lower
+    - kc_upper
+    - kc_lower
+    - atr14
+
+  volume:
+    - obv
+    - cmf
+    - vwap
+    - volume_sma20
+
+  ichimoku:
+    - ichimoku_tenkan
+    - ichimoku_kijun
+    - ichimoku_senkou_a
+    - ichimoku_senkou_b

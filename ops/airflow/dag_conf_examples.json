@@ -1,0 +1,43 @@
+{
+  "examples": {
+    "all_symbols_all_timeframes": {
+      "description": "Обработать все символы, все таймфреймы, все бары",
+      "config": {}
+    },
+    "one_symbol_few_timeframes": {
+      "description": "Один символ, несколько таймфреймов, лимит баров",
+      "config": {
+        "symbols": "BTC-USDT-SWAP",
+        "timeframes": "1m,5m,15m,1H",
+        "limit": 5000
+      }
+    },
+    "multiple_symbols_one_timeframe": {
+      "description": "Несколько символов, один таймфрейм",
+      "config": {
+        "symbols": "BTC-USDT-SWAP,ETH-USDT-SWAP,BNB-USDT-SWAP",
+        "timeframes": "1m"
+      }
+    },
+    "all_symbols_one_timeframe": {
+      "description": "Все символы, только дневной таймфрейм",
+      "config": {
+        "timeframes": "1D"
+      }
+    },
+    "test_small": {
+      "description": "Тестовая конфигурация - один символ, один таймфрейм, мало баров",
+      "config": {
+        "symbols": "BTC-USDT-SWAP",
+        "timeframes": "1m",
+        "limit": 100
+      }
+    }
+  },
+  "important_notes": {
+    "do_not_use_null": "НЕ используйте null в JSON - просто не указывайте параметр",
+    "correct_for_all_symbols": "Для всех символов - не указывайте symbols вообще",
+    "correct_for_all_bars": "Для всех баров - не указывайте limit вообще",
+    "timeframes_format": "timeframes можно указывать через запятую или пробел: '1m,5m' или '1m 5m'"
+  }
+}

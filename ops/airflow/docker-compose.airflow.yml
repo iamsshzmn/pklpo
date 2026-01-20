@@ -1,0 +1,102 @@
+name: pklpo-airflow
+
+networks:
+  pklpo_network:
+    external: true
+    name: pklpo_pklpo_network
+
+x-environment: &airflow_env
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+  AIRFLOW__CORE__FERNET_KEY: '${AIRFLOW_FERNET_KEY:-81HqDtbqAywKSOumSha3BhWNOdQ26slT6K0YaZeZyPs=}'
+  AIRFLOW__WEBSERVER__SECRET_KEY: '${AIRFLOW_SECRET_KEY:-a25dhjGbaNdj7ZOnasb8aZeD4nk5d7jw}'
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@${AIRFLOW_DB_HOST:-postgres}:${AIRFLOW_DB_PORT:-5432}/${AIRFLOW_DB_NAME:-airflow_db}
+  AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'false'
+  # App env - подключение к основной базе pklpo_db через host.docker.internal (Windows/Mac) или pklpo_db (общая сеть)
+  DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://pklpo_user:strongpassword@pklpo_db:5432/pklpo}
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: pklpo-airflow-postgres
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER:-airflow}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:-airflow}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME:-airflow_db}
+    ports:
+      - "5433:5432" # Проброс порта на localhost:5433
+    volumes:
+      - af_pg_data:/var/lib/postgresql/data
+    networks:
+      - pklpo_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: always
+
+  airflow-init:
+    build:
+      context: ../../
+      dockerfile: ops/airflow/Dockerfile.airflow
+    environment:
+      <<: *airflow_env
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+      _PIP_ADDITIONAL_REQUIREMENTS: "aiolimiter pydantic-settings asyncpg tqdm pandas-ta aiohttp sqlalchemy numpy pandas pyyaml requests pydantic pydantic-settings psutil python-dotenv"
+    entrypoint: [ "bash", "-c", "airflow db init && airflow users create --username admin --firstname Air --lastname Flow --role Admin --email admin@example.com --password $${AIRFLOW_ADMIN_PASSWORD}" ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pklpo_network
+
+  airflow-webserver:
+    build:
+      context: ../../
+      dockerfile: ops/airflow/Dockerfile.airflow
+    environment:
+      <<: *airflow_env
+      PYTHONPATH: /opt/airflow/project
+      _PIP_ADDITIONAL_REQUIREMENTS: "aiolimiter pydantic-settings asyncpg tqdm pandas-ta aiohttp sqlalchemy numpy pandas pyyaml requests pydantic pydantic-settings psutil python-dotenv"
+    ports:
+      - "8080:8080"
+    # volumes:
+    #   # Убираем монтирование dags - они уже скопированы в образ при сборке
+    #   # Для разработки можно раскомментировать после исправления проблемы с путями в Windows/WSL2
+    #   - ./dags:/opt/airflow/dags:ro
+    command: webserver
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pklpo_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+
+  airflow-scheduler:
+    build:
+      context: ../../
+      dockerfile: ops/airflow/Dockerfile.airflow
+    environment:
+      <<: *airflow_env
+      PYTHONPATH: /opt/airflow/project
+      _PIP_ADDITIONAL_REQUIREMENTS: "aiolimiter pydantic-settings asyncpg tqdm pandas-ta aiohttp sqlalchemy numpy pandas pyyaml requests pydantic pydantic-settings psutil python-dotenv"
+    # volumes:
+    #   # Убираем монтирование dags - они уже скопированы в образ при сборке
+    #   # Для разработки можно раскомментировать после исправления проблемы с путями в Windows/WSL2
+    #   - ./dags:/opt/airflow/dags:ro
+    command: scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pklpo_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+
+volumes:
+  af_pg_data:
+    name: pklpo-airflow-pg-data

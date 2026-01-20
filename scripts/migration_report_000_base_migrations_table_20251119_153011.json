@@ -1,0 +1,21 @@
+{
+  "migration_id": "000_base_migrations_table",
+  "duration_ms": 7,
+  "timestamp": "2025-11-19T15:30:11.579726",
+  "duration_formatted": "7ms",
+  "database_stats": {
+    "error": "(sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedColumnError'>: column \"indexrelid\" does not exist\n[SQL: \n                SELECT \n                    COUNT(*) as total_indexes,\n                    SUM(pg_relation_size(indexrelid)) as index_size_bytes\n                FROM pg_indexes \n                WHERE schemaname = 'public'\n            ]\n(Background on this error at: https://sqlalche.me/e/20/f405)"
+  },
+  "changes_analysis": {
+    "error": "(sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.InFailedSQLTransactionError'>: current transaction is aborted, commands ignored until end of transaction block\n[SQL: \n                SELECT \n                    migration_id,\n                    migration_name,\n                    applied_at,\n                    duration_ms,\n                    status\n                FROM schema_migrations \n                ORDER BY applied_at DESC \n                LIMIT 5\n            ]\n(Background on this error at: https://sqlalche.me/e/20/dbapi)"
+  },
+  "recommendations": [
+    {
+      "type": "error",
+      "message": "(sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.InFailedSQLTransactionError'>: current transaction is aborted, commands ignored until end of transaction block\n[SQL: \n                SELECT \n                    schemaname,\n                    tablename,\n                    indexname,\n                    pg_size_pretty(pg_relation_size(indexrelid)) as index_size\n                FROM pg_indexes \n                WHERE schemaname = 'public'\n                AND tablename IN ('ohlcv_p', 'indicators_p')\n                ORDER BY pg_relation_size(indexrelid) DESC\n                LIMIT 5\n            ]\n(Background on this error at: https://sqlalche.me/e/20/dbapi)"
+    }
+  ],
+  "performance_metrics": {
+    "error": "(sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.InFailedSQLTransactionError'>: current transaction is aborted, commands ignored until end of transaction block\n[SQL: \n                SELECT \n                    query,\n                    calls,\n                    total_time,\n                    mean_time,\n                    rows\n                FROM pg_stat_statements \n                WHERE query LIKE '%ohlcv_p%' OR query LIKE '%indicators_p%'\n                ORDER BY total_time DESC\n                LIMIT 10\n            ]\n(Background on this error at: https://sqlalche.me/e/20/dbapi)"
+  }
+}
