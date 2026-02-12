@@ -104,15 +104,96 @@ class FeaturesSettings(BaseSettings):
     parallel_workers: int = 4
     batch_timeout: int = 300
 
+    # Memory management
+    force_gc_after_chunk: bool = True
+    clear_intermediate_objects: bool = True
+
+    # Retry settings (for DB operations)
+    max_retries: int = 3
+    retry_delay: float = 1.0
+    retry_backoff_factor: float = 2.0
+
+    # Database persistence
+    use_copy_from: bool = True
+    temp_table_prefix: str = "temp_indicators_"
+
     # Logging
     log_memory: bool = True
     verbose: bool = False
+
+    # =========================================================================
+    # OCP Configuration (Phase 2.2): Configurable indicators and thresholds
+    # =========================================================================
+
+    # Critical indicators that must always be calculated
+    # These are added to the available set even if not explicitly requested
+    critical_indicators: list[str] = Field(
+        default=["t3_20", "rma_20", "ics_26"],
+        description="Indicators that must always be calculated",
+    )
+
+    # Validation thresholds (OCP: modify without changing code)
+    price_outlier_threshold: float = Field(
+        default=0.02, ge=0.0, le=1.0,
+        description="Maximum fraction of price outliers (2%)",
+    )
+    volume_outlier_threshold: float = Field(
+        default=0.02, ge=0.0, le=1.0,
+        description="Maximum fraction of volume outliers (2%)",
+    )
+    outlier_multiplier: float = Field(
+        default=1.5, ge=1.0, le=5.0,
+        description="IQR multiplier for outlier detection",
+    )
+
+    # Warm-up window settings
+    ma_warmup_multiplier: float = Field(
+        default=2.0, ge=1.0, le=5.0,
+        description="Warm-up = MA period * multiplier",
+    )
+    atr_warmup_multiplier: float = Field(
+        default=2.0, ge=1.0, le=5.0,
+        description="Warm-up = ATR period * multiplier",
+    )
+    min_warmup_rows: int = Field(
+        default=50, ge=10, le=500,
+        description="Minimum warm-up rows",
+    )
+
+    # Price change validation
+    min_price_change: float = Field(
+        default=0.001, ge=0.0, le=0.1,
+        description="Minimum price change (0.1%)",
+    )
+    max_price_change: float = Field(
+        default=0.5, ge=0.1, le=1.0,
+        description="Maximum price change (50%)",
+    )
+
+    # Group calculation configuration
+    calculation_order: list[str] = Field(
+        default=[
+            "overlap", "ma", "oscillators", "volatility", "volume",
+            "trend", "candles", "squeeze", "statistics", "performance",
+        ],
+        description="Order of group calculation",
+    )
+
+    # Feature periods for warm-up validation
+    feature_periods: dict[str, int] = Field(
+        default={
+            "sma_20": 20, "sma_50": 50, "sma_200": 200,
+            "ema_8": 8, "ema_21": 21, "ema_50": 50,
+            "atr_14": 14, "atr_21": 21,
+        },
+        description="Feature name to period mapping for warm-up validation",
+    )
 
     @field_validator("overlap_size")
     @classmethod
     def overlap_gte_lookback(cls, v: int, info) -> int:
         """Overlap должен быть >= max_lookback."""
-        max_lookback = info.data.get("max_lookback", 200)
+        max_lookback: int = info.data.get("max_lookback", 200)
         return max(v, max_lookback)
 
 
@@ -162,6 +243,41 @@ class RiskSettings(BaseSettings):
         if self.daily_loss_limit > self.weekly_loss_limit:
             raise ValueError("daily_loss_limit не может превышать weekly_loss_limit")
         return self
+
+
+class RetrySettings(BaseSettings):
+    """
+    Унифицированные настройки retry для всех внешних вызовов.
+
+    Используется для:
+    - Database operations
+    - OKX API calls
+    - External HTTP requests
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="RETRY_",
+        extra="ignore",
+    )
+
+    # General retry settings
+    max_attempts: int = Field(default=3, ge=1, le=10)
+    base_delay: float = Field(default=1.0, ge=0.1, le=30.0)
+    max_delay: float = Field(default=60.0, ge=1.0, le=300.0)
+    exponential_base: float = Field(default=2.0, ge=1.5, le=4.0)
+    jitter: bool = Field(
+        default=True, description="Add randomness to prevent thundering herd"
+    )
+
+    # Database-specific overrides
+    db_max_attempts: int = Field(default=3, ge=1, le=10)
+    db_base_delay: float = Field(default=1.0, ge=0.1, le=10.0)
+    db_max_delay: float = Field(default=10.0, ge=1.0, le=60.0)
+
+    # API-specific overrides (longer timeouts for rate limiting)
+    api_max_attempts: int = Field(default=5, ge=1, le=15)
+    api_base_delay: float = Field(default=1.0, ge=0.1, le=10.0)
+    api_max_delay: float = Field(default=30.0, ge=1.0, le=120.0)
 
 
 class CacheSettings(BaseSettings):
@@ -248,6 +364,7 @@ class Settings(BaseSettings):
     okx: OKXSettings = Field(default_factory=OKXSettings)
     features: FeaturesSettings = Field(default_factory=FeaturesSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)
+    retry: RetrySettings = Field(default_factory=RetrySettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     airflow: AirflowSettings = Field(default_factory=AirflowSettings)

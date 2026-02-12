@@ -17,7 +17,7 @@ from tenacity import (
     retry,
     retry_if_exception_type,
     stop_after_attempt,
-    wait_exponential,
+    wait_exponential_jitter,
 )
 
 from ..domain.exceptions import (
@@ -42,6 +42,36 @@ from .market import OKXMarket
 from .metrics import get_metrics_collector, measure_async_time
 
 logger = get_logger("okx_integration")
+
+
+def _get_okx_retry():
+    """
+    Создаёт retry декоратор для OKX API с настройками из централизованной конфигурации.
+
+    Использует tenacity для продвинутого логирования (before_sleep, after).
+    Настройки берутся из src/config/settings.py -> RetrySettings.
+    """
+    from src.config.settings import get_settings
+
+    settings = get_settings().retry
+
+    return retry(
+        stop=stop_after_attempt(settings.api_max_attempts),
+        wait=wait_exponential_jitter(
+            initial=settings.api_base_delay,
+            max=settings.api_max_delay,
+            jitter=settings.api_max_delay * 0.1 if settings.jitter else 0,
+        ),
+        retry=retry_if_exception_type(
+            (OKXNetworkError, OKXRateLimitError, OKXIntegrationError)
+        ),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        after=after_log(logger, logging.INFO),
+    )
+
+
+# Pre-configured OKX retry decorator
+okx_retry = _get_okx_retry()
 
 
 class OKXMetadataLoader:
@@ -75,15 +105,7 @@ class OKXMetadataLoader:
         # Метрики
         self._metrics_collector = get_metrics_collector()
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(
-            (OKXNetworkError, OKXRateLimitError, OKXIntegrationError)
-        ),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        after=after_log(logger, logging.INFO),
-    )
+    @okx_retry
     async def load_instruments(
         self, inst_types: list[str] | None = None
     ) -> list[dict[str, Any]]:
@@ -156,15 +178,7 @@ class OKXMetadataLoader:
 
         return all_instruments
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(
-            (OKXNetworkError, OKXRateLimitError, OKXIntegrationError)
-        ),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        after=after_log(logger, logging.INFO),
-    )
+    @okx_retry
     async def _load_instrument_type(self, inst_type: str) -> list[dict[str, Any]]:
         """
         Загружает инструменты конкретного типа с retry.
@@ -528,15 +542,7 @@ class OKXMetadataLoader:
             logger.error(f"Ошибка загрузки данных тикеров: {e}")
             return {}
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(
-            (OKXNetworkError, OKXRateLimitError, OKXIntegrationError)
-        ),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        after=after_log(logger, logging.INFO),
-    )
+    @okx_retry
     async def load_funding_rates_extended(
         self, symbols: list[str] | None = None
     ) -> dict[str, dict[str, Any]]:
@@ -569,15 +575,7 @@ class OKXMetadataLoader:
             logger.error(f"❌ Ошибка загрузки ставок финансирования: {e}")
             raise
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(
-            (OKXNetworkError, OKXRateLimitError, OKXIntegrationError)
-        ),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        after=after_log(logger, logging.INFO),
-    )
+    @okx_retry
     async def load_mark_prices_extended(
         self, symbols: list[str] | None = None
     ) -> dict[str, dict[str, Any]]:
@@ -610,15 +608,7 @@ class OKXMetadataLoader:
             logger.error(f"❌ Ошибка загрузки маржевых цен: {e}")
             raise
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(
-            (OKXNetworkError, OKXRateLimitError, OKXIntegrationError)
-        ),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        after=after_log(logger, logging.INFO),
-    )
+    @okx_retry
     async def load_tickers_extended(
         self, symbols: list[str] | None = None
     ) -> dict[str, dict[str, Any]]:
@@ -647,15 +637,7 @@ class OKXMetadataLoader:
             logger.error(f"❌ Ошибка загрузки тикеров: {e}")
             raise
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(
-            (OKXNetworkError, OKXRateLimitError, OKXIntegrationError)
-        ),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-        after=after_log(logger, logging.INFO),
-    )
+    @okx_retry
     async def load_open_interest_extended(
         self, symbols: list[str] | None = None
     ) -> dict[str, dict[str, Any]]:

@@ -6,20 +6,26 @@ Application layer: batch processing orchestration.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import TYPE_CHECKING
 
+from src.logging import get_logger
+from src.utils.retry import RetryConfig
+
 from ..domain.calculator import calculate_batch
+from ..domain.strategy import get_max_lookback_for_strategies
 from ..infrastructure.database import (
     ensure_columns_exist,
     fetch_latest_ts,
     fetch_ohlcv_df,
     insert_indicators,
 )
+from ..utils.time_utils import timeframe_to_seconds
 
 if TYPE_CHECKING:
     import pandas as pd
+
+logger = get_logger(__name__)
 
 
 async def process_dataframe(
@@ -39,13 +45,34 @@ async def process_dataframe(
 async def process_single_pair(
     session, symbol: str, timeframe: str, available: set[str]
 ) -> tuple[bool, int, float, list[str]]:
-    """Перенос логики из calc_indicators.process_single_pair без изменения поведения."""
+    """
+    Обработка одной пары symbol/timeframe.
+
+    Использует инкрементный режим: загружает данные с max_ts - warmup_offset,
+    где warmup_offset рассчитывается на основе максимального lookback индикаторов.
+    """
     start_time = time.time()
     errors: list[str] = []
 
     try:
+        # Получаем max_ts последнего рассчитанного индикатора (в секундах)
         max_ts = await fetch_latest_ts(session, symbol, timeframe) or 0
-        df = await fetch_ohlcv_df(session, symbol, timeframe, since_ts=max_ts)
+
+        # Рассчитываем warmup offset на основе lookback индикаторов
+        max_lookback = get_max_lookback_for_strategies(list(available))
+        # Добавляем 20% буфер для надёжности
+        warmup_bars = int(max_lookback * 1.2)
+        warmup_offset_sec = warmup_bars * timeframe_to_seconds(timeframe)
+
+        # Вычисляем since_ts с учётом warmup
+        since_ts = max(0, max_ts - warmup_offset_sec)
+
+        logger.debug(
+            f"Инкремент для {symbol} {timeframe}: max_ts={max_ts}, "
+            f"warmup_bars={warmup_bars}, since_ts={since_ts}"
+        )
+
+        df = await fetch_ohlcv_df(session, symbol, timeframe, since_ts=since_ts)
         if df is None or len(df) < 20:
             return False, 0, time.time() - start_time, ["Недостаточно данных"]
 
@@ -58,18 +85,13 @@ async def process_single_pair(
         await ensure_columns_exist(session, "indicators", indicator_columns)
 
         # Вставка с retry/backoff для транзиентных ошибок БД
-        delay = 0.2
-        attempts = 0
-        while True:
-            try:
-                await insert_indicators(session, ind_df, symbol, timeframe)
-                break
-            except Exception:  # транзиентные ошибки БД/сети
-                attempts += 1
-                if attempts >= 5:
-                    raise
-                await asyncio.sleep(delay)
-                delay = min(delay * 2, 2.0)
+        from src.utils.retry import RetryableOperation
+
+        retry_config = RetryConfig.from_settings(preset="db")
+        retry_op = RetryableOperation(retry_config)
+        await retry_op.execute_async(
+            insert_indicators, session, ind_df, symbol, timeframe
+        )
 
         calculation_time = time.time() - start_time
         return True, len(ind_df), calculation_time, errors

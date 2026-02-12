@@ -1,6 +1,24 @@
 """
-Утилиты для retry логики
+Унифицированные утилиты для retry логики.
+
+Единая точка входа для всех retry операций в проекте.
+Интегрируется с централизованной конфигурацией.
+
+Использование:
+    from src.utils.retry import retry_async, retry_sync, get_db_retry, get_api_retry
+
+    # С дефолтными настройками из конфигурации
+    @get_db_retry()
+    async def fetch_data():
+        ...
+
+    # С кастомными параметрами
+    @retry_async(max_attempts=5, jitter=True)
+    async def call_api():
+        ...
 """
+
+from __future__ import annotations
 
 import asyncio
 import logging
@@ -8,13 +26,20 @@ import random
 import time
 from collections.abc import Callable
 from functools import wraps
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from src.config.settings import RetrySettings
 
 logger = logging.getLogger(__name__)
 
 
 class RetryConfig:
-    """Конфигурация для retry логики"""
+    """
+    Конфигурация для retry логики.
+
+    Может быть создана напрямую или из централизованных настроек.
+    """
 
     def __init__(
         self,
@@ -31,6 +56,51 @@ class RetryConfig:
         self.exponential_base = exponential_base
         self.jitter = jitter
         self.exceptions = exceptions
+
+    @classmethod
+    def from_settings(
+        cls,
+        settings: RetrySettings | None = None,
+        preset: str = "default",
+    ) -> "RetryConfig":
+        """
+        Создаёт конфигурацию из централизованных настроек.
+
+        Args:
+            settings: RetrySettings или None (загрузится автоматически)
+            preset: "default", "db", или "api"
+
+        Returns:
+            RetryConfig с настройками из конфигурации
+        """
+        if settings is None:
+            from src.config.settings import get_settings
+            settings = get_settings().retry
+
+        if preset == "db":
+            return cls(
+                max_attempts=settings.db_max_attempts,
+                base_delay=settings.db_base_delay,
+                max_delay=settings.db_max_delay,
+                exponential_base=settings.exponential_base,
+                jitter=settings.jitter,
+            )
+        elif preset == "api":
+            return cls(
+                max_attempts=settings.api_max_attempts,
+                base_delay=settings.api_base_delay,
+                max_delay=settings.api_max_delay,
+                exponential_base=settings.exponential_base,
+                jitter=settings.jitter,
+            )
+        else:  # default
+            return cls(
+                max_attempts=settings.max_attempts,
+                base_delay=settings.base_delay,
+                max_delay=settings.max_delay,
+                exponential_base=settings.exponential_base,
+                jitter=settings.jitter,
+            )
 
 
 def calculate_delay(attempt: int, config: RetryConfig) -> float:
@@ -289,3 +359,145 @@ class RetryableOperation:
                 time.sleep(delay)
 
         raise last_exception
+
+
+# =============================================================================
+# Factory functions for pre-configured retry decorators
+# =============================================================================
+
+def get_db_retry(
+    exceptions: type[Exception] | tuple | None = None,
+    on_retry: Callable | None = None,
+) -> Callable:
+    """
+    Возвращает декоратор для database операций с настройками из конфигурации.
+
+    Args:
+        exceptions: Исключения для перехвата (по умолчанию: DB-related)
+        on_retry: Callback при retry
+
+    Returns:
+        Декоратор retry_async с DB настройками
+
+    Example:
+        @get_db_retry()
+        async def insert_data(conn, data):
+            await conn.execute("INSERT ...")
+    """
+    config = RetryConfig.from_settings(preset="db")
+
+    if exceptions is None:
+        # Common database exceptions
+        db_exceptions: list[type[Exception]] = [
+            ConnectionError,
+            TimeoutError,
+            OSError,
+        ]
+        try:
+            import asyncpg
+            db_exceptions.extend([
+                asyncpg.PostgresConnectionError,
+                asyncpg.CannotConnectNowError,
+                asyncpg.ConnectionDoesNotExistError,
+                asyncpg.TooManyConnectionsError,
+            ])
+        except ImportError:
+            pass
+        exceptions = tuple(db_exceptions)
+
+    return retry_async(
+        max_attempts=config.max_attempts,
+        base_delay=config.base_delay,
+        max_delay=config.max_delay,
+        exponential_base=config.exponential_base,
+        jitter=config.jitter,
+        exceptions=exceptions,
+        on_retry=on_retry,
+    )
+
+
+def get_api_retry(
+    exceptions: type[Exception] | tuple | None = None,
+    on_retry: Callable | None = None,
+) -> Callable:
+    """
+    Возвращает декоратор для API вызовов с настройками из конфигурации.
+
+    Args:
+        exceptions: Исключения для перехвата (по умолчанию: HTTP-related)
+        on_retry: Callback при retry
+
+    Returns:
+        Декоратор retry_async с API настройками
+
+    Example:
+        @get_api_retry()
+        async def fetch_market_data(symbol):
+            async with session.get(url) as response:
+                return await response.json()
+    """
+    config = RetryConfig.from_settings(preset="api")
+
+    if exceptions is None:
+        # Common API/HTTP exceptions
+        api_exceptions: list[type[Exception]] = [
+            ConnectionError,
+            TimeoutError,
+            OSError,
+        ]
+        try:
+            import aiohttp
+            api_exceptions.extend([
+                aiohttp.ClientError,
+                aiohttp.ServerTimeoutError,
+            ])
+        except ImportError:
+            pass
+        try:
+            import httpx
+            api_exceptions.append(httpx.HTTPError)
+        except ImportError:
+            pass
+        exceptions = tuple(api_exceptions)
+
+    return retry_async(
+        max_attempts=config.max_attempts,
+        base_delay=config.base_delay,
+        max_delay=config.max_delay,
+        exponential_base=config.exponential_base,
+        jitter=config.jitter,
+        exceptions=exceptions,
+        on_retry=on_retry,
+    )
+
+
+def get_default_retry(
+    exceptions: type[Exception] | tuple = Exception,
+    on_retry: Callable | None = None,
+) -> Callable:
+    """
+    Возвращает декоратор с дефолтными настройками из конфигурации.
+
+    Args:
+        exceptions: Исключения для перехвата
+        on_retry: Callback при retry
+
+    Returns:
+        Декоратор retry_async с дефолтными настройками
+    """
+    config = RetryConfig.from_settings(preset="default")
+
+    return retry_async(
+        max_attempts=config.max_attempts,
+        base_delay=config.base_delay,
+        max_delay=config.max_delay,
+        exponential_base=config.exponential_base,
+        jitter=config.jitter,
+        exceptions=exceptions,
+        on_retry=on_retry,
+    )
+
+
+# Aliases for backward compatibility
+database_retry = get_db_retry
+api_retry = get_api_retry

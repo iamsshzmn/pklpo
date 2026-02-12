@@ -1,15 +1,37 @@
 """
 Retry decorator with exponential backoff for infrastructure operations.
 
-This module provides retry logic for database operations and external API calls,
-with configurable backoff strategy and exception handling.
+.. deprecated::
+    This module is deprecated. Use `src.utils.retry` instead, which provides:
+    - Integration with centralized settings (src/config/settings.py)
+    - Jitter support to prevent thundering herd
+    - Factory functions: get_db_retry(), get_api_retry()
+
+    Migration example:
+        # Old:
+        from src.features.infrastructure.retry import database_retry
+        @database_retry(max_attempts=3)
+
+        # New:
+        from src.utils.retry import get_db_retry
+        @get_db_retry()
 """
 
 import functools
 import logging
 import time
+import warnings
 from collections.abc import Callable
 from typing import Any, TypeVar
+
+from src.logging import get_logger
+
+warnings.warn(
+    "src.features.infrastructure.retry is deprecated. "
+    "Use src.utils.retry instead (get_db_retry, get_api_retry).",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 try:
     from tenacity import (
@@ -27,7 +49,7 @@ except ImportError:
     retry = None  # type: ignore
 
 
-logger = logging.getLogger("features.infrastructure.retry")
+logger = get_logger("features.infrastructure.retry")
 
 T = TypeVar("T")
 
