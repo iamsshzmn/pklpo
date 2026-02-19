@@ -3,12 +3,19 @@
 """
 
 from .evaluate import SignalEvaluator
-from .metrics import calc_max_drawdown, calc_pnl, calc_sharpe_ratio, calc_win_rate
+from .metrics import (
+    calc_max_drawdown,
+    calc_pnl,
+    calc_sharpe_ratio,
+    calc_win_rate,
+    sharpe_ratio,
+)
 
 __all__ = [
-    "calc_pnl",
-    "calc_sharpe_ratio",
-    "calc_max_drawdown",
-    "calc_win_rate",
     "SignalEvaluator",
+    "calc_max_drawdown",
+    "calc_pnl",
+    "calc_sharpe_ratio",  # deprecated wrapper
+    "calc_win_rate",
+    "sharpe_ratio",
 ]

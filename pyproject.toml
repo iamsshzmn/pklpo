@@ -25,6 +25,7 @@ dev = [
     "pytest-cov>=4.0.0",
     "pytest-asyncio>=0.21.0",
     "pytest-xdist>=3.0.0",
+    "hypothesis>=6.100.0",
     "ruff>=0.6.9",
     "mypy>=1.0.0",
     "black>=23.0.0",
@@ -51,6 +52,7 @@ exclude = '''
 '''
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 testpaths = ["src", "tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -74,6 +76,7 @@ markers = [
     "smoke: marks tests as smoke tests",
     "performance: marks tests as performance tests",
     "asyncio: marks tests as async tests",
+    "lookahead: marks tests as look-ahead bias detection tests",
 ]
 asyncio_mode = "auto"  # Требует pytest-asyncio
 
@@ -208,6 +211,9 @@ module = [
     "pydantic.*",
     "yaml.*",
     "airflow.*",
+    "numba.*",
+    "sklearn.*",
+    "joblib.*",
 ]
 ignore_missing_imports = true
 
@@ -277,7 +283,6 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = [
     "config",
-    "src.config",
 ]
 follow_imports = "skip"
 ignore_errors = true

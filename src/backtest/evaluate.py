@@ -3,12 +3,7 @@
 """
 
 import asyncio
-import sys
 from datetime import datetime, timedelta
-from pathlib import Path
-
-# Добавляем корневую директорию в путь
-sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from sqlalchemy import text
 

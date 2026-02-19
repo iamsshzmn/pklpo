@@ -1,5 +1,7 @@
 """
-Метрики для оценки качества торговых сигналов.
+Метрики для оценки качества торговых сигналов и quant-стратегий.
+
+Единая точка для всех trading metrics: Sharpe, DSR, PnL, MaxDD.
 """
 
 import numpy as np
@@ -83,32 +85,46 @@ def calc_pnl(
     return pnl_list, total_pnl
 
 
-def calc_sharpe_ratio(pnl_list: list[float], risk_free_rate: float = 0.02) -> float:
+def sharpe_ratio(
+    returns: list[float] | np.ndarray,
+    rf: float = 0.0,
+    periods: int = 365,
+) -> float:
     """
-    Рассчитывает коэффициент Шарпа.
+    Коэффициент Шарпа (единая реализация для всех потребителей).
 
     Args:
-        pnl_list: Список значений PnL
-        risk_free_rate: Безрисковая ставка (по умолчанию 2% годовых)
+        returns: Массив периодических доходностей (не аннуализированных).
+        rf: Безрисковая ставка в годовых (e.g. 0.02 = 2%).
+        periods: Количество периодов в году для аннуализации.
+            365 — для крипто (дни), 252 — для акций, 525600 — для 1m баров.
 
     Returns:
-        float: Коэффициент Шарпа
+        float: Коэффициент Шарпа. 0.0 если недостаточно данных.
     """
-    if not pnl_list:
+    arr = np.asarray(returns, dtype=float)
+    if arr.size < 2:
         return 0.0
 
-    returns = np.array(pnl_list)
+    rf_per_period = rf / periods
+    excess = arr - rf_per_period
+    std = np.std(excess, ddof=1)
 
-    # Годовые метрики (предполагаем 1-минутные данные)
-    annual_factor = 525600  # минут в году
-
-    mean_return = np.mean(returns) * annual_factor
-    std_return = np.std(returns) * np.sqrt(annual_factor)
-
-    if std_return == 0:
+    if std == 0.0:
         return 0.0
 
-    return (mean_return - risk_free_rate) / std_return
+    return float(np.mean(excess) / std * np.sqrt(periods))
+
+
+def calc_sharpe_ratio(pnl_list: list[float], risk_free_rate: float = 0.02) -> float:
+    """
+    Коэффициент Шарпа (устаревший интерфейс, оставлен для совместимости).
+
+    .. deprecated::
+        Используй ``sharpe_ratio(returns, rf, periods)`` напрямую.
+        Этот wrapper предполагает 1-минутные данные (periods=525600).
+    """
+    return sharpe_ratio(pnl_list, rf=risk_free_rate, periods=525600)
 
 
 def calc_max_drawdown(pnl_list: list[float]) -> float:
