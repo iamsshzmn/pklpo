@@ -158,7 +158,7 @@ ignore = [
 "**/mtf (old)/**/*" = ["N999"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["features", "cli", "infrastructure", "src"]
+known-first-party = ["features", "cli", "infrastructure", "src", "core", "ml"]
 combine-as-imports = true
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 

@@ -335,6 +335,65 @@ class AirflowSettings(BaseSettings):
     secret_key: SecretStr = SecretStr("")
 
 
+class QuantSettings(BaseSettings):
+    """
+    Настройки Quant Stack (Phase 3).
+
+    Env prefix: QUANT_
+    Пример: QUANT_BARS_MODE=dollar QUANT_DOLLAR_BAR_VALUE=200000
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="QUANT_",
+        extra="ignore",
+    )
+
+    # Bars
+    bars_mode: Literal["time", "dollar"] = "time"
+    dollar_bar_value: float = Field(default=200_000.0, gt=0)
+    dollar_bar_min_trades: int = Field(default=1, ge=1)
+
+    # Triple Barrier
+    triple_pt: float = Field(default=0.02, gt=0, le=0.5)
+    triple_sl: float = Field(default=0.01, gt=0, le=0.5)
+    triple_max_h: int = Field(default=48, ge=1, le=500)
+
+    # Validation
+    purged_kfold_splits: int = Field(default=5, ge=2, le=20)
+    embargo_pct: float = Field(default=0.01, ge=0.0, le=0.1)
+    cpcv_n_groups: int = Field(default=6, ge=3, le=12)
+    cpcv_n_test_groups: int = Field(default=2, ge=1)
+    cpcv_max_paths: int = Field(default=50, ge=10, le=200)
+
+    # Feature Selection
+    feature_selection_method: Literal["mda", "mutual_info", "pca_variance"] = "mda"
+    feature_selection_n_features: int = Field(default=50, ge=10, le=200)
+
+    # Metalabeling
+    metalabel_model: Literal["rf", "xgboost"] = "rf"
+    metalabel_calibrate: bool = True
+    metalabel_n_estimators: int = Field(default=500, ge=50, le=5000)
+
+    # Metrics
+    sharpe_periods: int = Field(
+        default=365,
+        ge=1,
+        description="Количество периодов в году для аннуализации Sharpe. "
+        "365 — крипто (дни), 252 — акции, 525600 — 1m бары.",
+    )
+    dsr_significance: float = Field(default=0.05, gt=0.0, lt=1.0)
+
+    @model_validator(mode="after")
+    def validate_cpcv(self) -> "QuantSettings":
+        """CPCV: n_test_groups должен быть меньше n_groups."""
+        if self.cpcv_n_test_groups >= self.cpcv_n_groups:
+            raise ValueError(
+                f"cpcv_n_test_groups ({self.cpcv_n_test_groups}) "
+                f"должен быть < cpcv_n_groups ({self.cpcv_n_groups})"
+            )
+        return self
+
+
 class Settings(BaseSettings):
     """
     Главный класс настроек приложения.
@@ -368,6 +427,7 @@ class Settings(BaseSettings):
     cache: CacheSettings = Field(default_factory=CacheSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     airflow: AirflowSettings = Field(default_factory=AirflowSettings)
+    quant: QuantSettings = Field(default_factory=QuantSettings)
 
     # Paths
     project_root: Path = Field(default_factory=lambda: Path(__file__).parent.parent.parent)
