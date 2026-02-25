@@ -419,7 +419,7 @@ class MarketSelectionDB:
         window_days = self.config.regime_windows_days.get(timeframe, 60)
         ts_start = ts_eval - (window_days * 24 * 60 * 60 * 1000)
 
-        query = text(f"""
+        query = text("""
             SELECT PERCENTILE_CONT(:pct / 100.0) WITHIN GROUP (
                 ORDER BY i.atr_14 / NULLIF(o.close, 0)
             ) as atr_pct

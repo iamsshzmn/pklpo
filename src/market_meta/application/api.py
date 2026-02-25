@@ -16,8 +16,6 @@ from typing import Any
 from ..domain.exceptions import (
     MetadataStaleError,
     OKXIntegrationError,
-    OrderValidationError,
-    ValidationError,
 )
 from ..domain.metadata import FundingRate, MarketMetadata
 from ..domain.risk_limits import PositionLimits, RiskLimits

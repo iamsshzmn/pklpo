@@ -6,7 +6,7 @@ from .repository import CombinationRepository, PostgresCombinationRepository
 
 __all__ = [
     "CombinationRepository",
+    "NumericCombinationCalculator",
     "PostgresCombinationRepository",
     "PostgresIndicatorProvider",
-    "NumericCombinationCalculator",
 ]

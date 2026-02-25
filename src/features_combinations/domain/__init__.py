@@ -3,4 +3,4 @@
 from .models import CombinationRow
 from .registry import COMBINATIONS, CombinationConfig
 
-__all__ = ["CombinationRow", "COMBINATIONS", "CombinationConfig"]
+__all__ = ["COMBINATIONS", "CombinationConfig", "CombinationRow"]

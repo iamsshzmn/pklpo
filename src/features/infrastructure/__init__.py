@@ -4,12 +4,12 @@ This package contains database operations, alerting, and diagnostics.
 """
 
 __all__ = [
+    "alerts",
     "database",
     "db_operations",
-    "upsert_builder",
-    "alerts",
     "diagnostics",
     "indicator_registry",
     "insert_indicators",
     "retry",
+    "upsert_builder",
 ]

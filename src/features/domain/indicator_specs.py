@@ -16,8 +16,8 @@ from ..specs import (
 )
 
 __all__ = [
-    "FEATURE_SPECS",
     "FEATURE_GROUPS",
+    "FEATURE_SPECS",
     "get_features_by_type",
     "get_required_features",
     "validate_feature_specs",

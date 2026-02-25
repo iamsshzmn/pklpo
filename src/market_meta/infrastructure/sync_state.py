@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import text
@@ -97,7 +97,7 @@ class SyncStateManager:
             return
 
         if dry_run:
-            print(f"[DRY-RUN] Обновление sync_state:")
+            print("[DRY-RUN] Обновление sync_state:")
             print(f"  pipeline={pipeline}, symbol={symbol}, data_type={data_type}")
             print(f"  last_ts={last_ts}")
             return
@@ -148,7 +148,7 @@ class SyncStateManager:
         Returns:
             Кортеж (start_ts, end_ts) для загрузки. Если end_ts <= start_ts, окно пустое.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         end_ts = now - self._safety_lag
 
         last_ts = self.get_last_ts(pipeline, symbol, data_type)

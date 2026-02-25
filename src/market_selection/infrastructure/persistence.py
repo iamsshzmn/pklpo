@@ -38,10 +38,10 @@ class MarketSelectionPersistence:
         self,
         ts_eval: int,
         timeframe: str,
-        scores: list["TFScore"],
-        quality_results: dict[str, "QualityResult"],
+        scores: list[TFScore],
+        quality_results: dict[str, QualityResult],
         metrics_raw: dict[str, dict],
-        regime: "GlobalRegime",
+        regime: GlobalRegime,
         config_hash: str,
         window_days: int,
     ) -> int:
@@ -154,7 +154,7 @@ class MarketSelectionPersistence:
 
     async def insert_universe_version(
         self,
-        version: "UniverseVersion",
+        version: UniverseVersion,
     ) -> None:
         """
         Insert a new universe version record.
@@ -202,7 +202,7 @@ class MarketSelectionPersistence:
     async def insert_universe_entries(
         self,
         ts_version: int,
-        entries: list["UniverseEntry"],
+        entries: list[UniverseEntry],
         config_hash: str,
     ) -> int:
         """
@@ -327,7 +327,7 @@ class MarketSelectionPersistence:
     async def insert_regime_history(
         self,
         ts_eval: int,
-        regime: "GlobalRegime",
+        regime: GlobalRegime,
         config_hash: str,
     ) -> None:
         """Insert regime history record."""

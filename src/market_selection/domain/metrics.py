@@ -90,7 +90,7 @@ class PairMetricsCalculator:
 
     def calculate_all(
         self,
-        df: "pd.DataFrame",
+        df: pd.DataFrame,
         symbol: str,
         timeframe: str,
         expected_bars: int,
@@ -140,7 +140,7 @@ class PairMetricsCalculator:
             expected_bars=expected_bars,
         )
 
-    def _calc_volatility(self, df: "pd.DataFrame") -> float | None:
+    def _calc_volatility(self, df: pd.DataFrame) -> float | None:
         """
         Calculate volatility metric.
 
@@ -159,7 +159,7 @@ class PairMetricsCalculator:
         ratio = atr / (close + EPS)
         return float(ratio.median())
 
-    def _calc_trend_quality(self, df: "pd.DataFrame") -> float | None:
+    def _calc_trend_quality(self, df: pd.DataFrame) -> float | None:
         """
         Calculate trend quality metric.
 
@@ -196,7 +196,7 @@ class PairMetricsCalculator:
 
         return adx_norm * ema_slope_norm
 
-    def _calc_ema_slope(self, df: "pd.DataFrame", ema_col: str) -> float | None:
+    def _calc_ema_slope(self, df: pd.DataFrame, ema_col: str) -> float | None:
         """Calculate EMA slope using linear regression."""
         ema = df[ema_col].dropna()
 
@@ -223,7 +223,7 @@ class PairMetricsCalculator:
         slope = numerator / denominator
         return float(slope)
 
-    def _calc_noise(self, df: "pd.DataFrame") -> float | None:
+    def _calc_noise(self, df: pd.DataFrame) -> float | None:
         """
         Calculate noise metric.
 
@@ -251,7 +251,7 @@ class PairMetricsCalculator:
 
         return std_r / (median_r + EPS)
 
-    def _calc_stability(self, df: "pd.DataFrame") -> float | None:
+    def _calc_stability(self, df: pd.DataFrame) -> float | None:
         """
         Calculate stability metric using local regime classification.
 
@@ -348,7 +348,7 @@ class PairMetricsCalculator:
 
         return float(stability)
 
-    def _calc_liquidity(self, df: "pd.DataFrame") -> float | None:
+    def _calc_liquidity(self, df: pd.DataFrame) -> float | None:
         """
         Calculate liquidity metric.
 

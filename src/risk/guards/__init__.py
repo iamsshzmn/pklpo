@@ -15,4 +15,4 @@ from .health_guards import HealthGuard
 from .killswitch import KillSwitch
 from .sla_guards import SLAGuard
 
-__all__ = ["CircuitBreaker", "KillSwitch", "DQGuard", "SLAGuard", "HealthGuard"]
+__all__ = ["CircuitBreaker", "DQGuard", "HealthGuard", "KillSwitch", "SLAGuard"]

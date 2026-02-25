@@ -122,9 +122,9 @@ class ScoringEngine:
 
     def normalize_metrics(
         self,
-        metrics_df: "pd.DataFrame",
+        metrics_df: pd.DataFrame,
         timeframe: str,
-    ) -> "pd.DataFrame":
+    ) -> pd.DataFrame:
         """
         Normalize raw metrics to 0-1 using percentile rank.
 
@@ -195,7 +195,7 @@ class ScoringEngine:
         logger.debug(f"Normalized {n_eligible} symbols for {timeframe}")
         return df
 
-    def _zscore_sigmoid_normalize(self, values: "pd.Series") -> "pd.Series":
+    def _zscore_sigmoid_normalize(self, values: pd.Series) -> pd.Series:
         """
         Normalize using z-score → sigmoid.
 
@@ -244,7 +244,7 @@ class ScoringEngine:
 
     def calculate_tf_scores(
         self,
-        normalized_df: "pd.DataFrame",
+        normalized_df: pd.DataFrame,
         timeframe: str,
         regime: RegimeType,
         quality_scores: dict[str, float],

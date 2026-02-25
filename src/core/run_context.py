@@ -12,6 +12,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 
 def _get_algo_version() -> str:
@@ -24,7 +25,7 @@ def _get_algo_version() -> str:
         return "dev"
 
 
-def _compute_params_hash(params: dict) -> str:
+def _compute_params_hash(params: dict[str, Any]) -> str:
     """SHA-256 от JSON-сериализации словаря параметров (детерминированный порядок ключей)."""
     payload = json.dumps(params, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()
@@ -51,7 +52,7 @@ class RunContext:
     created_at: datetime
 
     @classmethod
-    def create(cls, params: dict | None = None) -> RunContext:
+    def create(cls, params: dict[str, Any] | None = None) -> RunContext:
         """
         Создаёт новый RunContext с уникальным run_id.
 
@@ -73,7 +74,7 @@ class RunContext:
         )
 
     @classmethod
-    def from_run_id(cls, run_id: str, params: dict | None = None) -> RunContext:
+    def from_run_id(cls, run_id: str, params: dict[str, Any] | None = None) -> RunContext:
         """
         Восстанавливает RunContext из существующего run_id (для replay/debug).
 

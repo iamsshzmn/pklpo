@@ -18,12 +18,12 @@ from .specs import (
 )
 
 __all__ = [
-    "FEATURE_SPECS",
     "FEATURE_GROUPS",
+    "FEATURE_SPECS",
     "PHASE_2_REQUIRED_FEATURES",
     "FeatureSpec",
     "get_features_by_type",
     "get_required_features",
-    "validate_phase2_requirements",
     "validate_feature_specs",
+    "validate_phase2_requirements",
 ]

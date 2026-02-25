@@ -18,4 +18,4 @@ logger.info("MTF System initialized")
 __version__ = "3.0.0"
 
 # Экспорт основных компонентов
-__all__ = ["logger", "MTFLogger", "MTFBuilder", "__version__"]
+__all__ = ["MTFBuilder", "MTFLogger", "__version__", "logger"]

@@ -13,4 +13,4 @@ from .defaults import DefaultSettings
 from .manager import UserSettingsManager
 from .validator import SettingsValidator
 
-__all__ = ["UserSettingsManager", "SettingsValidator", "DefaultSettings", "SettingsCLI"]
+__all__ = ["DefaultSettings", "SettingsCLI", "SettingsValidator", "UserSettingsManager"]

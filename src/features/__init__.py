@@ -28,14 +28,14 @@ __version__ = "1.0.0"
 __author__ = "Memory Optimization Team"
 
 __all__ = [
-    "compute_features",
     "FEATURE_SPECS",
+    "FeatureMetadata",
     "FeatureSpec",
     "FeatureTracer",
-    "FeatureMetadata",
-    "get_global_tracer",
-    "enable_tracing",
+    "compute_features",
     "disable_tracing",
-    "track_feature",
+    "enable_tracing",
     "get_feature_metadata",
+    "get_global_tracer",
+    "track_feature",
 ]

@@ -8,8 +8,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -70,9 +70,9 @@ def parse_dag_conf(conf: dict | None) -> ReprocessConf:
 def _parse_iso_datetime(value: str | datetime) -> datetime:
     """Парсит ISO-8601 строку или возвращает datetime."""
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 @dataclass
@@ -116,7 +116,7 @@ def get_run_window(
         RunWindowResult с t0, t1, mode и флагом skip.
     """
     if now_utc is None:
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
 
     if conf.reprocess:
         # Reprocess: используем явное окно

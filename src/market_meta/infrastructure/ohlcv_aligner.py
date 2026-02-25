@@ -156,20 +156,19 @@ class OHLCVAligner:
         if strategy == "nearest":
             if idx == 0:
                 return bar_timestamps[0]
-            elif idx == len(bar_timestamps):
+            if idx == len(bar_timestamps):
                 return bar_timestamps[-1]
-            else:
-                # Выбираем ближайший
-                before = bar_timestamps[idx - 1]
-                after = bar_timestamps[idx]
-                if (timestamp - before) < (after - timestamp):
-                    return before
-                return after
-        elif strategy == "floor":
+            # Выбираем ближайший
+            before = bar_timestamps[idx - 1]
+            after = bar_timestamps[idx]
+            if (timestamp - before) < (after - timestamp):
+                return before
+            return after
+        if strategy == "floor":
             if idx == 0:
                 return bar_timestamps[0] if timestamp >= bar_timestamps[0] else None
             return bar_timestamps[idx - 1]
-        elif strategy == "ceil":
+        if strategy == "ceil":
             if idx >= len(bar_timestamps):
                 return None
             return bar_timestamps[idx]

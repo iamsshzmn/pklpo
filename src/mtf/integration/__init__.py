@@ -26,13 +26,13 @@ logger = get_integration_logger()
 logger.info("Integration module initialized")
 
 __all__ = [
+    "DataSource",
     "IntegrationBuilder",
+    "IntegrationConfig",
     "IntegrationEngine",
+    "IntegrationMetrics",
     "IntegrationRequest",
     "IntegrationResult",
-    "IntegrationMetrics",
-    "IntegrationConfig",
-    "DataSource",
-    "NotificationType",
     "IntegrationStatus",
+    "NotificationType",
 ]

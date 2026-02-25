@@ -24,8 +24,6 @@ import warnings
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-from src.logging import get_logger
-
 warnings.warn(
     "src.features.infrastructure.retry is deprecated. "
     "Use src.utils.retry instead (get_db_retry, get_api_retry).",
@@ -49,7 +47,7 @@ except ImportError:
     retry = None  # type: ignore
 
 
-logger = get_logger("features.infrastructure.retry")
+logger = logging.getLogger("features.infrastructure.retry")
 
 T = TypeVar("T")
 

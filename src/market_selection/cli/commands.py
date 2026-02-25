@@ -14,11 +14,6 @@ import argparse
 import asyncio
 import json
 import logging
-import sys
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -280,7 +275,10 @@ async def _run_migrations() -> dict:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from src.database import get_async_engine
-    from src.market_selection.migrations import check_tables_exist, run_market_selection_migrations
+    from src.market_selection.migrations import (
+        check_tables_exist,
+        run_market_selection_migrations,
+    )
 
     engine = get_async_engine()
 
@@ -419,7 +417,7 @@ def handle(args: argparse.Namespace) -> int:
                 _run_pipeline(args.top_n, args.dry_run)
             )
             if result.get("success"):
-                print(f"Pipeline completed successfully")
+                print("Pipeline completed successfully")
                 print(f"  Universe size: {result['universe_size']}")
                 print(f"  Status: {result['status']}")
                 print(f"  Regime: {result['regime']}")
@@ -451,7 +449,7 @@ def handle(args: argparse.Namespace) -> int:
 
             if result.get("universe"):
                 u = result["universe"]
-                print(f"Universe Position:")
+                print("Universe Position:")
                 print(f"  Rank: {u['rank']}")
                 print(f"  Final Score: {u['final_score']:.4f}")
                 print(f"  Best TF: {u['best_tf']}")

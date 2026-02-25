@@ -44,12 +44,12 @@ class Thresholds:
             if value > self.warn:
                 return Severity.WARN
             return Severity.OK
-        else:  # lt
-            if value < self.critical:
-                return Severity.CRITICAL
-            if value < self.warn:
-                return Severity.WARN
-            return Severity.OK
+        # lt
+        if value < self.critical:
+            return Severity.CRITICAL
+        if value < self.warn:
+            return Severity.WARN
+        return Severity.OK
 
 
 # Дефолтные пороги из плана

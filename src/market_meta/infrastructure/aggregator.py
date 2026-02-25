@@ -4,9 +4,9 @@
 v1: агрегация 1m → {5m, 15m, 1H} с использованием реальных интервалов OHLCV.
 """
 
-import pandas as pd
 from datetime import datetime
-from typing import Any
+
+import pandas as pd
 
 from .logging_config import get_logger
 from .ohlcv_aligner import OHLCVAligner

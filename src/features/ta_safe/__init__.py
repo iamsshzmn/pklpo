@@ -14,7 +14,12 @@ Public API:
 import logging
 
 import pandas as pd
-import pandas_ta  # type: ignore[import-untyped]  # Активирует df.ta аксессор
+
+try:
+    import pandas_ta  # type: ignore[import-untyped]
+    _PANDAS_TA_AVAILABLE = True
+except ImportError:
+    _PANDAS_TA_AVAILABLE = False
 
 from .backend import _get_available_functions, safe_ta
 from .bridge import _talib_bridge
@@ -98,8 +103,8 @@ def safe_ta_with_fallback(
 
 # Re-export public API
 __all__ = [
-    "safe_ta_with_fallback",
+    "FeatureCalcError",
     "safe_ta",
     "safe_ta_fallback",
-    "FeatureCalcError",
+    "safe_ta_with_fallback",
 ]

@@ -9,8 +9,6 @@
 - check_event_freshness: свежесть событий funding/oi/l2
 """
 
-from datetime import datetime
-from typing import Any
 
 from asyncpg import Pool
 
@@ -26,7 +24,6 @@ from ..domain.quality import (
     SMOKE_THRESHOLDS,
     CheckResult,
     QualityReport,
-    Severity,
     Thresholds,
 )
 

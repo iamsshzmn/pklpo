@@ -27,13 +27,13 @@ logger = get_control_logger()
 logger.info("Control module initialized")
 
 __all__ = [
-    "ControlBuilder",
-    "ControlEngine",
-    "ControlRequest",
-    "ControlResult",
-    "ControlMetrics",
-    "ControlConfig",
-    "SystemStatus",
     "ComponentStatus",
     "ControlAction",
+    "ControlBuilder",
+    "ControlConfig",
+    "ControlEngine",
+    "ControlMetrics",
+    "ControlRequest",
+    "ControlResult",
+    "SystemStatus",
 ]

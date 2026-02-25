@@ -10,8 +10,8 @@ from .position_model import calculate_position
 from .recommend import recommend_for_score
 
 __all__ = [
-    "recommend_for_score",
-    "calculate_position",
-    "TradeRecommendation",
     "TradePosition",
+    "TradeRecommendation",
+    "calculate_position",
+    "recommend_for_score",
 ]

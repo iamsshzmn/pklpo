@@ -5,8 +5,7 @@ Retention политика для market_data_ext.
 для разных типов данных.
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
@@ -62,7 +61,7 @@ class MarketDataExtRetention:
         }
 
         # Определяем cutoff даты
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         l2_cutoff = now - timedelta(days=l2_retention_days)
         oi_cutoff = now - timedelta(days=oi_retention_days)
         funding_cutoff = now - timedelta(days=funding_retention_days)

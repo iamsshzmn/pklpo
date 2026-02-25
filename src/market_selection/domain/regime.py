@@ -108,7 +108,7 @@ class RegimeClassifier:
 
     def select_basket(
         self,
-        volume_data: "pd.DataFrame",
+        volume_data: pd.DataFrame,
     ) -> list[str]:
         """
         Select top-K symbols by median volume.
@@ -180,7 +180,7 @@ class RegimeClassifier:
 
     def aggregate_basket_metrics(
         self,
-        basket_data: "pd.DataFrame",
+        basket_data: pd.DataFrame,
     ) -> dict[str, float]:
         """
         Aggregate metrics across basket using weighted median.
@@ -278,7 +278,7 @@ class RegimeClassifier:
     def compute_global_regime(
         self,
         basket_symbols: list[str],
-        tf_data: dict[str, "pd.DataFrame"],
+        tf_data: dict[str, pd.DataFrame],
         atr_percentiles: dict[str, float],
     ) -> GlobalRegime:
         """

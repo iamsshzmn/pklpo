@@ -13,7 +13,6 @@ import json
 import os
 
 import click
-from sqlalchemy import create_engine
 
 from ..application.api import (
     get_instrument_info,
@@ -845,7 +844,6 @@ def cleanup_market_data_ext(dry_run: bool, verbose: bool):
 
     L2: 7 дней, OI: 90 дней, Funding: 730 дней.
     """
-    import os
 
     from sqlalchemy import create_engine
 

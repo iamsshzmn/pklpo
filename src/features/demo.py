@@ -19,10 +19,9 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 # Import from local modules
 from calc import compute_and_dump_parquet, process_chunks
 from core import compute_features
+from src.features.config import create_streaming_config
 from strategy import get_max_lookback_for_strategies
 from utils.memlog import force_cleanup, memory_monitor
-
-from src.features.config import create_streaming_config
 
 
 def create_demo_data(n_rows: int = 10000) -> pd.DataFrame:

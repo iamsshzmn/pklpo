@@ -8,7 +8,11 @@ and standardized feature names, with capability checking and fallback handling.
 import logging
 
 import pandas as pd
-import pandas_ta as ta  # type: ignore[import-untyped]
+
+try:
+    import pandas_ta as ta  # type: ignore[import-untyped]
+except ImportError:
+    ta = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 

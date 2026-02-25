@@ -6,12 +6,11 @@
 - Чтение последних метрик для дашбордов
 """
 
-from datetime import datetime
 from typing import Any
 
 from asyncpg import Connection, Pool
 
-from ..domain.quality import CheckResult, Severity
+from ..domain.quality import CheckResult
 
 
 class QualityMetricsRepository:

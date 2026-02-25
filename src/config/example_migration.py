@@ -135,7 +135,7 @@ def example_environment_check():
 
 def example_custom_settings():
     """Пример с переопределением настроек для тестов."""
-    from src.config.settings import Settings, DatabaseSettings, RiskSettings
+    from src.config.settings import DatabaseSettings, RiskSettings, Settings
 
     # Создаём кастомные настройки для тестов
     test_settings = Settings(

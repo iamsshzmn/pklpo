@@ -35,10 +35,8 @@ from .normalizer import MarketDataNormalizer
 from .ohlcv_aligner import OHLCVAligner
 from .okx_integration import OKXMetadataLoader
 from .orders import OKXOrders
-from .raw_ingest import RawIngestor, compute_payload_hash
-from .retention import MarketDataExtRetention
-from .sync_state import SyncStateManager
 from .quality_repository import QualityMetricsRepository
+from .raw_ingest import RawIngestor, compute_payload_hash
 from .reprocess import (
     ReprocessConf,
     RunWindowResult,
@@ -49,6 +47,8 @@ from .reprocess import (
     maybe_update_watermark,
     parse_dag_conf,
 )
+from .retention import MarketDataExtRetention
+from .sync_state import SyncStateManager
 
 __all__ = [
     # Клиенты

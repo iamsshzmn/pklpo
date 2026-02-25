@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import get_async_session
-
 from features.name_mapping import get_available_indicators, validate_versions
 from features.specs import FEATURE_SPECS, PHASE_2_REQUIRED_FEATURES
 

@@ -62,7 +62,7 @@ class RetryConfig:
         cls,
         settings: RetrySettings | None = None,
         preset: str = "default",
-    ) -> "RetryConfig":
+    ) -> RetryConfig:
         """
         Создаёт конфигурацию из централизованных настроек.
 
@@ -85,7 +85,7 @@ class RetryConfig:
                 exponential_base=settings.exponential_base,
                 jitter=settings.jitter,
             )
-        elif preset == "api":
+        if preset == "api":
             return cls(
                 max_attempts=settings.api_max_attempts,
                 base_delay=settings.api_base_delay,
@@ -93,14 +93,14 @@ class RetryConfig:
                 exponential_base=settings.exponential_base,
                 jitter=settings.jitter,
             )
-        else:  # default
-            return cls(
-                max_attempts=settings.max_attempts,
-                base_delay=settings.base_delay,
-                max_delay=settings.max_delay,
-                exponential_base=settings.exponential_base,
-                jitter=settings.jitter,
-            )
+        # default
+        return cls(
+            max_attempts=settings.max_attempts,
+            base_delay=settings.base_delay,
+            max_delay=settings.max_delay,
+            exponential_base=settings.exponential_base,
+            jitter=settings.jitter,
+        )
 
 
 def calculate_delay(attempt: int, config: RetryConfig) -> float:

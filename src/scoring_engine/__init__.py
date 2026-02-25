@@ -16,12 +16,12 @@ from .processor import (
 )
 
 __all__ = [
-    "compute_score",
     "ScoreResult",
     "ScoreResultModel",
     "ScoringEngine",
+    "ScoringProcessor",
+    "compute_score",
+    "get_score_statistics",
     "process_all_scores",
     "process_symbol_scores",
-    "get_score_statistics",
-    "ScoringProcessor",
 ]

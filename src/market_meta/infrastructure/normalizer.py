@@ -7,7 +7,6 @@ v2: поддержка чтения из raw.market_data_ext_raw.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
@@ -109,21 +108,20 @@ class MarketDataNormalizer:
 
         if data_type == "funding":
             return self._normalize_funding(records, symbol, bar_timestamps)
-        elif data_type == "oi":
+        if data_type == "oi":
             return self._normalize_oi(records, symbol, bar_timestamps)
-        elif data_type == "l2":
+        if data_type == "l2":
             return self._normalize_l2(records, symbol, bar_timestamps)
-        else:
-            logger.warning(f"Неизвестный тип данных: {data_type}")
-            return []
+        logger.warning(f"Неизвестный тип данных: {data_type}")
+        return []
 
     def _detect_data_type(self, record: dict[str, Any]) -> str:
         """Определяет тип данных по полям записи"""
         if "funding_rate" in record or "fundingRate" in record:
             return "funding"
-        elif "open_interest" in record or "oi" in record:
+        if "open_interest" in record or "oi" in record:
             return "oi"
-        elif "bid_imbalance" in record or "bids" in record:
+        if "bid_imbalance" in record or "bids" in record:
             return "l2"
         return "unknown"
 
@@ -263,12 +261,12 @@ class MarketDataNormalizer:
         ts = record.get("timestamp") or record.get("ts")
         if isinstance(ts, datetime):
             return ts
-        elif isinstance(ts, (int, float)):
+        if isinstance(ts, (int, float)):
             # Конвертируем из миллисекунд или секунд
             if ts > 1e10:  # миллисекунды
                 return datetime.fromtimestamp(ts / 1000)
-            else:  # секунды
-                return datetime.fromtimestamp(ts)
+            # секунды
+            return datetime.fromtimestamp(ts)
         return None
 
     # =========================================================================

@@ -29,8 +29,12 @@ from ..config import MarketSelectionConfig, get_config
 from ..domain.metrics import PairMetricsCalculator
 from ..domain.quality_gate import DataQualityGate, QualityResult, ReasonFlag
 from ..domain.regime import GlobalRegime, RegimeClassifier, RegimeType
-from ..domain.scoring import FinalScore, ScoringEngine, TFScore
-from ..domain.universe import UniverseEntry, UniverseManager, UniverseStatus, UniverseVersion
+from ..domain.scoring import ScoringEngine
+from ..domain.universe import (
+    UniverseManager,
+    UniverseStatus,
+    UniverseVersion,
+)
 from ..infrastructure.database import MarketSelectionDB
 from ..infrastructure.monitoring import record_pipeline_metrics
 from ..infrastructure.persistence import MarketSelectionPersistence
@@ -76,7 +80,7 @@ class MarketSelectionPipeline:
 
     def __init__(
         self,
-        session: "AsyncSession",
+        session: AsyncSession,
         config: MarketSelectionConfig | None = None,
     ):
         self.session = session

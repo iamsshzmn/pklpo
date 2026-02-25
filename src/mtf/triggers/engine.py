@@ -113,9 +113,7 @@ class TriggersEngine:
             successful_timeframes = 0
             total_p_up = 0.0
             total_p_down = 0.0
-            acceleration_counts: dict[AccelerationType, int] = {
-                at: 0 for at in AccelerationType
-            }
+            acceleration_counts: dict[AccelerationType, int] = dict.fromkeys(AccelerationType, 0)
             micro_filter_passed_count = 0
             all_errors = []
 
