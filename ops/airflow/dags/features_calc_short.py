@@ -15,7 +15,7 @@ DAG: features_calc_short
 import asyncio
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -201,7 +201,7 @@ async def check_has_work_to_do(
     if is_manual_run:
         return True  # Ручной запуск всегда выполняем
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
 
     # Пропускаем DAG только если ВСЕ таймфреймы свежие и синхронизированы
     all_fresh = True
@@ -813,7 +813,7 @@ def features_calc_short_validate_task(**context):
                 max_ts = res.scalar()
                 if max_ts:
                     lag_sec = (
-                        datetime.now(timezone.utc).timestamp() * 1000 - max_ts
+                        datetime.now(UTC).timestamp() * 1000 - max_ts
                     ) / 1000
                     print(f"Lag for {tf}: {lag_sec:.0f}s")
 

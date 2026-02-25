@@ -109,7 +109,6 @@ def _parse_datetime(value: str | datetime | None) -> datetime | None:
     if isinstance(value, datetime):
         return value
     # ISO8601 парсинг
-    from datetime import timezone
 
     try:
         # Пробуем с Z

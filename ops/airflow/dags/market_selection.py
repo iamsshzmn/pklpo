@@ -258,7 +258,9 @@ async def _cleanup_old_data_async(database_url: str) -> dict[str, Any]:
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
     from src.market_selection.config import MarketSelectionConfig
-    from src.market_selection.infrastructure.persistence import MarketSelectionPersistence
+    from src.market_selection.infrastructure.persistence import (
+        MarketSelectionPersistence,
+    )
 
     engine = create_async_engine(database_url, echo=False)
     config = MarketSelectionConfig()

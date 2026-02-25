@@ -34,7 +34,7 @@ DAG: okx_swap_ohlcv_sync
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -176,7 +176,7 @@ def get_sync_config(context: dict[str, Any]) -> dict[str, Any]:
     }
 
     # Получаем базовую конфигурацию для режима и копируем для модификации
-    selected_config = cast(dict[str, Any], mode_configs.get(mode, mode_configs["fast"]))
+    selected_config = cast("dict[str, Any]", mode_configs.get(mode, mode_configs["fast"]))
     base_config: dict[str, Any] = dict(selected_config)
 
     # Переопределение из conf
@@ -210,9 +210,9 @@ def should_refresh_instruments(context: dict[str, Any]) -> bool:
     cache_file = Path("/tmp/pklpo/instruments_list.json")
     if cache_file.exists():
         age_hours = (
-            datetime.now(timezone.utc).timestamp()
+            datetime.now(UTC).timestamp()
             - datetime.fromtimestamp(
-                cache_file.stat().st_mtime, tz=timezone.utc
+                cache_file.stat().st_mtime, tz=UTC
             ).timestamp()
         ) / 3600
         if age_hours < 24:
@@ -298,7 +298,7 @@ def refresh_okx_meta_task(**context):
 
 def swap_sync_task(**context):
     """Запускает синхронизацию swap свечей с параметризацией через dag_run.conf."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from sqlalchemy import text
 
@@ -342,8 +342,8 @@ def swap_sync_task(**context):
                 )
                 return False
 
-            max_ts_dt = datetime.fromtimestamp(max_ts_ms / 1000, tz=timezone.utc)
-            lag_sec = (datetime.now(timezone.utc) - max_ts_dt).total_seconds()
+            max_ts_dt = datetime.fromtimestamp(max_ts_ms / 1000, tz=UTC)
+            lag_sec = (datetime.now(UTC) - max_ts_dt).total_seconds()
 
             if lag_sec < max_lag_seconds:
                 print(
@@ -405,7 +405,7 @@ def swap_sync_task(**context):
 
 def smoke_validate_task(**context):
     """Валидация данных без subprocess."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from sqlalchemy import text
 
@@ -433,13 +433,13 @@ def smoke_validate_task(**context):
             )
             max_ts_ms = res_max.scalar()
             if max_ts_ms:
-                max_ts_dt = datetime.fromtimestamp(max_ts_ms / 1000, tz=timezone.utc)
-                lag_sec = (datetime.now(timezone.utc) - max_ts_dt).total_seconds()
+                max_ts_dt = datetime.fromtimestamp(max_ts_ms / 1000, tz=UTC)
+                lag_sec = (datetime.now(UTC) - max_ts_dt).total_seconds()
                 print(f"Max timestamp: {max_ts_dt} (lag: {lag_sec:.0f}s)")
 
             # Данные за сегодня (timestamp в миллисекундах)
             start_of_day_ms = int(
-                datetime.now(timezone.utc)
+                datetime.now(UTC)
                 .replace(hour=0, minute=0, second=0, microsecond=0)
                 .timestamp()
                 * 1000
@@ -479,7 +479,7 @@ def smoke_validate_task(**context):
                     max_tf_ts = res_tf.scalar()
                     if max_tf_ts:
                         lag_sec = (
-                            datetime.now(timezone.utc).timestamp() * 1000 - max_tf_ts
+                            datetime.now(UTC).timestamp() * 1000 - max_tf_ts
                         ) / 1000
                         print(f"Lag for {tf}: {lag_sec:.0f}s")
 
