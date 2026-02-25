@@ -4,7 +4,7 @@
 Все фикстуры работают без подключения к БД.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
@@ -20,7 +20,7 @@ def run_ctx() -> RunContext:
         run_id="00000000-0000-0000-0000-000000000001",
         algo_version="test",
         params_hash="a" * 64,
-        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 
