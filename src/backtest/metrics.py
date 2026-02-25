@@ -2,6 +2,16 @@
 Метрики для оценки качества торговых сигналов и quant-стратегий.
 
 Единая точка для всех trading metrics: Sharpe, DSR, PnL, MaxDD.
+
+Sharpe:
+    Единая реализация — ``sharpe_ratio(returns, rf, periods)``.
+    periods=365 для крипто, 252 для акций, 525600 для 1-минутных данных.
+
+DSR (Deflated Sharpe Ratio):
+    ``deflated_sharpe_ratio(sr_observed, n_trials, var_sr, T)``
+    Штрафует SR за множественное тестирование стратегий.
+    var_sr рекомендуется вычислять из CPCV path metrics (bootstrap).
+    Ref: Bailey & Lopez de Prado (2014), "The Deflated Sharpe Ratio".
 """
 
 import numpy as np
@@ -116,15 +126,78 @@ def sharpe_ratio(
     return float(np.mean(excess) / std * np.sqrt(periods))
 
 
-def calc_sharpe_ratio(pnl_list: list[float], risk_free_rate: float = 0.02) -> float:
+def deflated_sharpe_ratio(
+    sr_observed: float,
+    n_trials: int,
+    var_sr: float,
+    T: int,
+) -> tuple[float, float]:
     """
-    Коэффициент Шарпа (устаревший интерфейс, оставлен для совместимости).
+    Deflated Sharpe Ratio (DSR).
 
-    .. deprecated::
-        Используй ``sharpe_ratio(returns, rf, periods)`` напрямую.
-        Этот wrapper предполагает 1-минутные данные (periods=525600).
+    Корректирует SR за смещение выборки при тестировании нескольких стратегий.
+    DSR — вероятность того, что истинный SR > 0 с учётом множественного тестирования.
+
+    Алгоритм:
+        1. Вычислить ожидаемый максимальный SR из n_trials независимых тестов,
+           если SR ~ N(0, var_sr) (нулевая гипотеза).
+        2. DSR = Φ[(SR_obs - E[max SR]) / σ_SR_estimator]
+           где σ_SR_estimator = √(var_sr / T).
+
+    Args:
+        sr_observed: Наблюдаемый (максимальный) аннуализированный Sharpe Ratio.
+        n_trials:    Число независимых протестированных стратегий / параметров.
+        var_sr:      Дисперсия SR из CPCV path metrics (bootstrap оценка).
+                     Например: ``cpcv.get_path_metrics(...)[\"score\"].var()``.
+        T:           Число наблюдений (длина ряда доходностей).
+
+    Returns:
+        (dsr, p_value):
+            dsr:     P(SR > 0 | multiple testing). Число в [0, 1].
+            p_value: 1 - dsr. Малый p_value ↔ статистически значимый SR.
+
+    Raises:
+        ValueError: при некорректных аргументах.
+
+    Reference:
+        Bailey & Lopez de Prado (2014), "The Deflated Sharpe Ratio:
+        Correcting for Selection Bias, Backtest Overfitting and Non-Normality",
+        https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2460551
     """
-    return sharpe_ratio(pnl_list, rf=risk_free_rate, periods=525600)
+    from scipy.stats import norm  # lazy import to avoid hard dependency at module level
+
+    if var_sr <= 0:
+        raise ValueError(f"var_sr must be > 0, got {var_sr}")
+    if n_trials < 1:
+        raise ValueError(f"n_trials must be >= 1, got {n_trials}")
+    if T < 2:
+        raise ValueError(f"T must be >= 2, got {T}")
+
+    sr_std = float(np.sqrt(var_sr))
+
+    if n_trials == 1:
+        # Без поправки на множественное тестирование
+        dsr = float(norm.cdf(sr_observed / sr_std))
+        return dsr, 1.0 - dsr
+
+    # Ожидаемый максимальный SR из n_trials независимых тестов
+    # при нулевой гипотезе SR ~ N(0, var_sr)
+    # Аппроксимация через постоянную Эйлера–Маскерони (AFML Ch.8)
+    EULER_GAMMA = 0.5772156649015328
+    z1 = norm.ppf(1.0 - 1.0 / n_trials)
+    z2 = norm.ppf(1.0 - 1.0 / (n_trials * np.e))
+    expected_max_sr = sr_std * ((1.0 - EULER_GAMMA) * z1 + EULER_GAMMA * z2)
+
+    # Стандартное отклонение оценщика SR (упрощение: нормальные доходности под H0)
+    # V(SR_hat) ≈ var_sr / T для большого T
+    sr_estimator_std = sr_std / float(np.sqrt(T))
+
+    if sr_estimator_std <= 0:
+        dsr = 1.0 if sr_observed >= expected_max_sr else 0.0
+        return dsr, 1.0 - dsr
+
+    dsr = float(norm.cdf((sr_observed - expected_max_sr) / sr_estimator_std))
+    return dsr, 1.0 - dsr
 
 
 def calc_max_drawdown(pnl_list: list[float]) -> float:
@@ -190,7 +263,7 @@ def calc_metrics(
     return {
         "total_pnl": total_pnl,
         "total_pnl_percent": total_pnl * 100,
-        "sharpe_ratio": calc_sharpe_ratio(pnl_list),
+        "sharpe_ratio": sharpe_ratio(pnl_list, periods=525600),
         "max_drawdown": calc_max_drawdown(pnl_list),
         "win_rate": calc_win_rate(pnl_list),
         "total_trades": len([pnl for pnl in pnl_list if pnl != 0.0]),

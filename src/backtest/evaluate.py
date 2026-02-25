@@ -3,6 +3,7 @@
 """
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy import text
@@ -11,6 +12,8 @@ from src.database import get_async_session
 from src.logging_config import setup_logging
 
 from .metrics import calc_metrics
+
+logger = logging.getLogger(__name__)
 
 
 class SignalEvaluator:
@@ -42,7 +45,7 @@ class SignalEvaluator:
         Returns:
             Dict: Результаты оценки
         """
-        print(f"🔍 Оценка сигналов для {symbol} {timeframe}...")
+        logger.info("Оценка сигналов для %s %s...", symbol, timeframe)
 
         async for session in get_async_session():
             try:
@@ -52,14 +55,14 @@ class SignalEvaluator:
                 )
 
                 if not signals:
-                    print(f"❌ Нет сигналов для {symbol}")
+                    logger.warning("Нет сигналов для %s", symbol)
                     return {}
 
                 # Получаем цены OHLCV
                 prices = await self._fetch_prices(session, symbol, timeframe, days_back)
 
                 if not prices:
-                    print(f"❌ Нет цен для {symbol}")
+                    logger.warning("Нет цен для %s", symbol)
                     return {}
 
                 # Рассчитываем метрики
@@ -76,13 +79,13 @@ class SignalEvaluator:
                     **metrics,
                 }
 
-                print(f"✅ Оценка завершена для {symbol}")
+                logger.info("Оценка завершена для %s", symbol)
                 self._print_metrics(result)
 
                 return result
 
             except Exception as e:
-                print(f"❌ Ошибка при оценке {symbol}: {e}")
+                logger.error("Ошибка при оценке %s: %s", symbol, e)
                 return {}
             finally:
                 break
@@ -101,7 +104,7 @@ class SignalEvaluator:
         Returns:
             List[Dict]: Список результатов оценки
         """
-        print("🚀 Оценка сигналов для всех символов...")
+        logger.info("Оценка сигналов для всех символов...")
 
         async for session in get_async_session():
             try:
@@ -111,10 +114,10 @@ class SignalEvaluator:
                 )
 
                 if not symbols:
-                    print("❌ Нет символов с сигналами")
+                    logger.warning("Нет символов с сигналами")
                     return []
 
-                print(f"📊 Найдено {len(symbols)} символов для оценки")
+                logger.info("Найдено %d символов для оценки", len(symbols))
 
                 results = []
                 for symbol in symbols:
@@ -125,18 +128,21 @@ class SignalEvaluator:
                 # Сортируем по Sharpe ratio
                 results.sort(key=lambda x: x.get("sharpe_ratio", 0), reverse=True)
 
-                print("\n📈 Топ-5 символов по Sharpe ratio:")
+                logger.info("Топ-5 символов по Sharpe ratio:")
                 for i, result in enumerate(results[:5], 1):
-                    print(
-                        f"   {i}. {result['symbol']}: Sharpe={result['sharpe_ratio']:.2f}, "
-                        f"PnL={result['total_pnl_percent']:.2f}%, "
-                        f"DD={result['max_drawdown']:.2f}%"
+                    logger.info(
+                        "  %d. %s: Sharpe=%.2f, PnL=%.2f%%, DD=%.2f%%",
+                        i,
+                        result["symbol"],
+                        result["sharpe_ratio"],
+                        result["total_pnl_percent"],
+                        result["max_drawdown"],
                     )
 
                 return results
 
             except Exception as e:
-                print(f"❌ Ошибка при оценке всех символов: {e}")
+                logger.error("Ошибка при оценке всех символов: %s", e)
                 return []
             finally:
                 break
@@ -239,12 +245,12 @@ class SignalEvaluator:
         return [row.symbol for row in result.fetchall()]
 
     def _print_metrics(self, metrics: dict):
-        """Выводит метрики в консоль."""
-        print(f"   📊 PnL: {metrics['total_pnl_percent']:.2f}%")
-        print(f"   📈 Sharpe: {metrics['sharpe_ratio']:.2f}")
-        print(f"   📉 Max DD: {metrics['max_drawdown']:.2f}%")
-        print(f"   🎯 Win Rate: {metrics['win_rate']:.1f}%")
-        print(f"   🔄 Trades: {metrics['total_trades']}")
+        """Выводит метрики в лог."""
+        logger.info("  PnL: %.2f%%", metrics["total_pnl_percent"])
+        logger.info("  Sharpe: %.2f", metrics["sharpe_ratio"])
+        logger.info("  Max DD: %.2f%%", metrics["max_drawdown"])
+        logger.info("  Win Rate: %.1f%%", metrics["win_rate"])
+        logger.info("  Trades: %d", metrics["total_trades"])
 
 
 async def main():
@@ -255,7 +261,7 @@ async def main():
     results = await evaluator.evaluate_all_symbols(days_back=7)
 
     if results:
-        print(f"\n✅ Оценка завершена для {len(results)} символов")
+        logger.info("Оценка завершена для %d символов", len(results))
 
         # Сохраняем результаты в файл
         import json
@@ -265,9 +271,9 @@ async def main():
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False, default=str)
 
-        print(f"💾 Результаты сохранены в {filename}")
+        logger.info("Результаты сохранены в %s", filename)
     else:
-        print("❌ Нет результатов для оценки")
+        logger.warning("Нет результатов для оценки")
 
 
 if __name__ == "__main__":
