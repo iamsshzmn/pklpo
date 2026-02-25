@@ -33,11 +33,15 @@ def create_parser() -> argparse.ArgumentParser:
     # Register subcommands
     from src.candles import load_instruments as cmd_load_instruments
     from src.cli.commands import (
+        bars as cmd_bars,
         cleanup as cmd_cleanup,
         features as cmd_features,
+        label as cmd_label,
+        metrics as cmd_metrics,
         migrate as cmd_migrate,
         pipeline as cmd_pipeline,
         swap_sync as cmd_swap,
+        train as cmd_train,
         update_list as cmd_update_list,
     )
     from src.market_selection.cli import commands as cmd_market_selection
@@ -49,6 +53,7 @@ def create_parser() -> argparse.ArgumentParser:
     # from src.cli.commands import risk as cmd_risk
 
     cmd_migrate.register(subparsers)
+    cmd_bars.register(subparsers)
     cmd_load_instruments.register(subparsers)
     cmd_swap.register(subparsers)
     cmd_pipeline.register(subparsers)
@@ -56,6 +61,9 @@ def create_parser() -> argparse.ArgumentParser:
     cmd_update_list.register(subparsers)
     cmd_cleanup.register(subparsers)
     cmd_market_selection.register(subparsers)
+    cmd_label.register(subparsers)
+    cmd_train.register(subparsers)
+    cmd_metrics.register(subparsers)
     # cmd_mtf.register(subparsers)
     # cmd_mtf_migrate.register(subparsers)
     # cmd_signals.register(subparsers)
