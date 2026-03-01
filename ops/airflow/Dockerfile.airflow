@@ -1,0 +1,40 @@
+FROM apache/airflow:2.9.3
+
+# Установка дополнительных зависимостей
+USER root
+RUN apt-get update && apt-get install -y \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Копирование проекта
+COPY . /opt/airflow/project/
+RUN chown -R airflow:root /opt/airflow/project/
+
+# Копирование DAG файлов
+COPY ops/airflow/dags /opt/airflow/dags/
+RUN chown -R airflow:root /opt/airflow/dags/
+
+# Установка Python зависимостей
+USER airflow
+RUN pip install --no-cache-dir \
+    aiolimiter \
+    pydantic-settings \
+    asyncpg \
+    tqdm \
+    pandas-ta \
+    aiohttp \
+    sqlalchemy \
+    numpy \
+    pandas \
+    pyyaml \
+    requests \
+    pydantic \
+    psutil \
+    python-dotenv
+
+# Установка проекта в режиме разработки
+WORKDIR /opt/airflow/project
+RUN pip install -e .
+
+# Возврат к пользователю airflow
+USER airflow

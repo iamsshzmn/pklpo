@@ -1,0 +1,246 @@
+"""
+Moving Average indicator specifications.
+
+This module contains all moving average-related feature specifications.
+"""
+
+from ..domain.models import FeatureSpec
+
+# Moving Average indicators
+MA_FEATURES = {
+    "sma_20": FeatureSpec(
+        name="sma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Simple Moving Average (20 periods)",
+    ),
+    "sma_34": FeatureSpec(
+        name="sma_34",
+        type="ma",
+        params={"period": 34},
+        requires=["close"],
+        description="Simple Moving Average (34 periods)",
+    ),
+    "sma_50": FeatureSpec(
+        name="sma_50",
+        type="ma",
+        params={"period": 50},
+        requires=["close"],
+        description="Simple Moving Average (50 periods)",
+    ),
+    "sma_200": FeatureSpec(
+        name="sma_200",
+        type="ma",
+        params={"period": 200},
+        requires=["close"],
+        description="Simple Moving Average (200 periods)",
+    ),
+    "ema_8": FeatureSpec(
+        name="ema_8",
+        type="ma",
+        params={"period": 8},
+        requires=["close"],
+        description="Exponential Moving Average (8 periods)",
+    ),
+    "ema_12": FeatureSpec(
+        name="ema_12",
+        type="ma",
+        params={"period": 12},
+        requires=["close"],
+        description="Exponential Moving Average (12 periods)",
+    ),
+    "ema_13": FeatureSpec(
+        name="ema_13",
+        type="ma",
+        params={"period": 13},
+        requires=["close"],
+        description="Exponential Moving Average (13 periods)",
+    ),
+    "ema_21": FeatureSpec(
+        name="ema_21",
+        type="ma",
+        params={"period": 21},
+        requires=["close"],
+        description="Exponential Moving Average (21 periods)",
+    ),
+    "ema_26": FeatureSpec(
+        name="ema_26",
+        type="ma",
+        params={"period": 26},
+        requires=["close"],
+        description="Exponential Moving Average (26 periods)",
+    ),
+    "ema_34": FeatureSpec(
+        name="ema_34",
+        type="ma",
+        params={"period": 34},
+        requires=["close"],
+        description="Exponential Moving Average (34 periods)",
+    ),
+    "ema_50": FeatureSpec(
+        name="ema_50",
+        type="ma",
+        params={"period": 50},
+        requires=["close"],
+        description="Exponential Moving Average (50 periods)",
+    ),
+    "ema_55": FeatureSpec(
+        name="ema_55",
+        type="ma",
+        params={"period": 55},
+        requires=["close"],
+        description="Exponential Moving Average (55 periods)",
+    ),
+    "ema_89": FeatureSpec(
+        name="ema_89",
+        type="ma",
+        params={"period": 89},
+        requires=["close"],
+        description="Exponential Moving Average (89 periods)",
+    ),
+    "ema_144": FeatureSpec(
+        name="ema_144",
+        type="ma",
+        params={"period": 144},
+        requires=["close"],
+        description="Exponential Moving Average (144 periods)",
+    ),
+    "ema_200": FeatureSpec(
+        name="ema_200",
+        type="ma",
+        params={"period": 200},
+        requires=["close"],
+        description="Exponential Moving Average (200 periods)",
+    ),
+    "ema_233": FeatureSpec(
+        name="ema_233",
+        type="ma",
+        params={"period": 233},
+        requires=["close"],
+        description="Exponential Moving Average (233 periods)",
+    ),
+    "wma_20": FeatureSpec(
+        name="wma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Weighted Moving Average (20 periods)",
+    ),
+    "hma_20": FeatureSpec(
+        name="hma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Hull Moving Average (20 periods)",
+    ),
+    "kama_20": FeatureSpec(
+        name="kama_20",
+        type="ma",
+        params={"period": 20, "fast_period": 2, "slow_period": 30},
+        requires=["close"],
+        description="Kaufman Adaptive Moving Average (20 periods)",
+    ),
+    "tema_20": FeatureSpec(
+        name="tema_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Triple Exponential Moving Average (20 periods)",
+    ),
+    "dema_20": FeatureSpec(
+        name="dema_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Double Exponential Moving Average (20 periods)",
+    ),
+}
+
+# Stage B: Additional Moving Averages and Overlap-like MAs
+ADV_MA_FEATURES = {
+    "alma_20": FeatureSpec(
+        name="alma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Arnaud Legoux Moving Average (20)",
+    ),
+    "fwma_20": FeatureSpec(
+        name="fwma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Fractal Weighted Moving Average (20)",
+    ),
+    "rma_20": FeatureSpec(
+        name="rma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Wilder RMA (20)",
+    ),
+    "t3_20": FeatureSpec(
+        name="t3_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="T3 Moving Average (20)",
+    ),
+    "trima_20": FeatureSpec(
+        name="trima_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Triangular Moving Average (20)",
+    ),
+    "vidya_20": FeatureSpec(
+        name="vidya_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="VIDYA (20)",
+    ),
+    "zlma_20": FeatureSpec(
+        name="zlma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Zero Lag Moving Average (20)",
+    ),
+    "sinwma_20": FeatureSpec(
+        name="sinwma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Sine Weighted Moving Average (20)",
+    ),
+    "swma_20": FeatureSpec(
+        name="swma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Symmetric Weighted Moving Average (20)",
+    ),
+    "pwma_20": FeatureSpec(
+        name="pwma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Power Weighted Moving Average (20)",
+    ),
+    "hwma_20": FeatureSpec(
+        name="hwma_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Hann Window Moving Average (20)",
+    ),
+    "linreg_20": FeatureSpec(
+        name="linreg_20",
+        type="ma",
+        params={"period": 20},
+        requires=["close"],
+        description="Linear Regression (20)",
+    ),
+}

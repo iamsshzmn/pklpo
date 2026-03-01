@@ -1,0 +1,20 @@
+{
+  "_comment_security": "SECURITY: Paths are validated and sanitized. Path traversal (../) is blocked. All paths must be within $HOME.",
+  "min_session_length": 10,
+  "extraction_threshold": "medium",
+  "auto_approve": false,
+  "learned_skills_path": "~/.claude/skills/learned/",
+  "_comment_path": "SECURITY: This path must start with ~/ or be within $HOME. Path traversal attempts will be rejected.",
+  "patterns_to_detect": [
+    "error_resolution",
+    "user_corrections",
+    "workarounds",
+    "debugging_techniques",
+    "project_specific"
+  ],
+  "ignore_patterns": [
+    "simple_typos",
+    "one_time_fixes",
+    "external_api_issues"
+  ]
+}

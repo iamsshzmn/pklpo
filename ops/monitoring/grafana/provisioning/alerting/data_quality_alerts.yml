@@ -1,0 +1,277 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: PKLPO Data Quality
+    folder: PKLPO
+    interval: 1m
+    rules:
+      # --- Freshness ---
+      - uid: pklpo-freshness-warning
+        title: "Freshness Lag Warning"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_data_freshness_lag_seconds
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [900]
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Data freshness lag exceeds warning threshold (>900s)"
+          description: "Freshness lag for {{ $labels.timeframe }}: {{ $value }}s"
+
+      - uid: pklpo-freshness-critical
+        title: "Freshness Lag Critical"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_data_freshness_lag_seconds
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2700]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "Data freshness lag exceeds critical threshold (>2700s)"
+          description: "Freshness lag for {{ $labels.timeframe }}: {{ $value }}s. Immediate action required."
+
+      # --- Fill Rate ---
+      - uid: pklpo-fillrate-warning
+        title: "Fill Rate Low"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_data_fill_rate
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: min
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [0.995]
+              refId: C
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Fill rate below 99.5%"
+          description: "Fill rate for {{ $labels.timeframe }}: {{ $value | humanizePercentage }}"
+
+      - uid: pklpo-fillrate-critical
+        title: "Fill Rate Critical"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_data_fill_rate
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: min
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [0.95]
+              refId: C
+        for: 10m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "Fill rate below 95% - critical data quality issue"
+          description: "Fill rate for {{ $labels.timeframe }}: {{ $value | humanizePercentage }}. Data pipeline may be broken."
+
+      # --- Hole Rate ---
+      - uid: pklpo-holerate-warning
+        title: "Hole Rate High"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_data_hole_rate
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.001]
+              refId: C
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Hole rate exceeds 0.1%"
+          description: "Missing bars rate for {{ $labels.timeframe }}: {{ $value | humanizePercentage }}"
+
+      # --- Duplicates ---
+      - uid: pklpo-duplicates-warning
+        title: "Duplicates Detected"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: rate(pklpo_duplicate_rows_detected_total[5m])
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Duplicate rows are being detected"
+          description: "Duplicates detected for {{ $labels.symbol }} {{ $labels.timeframe }}"
+
+      # --- UPSERT Failures ---
+      - uid: pklpo-upsert-failures
+        title: "UPSERT Failures"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: Prometheus
+            model:
+              expr: rate(pklpo_upsert_failures_total[5m])
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          team: data
+        annotations:
+          summary: "UPSERT operations are failing"
+          description: "UPSERT failures for {{ $labels.symbol }} {{ $labels.timeframe }}. Check database connectivity and schema."

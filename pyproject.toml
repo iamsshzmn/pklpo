@@ -1,0 +1,312 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pklpo"
+version = "0.1.0"
+description = "Quantitative trading system with advanced features calculation"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["trading", "quantitative", "features", "technical-analysis"]
+dependencies = [
+    "pandas>=1.5.0",
+    "numpy>=1.21.0",
+    "pandas-ta>=0.4.67b0; python_version>='3.12'",
+    "pytest>=7.0.0",
+    "ruff>=0.6.9",
+    "mypy>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-xdist>=3.0.0",
+    "hypothesis>=6.100.0",
+    "ruff>=0.6.9",
+    "mypy>=1.0.0",
+    "black>=23.0.0",
+    "pre-commit>=3.0.0",
+    "diff-cover>=9.0.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+skip-string-normalization = false
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | __pycache__
+  | \.pytest_cache
+  | htmlcov
+  | features_archive
+  | tests_archive
+  | logs
+)/
+'''
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["src", "tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--tb=short",
+    "--cov=src",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-fail-under=85",
+    "--maxfail=5",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "smoke: marks tests as smoke tests",
+    "performance: marks tests as performance tests",
+    "asyncio: marks tests as async tests",
+    "lookahead: marks tests as look-ahead bias detection tests",
+]
+asyncio_mode = "auto"  # Требует pytest-asyncio
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    "htmlcov",
+    "features_archive",
+    "tests_archive",
+    "logs",
+    "*.egg-info",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "S",   # flake8-bandit (security)
+    "T20", # flake8-print
+    "PT",  # flake8-pytest-style
+    "RET", # flake8-return
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "PLE", # pylint errors subset
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # function calls in defaults
+    "C901",  # too complex
+    "S101",  # assert (tests)
+    "T201",  # print (CLI)
+    "S608",  # SQL injection (param queries)
+    "RUF001",  # ambiguous unicode (кириллица в строках - нормально для русских проектов)
+    "RUF002",  # ambiguous unicode (кириллица в docstrings - нормально для русских проектов)
+    "RUF003",  # ambiguous unicode (кириллица в комментариях - нормально для русских проектов)
+    "N806",  # переменные с заглавными буквами (Q1, Q3, IQR, P_last - математические обозначения)
+    "N815",  # mixedCase в классах (API контракты: minSz, maxSz, minNotional)
+    "N999",  # невалидные имена модулей (старые директории с пробелами)
+    "F405",  # star imports (намеренные в __init__.py)
+    "S311",  # random вместо secrets (для не-криптографических целей)
+    "S324",  # md5 (для не-криптографических целей, например хеширование)
+    "E402",  # импорты не в начале (условные импорты для избежания циклических зависимостей)
+    "RUF012",  # mutable class attributes (намеренные для конфигурации)
+    "B012",  # break в finally (намеренное поведение в некоторых случаях)
+    "E722",  # bare except (намеренное в некоторых обработчиках ошибок)
+    "B026",  # star-arg unpacking после keyword (намеренное в некоторых API)
+    "N818",  # имена исключений без Error suffix (legacy код)
+    "SIM105",  # contextlib.suppress вместо try-except-pass (предпочтение стиля)
+    "SIM101",  # множественные isinstance (читаемость важнее)
+    "RUF006",  # сохранение ссылки на asyncio.create_task (не всегда необходимо)
+    "S110",  # try-except-pass (намеренное подавление исключений в некоторых случаях)
+    "SIM117",  # вложенные with (читаемость важнее в некоторых случаях)
+    "F811",  # переопределение переменных (legacy код, намеренное)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401", "F403", "F405"]
+"tests/**/*" = ["B011", "S101", "T201", "PT009", "PT011", "PT012", "PT018", "B017", "S105", "S106"]
+"src/features/cli/**/*" = ["T201"]
+"**/okx (old)/**/*" = ["F821", "N999"]
+"**/signals (old)/**/*" = ["F405", "N999"]
+"**/indicators (old)/**/*" = ["N999"]
+"**/mtf (old)/**/*" = ["N999"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["features", "cli", "infrastructure", "src", "core", "ml"]
+combine-as-imports = true
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.mypy]
+python_version = "3.11"
+# Этап 2: базовые проверки (не strict пока)
+strict = false
+warn_unused_ignores = true
+disallow_any_generics = true
+no_implicit_optional = true
+warn_return_any = true
+warn_unreachable = true
+show_error_codes = true
+show_column_numbers = true
+pretty = true
+namespace_packages = true
+exclude = [
+    "venv",
+    ".venv",
+    "__pycache__",
+    "features_archive",
+    "tests_archive",
+    "src/features/cli/.*",  # CLI scripts use dynamic paths
+    "src/features/calc.py",  # Legacy file, may have path issues
+    "src/features/calc_combinations.py",  # Has path issues with indicator_groups
+    "src/features/tests/.*",  # Test files use dynamic imports
+    "src/features/infrastructure/alerts.py",  # Has path issues with dynamic imports
+    "src/features/indicator_groups/.*",  # Source file found twice under different module names
+    "src/features/strategy.py",  # Source file found twice under different module names
+    "src/features/demo.py",  # Demo script with incorrect imports
+    "src/features/infrastructure/database.py",  # Source file found twice under different module names
+    "src/features/logging_config.py",  # Source file found twice under different module names
+    "src/features/specs.py",  # Source file found twice under different module names
+    "src/indicators \\(old\\)/.*",  # Old indicators directory with spaces
+    "src/mtf \\(old\\)/.*",  # Old mtf directory with spaces
+    "src/okx \\(old\\)/.*",  # Old okx directory with spaces
+    "src/signals \\(old\\)/.*",  # Old signals directory with spaces
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "pandas.*",
+    "numpy.*",
+    "pytest.*",
+    "ta.*",
+    "asyncpg.*",
+    "pydantic.*",
+    "yaml.*",
+    "airflow.*",
+    "numba.*",
+    "sklearn.*",
+    "joblib.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "features.indicator_groups",
+    "src.features.indicator_groups",
+    "features.indicator_groups.*",
+    "src.features.indicator_groups.*",
+]
+follow_imports = "skip"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "features.strategy",
+    "src.features.strategy",
+]
+follow_imports = "skip"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "features.calc",
+    "src.features.calc",
+]
+follow_imports = "skip"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "features.infrastructure.database",
+    "src.features.infrastructure.database",
+]
+follow_imports = "skip"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "features.logging_config",
+    "src.features.logging_config",
+]
+follow_imports = "skip"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "features.specs",
+    "src.features.specs",
+]
+follow_imports = "skip"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "features",
+    "src.features",
+]
+follow_imports = "skip"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "config",
+]
+follow_imports = "skip"
+ignore_errors = true
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]

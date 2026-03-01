@@ -1,0 +1,192 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+.env
+
+# Testing
+# tests/ - tracked in git, do not ignore
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database
+*.db
+*.sqlite3
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Archives (не удалять, но не коммитить)
+features_archive/
+tests_archive/
+
+# Temporary files
+*.tmp
+*.temp
+TEMP_*
+
+# Application specific
+app.log
+*.pid
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Documentation build
+docs/
+docs/_build/
+site/
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Airflow
+airflow.cfg
+airflow.db
+airflow_login.py
+logs/
+ops/airflow/logs/
+dags/__pycache__/
+plugins/__pycache__/
+ops/airflow/dags/__pycache__/
+
+# Cursor / IDE
+.cursorrules
+.cursor/
+
+# Ruff / mypy cache
+.ruff_cache/
+.mypy_cache/
+
+# Local configs / backups
+.env.backup
+*.backup
+*_backup.json
+.env.local
+
+# Data directories
+data/
+datasets/
+tmp/
+backups/
+
+# Build artifacts
+dist/
+build/
+*.tar
+*.img
+
+# Claude AI
+.claude/
+
+# Working docs / plans (не коммитить)
+plan/
+reports/
+Market Selection/
+
+# Debug / temp files
+debug_*.json
+cursor_*.session.sql
+*.session.sql
+scripts/migration_report*.json
+1
+
+# Old/deprecated code in src/
+**/*(old)/
+**/*(old)*/
+src/main_with_options*.py
+src/main_v2.py
+
+# Reports in src/ (не коммитить)
+src/*/reports/
+src/features/README/
+src/**/*_REPORT.md
+src/**/*_SUMMARY.md
+
+# Tests in src/ (тесты хранятся в tests/)
+src/**/tests/
+src/**/test_*.py
+
+# Git bundles
+backup-*.bundle
+*.bundle
+
+# Input / notebook scratch dirs
+input_docs/
+notebooks/
