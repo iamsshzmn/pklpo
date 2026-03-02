@@ -1,0 +1,9 @@
+﻿{
+
+    "symbols": "BTC-USDT-SWAP",
+
+    "timeframes": "1m,5m,15m",
+
+    "limit": 1000
+
+}

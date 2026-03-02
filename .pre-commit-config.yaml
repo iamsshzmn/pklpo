@@ -1,0 +1,57 @@
+# Pre-commit hooks для проекта PKLPO
+# Установка: pip install pre-commit && pre-commit install
+# Запуск вручную: pre-commit run --all-files
+#
+# Принципы:
+# 1. Только быстрые базовые проверки перед коммитом
+# 2. Все серьёзные проверки (Ruff, Black, Bandit, тесты) - вручную через скрипт
+
+repos:
+  # ============================================
+  # БАЗОВЫЕ ПРОВЕРКИ (быстрые, всегда нужны)
+  # ============================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe] # Разрешает кастомные теги YAML
+      - id: check-json
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=200"] # Блокирует случайные .parquet, логи, дампы
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: local
+    hooks:
+      - id: language-policy
+        name: Enforce language policy (code=EN, README=RU)
+        entry: python scripts/check_language_policy.py
+        language: python
+        pass_filenames: true
+        files: ^(README\.md|src/.*\.py|tests/.*\.py|scripts/.*\.py)$
+# ============================================
+# ПРИМЕЧАНИЯ:
+# ============================================
+# Все серьёзные проверки запускаются вручную:
+#
+# 1. Ruff lint + format:
+#    ruff check --fix src/
+#    ruff format src/
+#
+# 2. Black (для совместимости):
+#    black src/
+#
+# 3. Bandit (безопасность):
+#    bandit -r src/ -c pyproject.toml
+#
+# 4. Быстрые unit-тесты:
+#    pytest src/ -m "not slow and not integration" -v
+#
+# Или используй скрипт: .\scripts\check_before_commit.ps1

@@ -1,0 +1,174 @@
+# Skills Manifest for PKLPO Project
+# This file provides a registry of all available skills for Claude Code
+
+version: "1.0"
+project: pklpo
+
+skills:
+  # Development Skills
+  tdd-workflow:
+    path: skills/tdd-workflow/SKILL.md
+    description: "Test-driven development with pytest, 85%+ coverage"
+    category: development
+    model: sonnet
+    tools: [Read, Grep, Glob, Edit, Bash]
+    triggers:
+      - "new feature with tests"
+      - "TDD workflow"
+      - "writing tests first"
+
+  coding-standards:
+    path: skills/coding-standards/SKILL.md
+    description: "Universal coding standards and best practices"
+    category: quality
+    model: sonnet
+    tools: [Read, Grep, Glob, Edit]
+    triggers:
+      - "code quality"
+      - "best practices"
+      - "code review"
+
+  # Security Skills
+  security-review:
+    path: skills/security-review/SKILL.md
+    description: "Security audit and vulnerability check"
+    category: security
+    model: opus
+    tools: [Read, Grep, Glob, Edit, Bash]
+    triggers:
+      - "before commit"
+      - "API changes"
+      - "authentication"
+      - "security check"
+
+  # Backend Skills
+  backend-patterns:
+    path: skills/backend-patterns/SKILL.md
+    description: "Python backend patterns: SQLAlchemy async, repository, UPSERT, chunking"
+    category: backend
+    model: sonnet
+    tools: [Read, Grep, Glob, Edit]
+    triggers:
+      - "SQLAlchemy"
+      - "database query"
+      - "async session"
+      - "repository pattern"
+      - "UPSERT"
+
+  clickhouse-io:
+    path: skills/clickhouse-io/SKILL.md
+    description: "ClickHouse database patterns and analytics"
+    category: data
+    model: sonnet
+    tools: [Read, Grep, Glob, Edit, Bash]
+    triggers:
+      - "ClickHouse"
+      - "analytics query"
+      - "OLAP"
+      - "materialized view"
+
+  # Quality & Testing Skills
+  verification-loop:
+    path: skills/verification-loop/SKILL.md
+    description: "Comprehensive verification system for code quality"
+    category: quality
+    model: sonnet
+    tools: [Read, Grep, Glob, Bash]
+    triggers:
+      - "before PR"
+      - "quality check"
+      - "verification"
+
+  eval-harness:
+    path: skills/eval-harness/SKILL.md
+    description: "Evaluation framework for Claude Code sessions"
+    category: testing
+    model: sonnet
+    tools: [Read, Grep, Glob, Edit, Bash]
+    triggers:
+      - "eval-driven development"
+      - "capability eval"
+      - "regression eval"
+
+  # Context & Learning Skills
+  strategic-compact:
+    path: skills/strategic-compact/SKILL.md
+    description: "Strategic context compaction at logical intervals"
+    category: context
+    model: haiku
+    tools: [Read, Bash]
+    triggers:
+      - "context management"
+      - "compact"
+
+  continuous-learning:
+    path: skills/continuous-learning/SKILL.md
+    description: "Extract and save reusable patterns from sessions"
+    category: learning
+    model: sonnet
+    tools: [Read, Edit]
+    triggers:
+      - "session end"
+      - "pattern extraction"
+
+  # Skill authoring (AI-world practices)
+  ai-skill-practices:
+    path: skills/ai-skill-practices/SKILL.md
+    description: "AI-world best practices for writing and improving skills (triggers, concision, structure)"
+    category: learning
+    model: sonnet
+    tools: [Read, Edit]
+    triggers:
+      - "writing a skill"
+      - "improve skill"
+      - "skill quality"
+      - "agent instructions"
+      - "Cursor rules"
+
+# Category descriptions
+categories:
+  development:
+    description: "Core development workflows and practices"
+    color: "#4CAF50"
+  security:
+    description: "Security audits and best practices"
+    color: "#F44336"
+  quality:
+    description: "Code quality and verification"
+    color: "#2196F3"
+  testing:
+    description: "Testing frameworks and patterns"
+    color: "#9C27B0"
+  backend:
+    description: "Server-side development patterns"
+    color: "#FF9800"
+  data:
+    description: "Data engineering and analytics"
+    color: "#795548"
+  context:
+    description: "Context and session management"
+    color: "#607D8B"
+  learning:
+    description: "Continuous learning and improvement"
+    color: "#E91E63"
+
+# Model recommendations
+model_guide:
+  opus:
+    use_for:
+      - "Security reviews"
+      - "Architecture decisions"
+      - "Complex refactoring"
+    description: "Most capable, use for critical tasks"
+  sonnet:
+    use_for:
+      - "Standard development"
+      - "Code review"
+      - "Testing"
+    description: "Balanced capability and speed"
+  haiku:
+    use_for:
+      - "Simple queries"
+      - "Quick lookups"
+      - "Context management"
+    description: "Fast and efficient for simple tasks"

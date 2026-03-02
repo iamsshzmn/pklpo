@@ -1,0 +1,81 @@
+# Конфигурация модуля market_meta
+
+# Настройки OKX API
+okx:
+  base_url: "https://www.okx.com"
+  api_key: "${OKX_API_KEY}"
+  secret_key: "${OKX_SECRET_KEY}"
+  passphrase: "${OKX_PASSPHRASE}"
+  sandbox: false
+
+# Настройки кэширования
+cache:
+  ttl_seconds: 3600  # 1 час
+  max_size_mb: 100
+  cleanup_interval_seconds: 300  # 5 минут
+
+# Настройки валидации
+validation:
+  # Пороги ликвидности
+  liquidity:
+    min_volume_24h_usdt: 1000000  # Минимум $1M объема за 24ч
+    min_trades_24h: 100  # Минимум 100 сделок за 24ч
+    max_spread_bps: 50  # Максимальный спред 0.5%
+
+  # Пороги риска
+  risk:
+    max_leverage: 100
+    max_position_size_pct: 0.1  # 10% от баланса
+    max_total_exposure_pct: 0.5  # 50% от баланса
+    max_daily_loss_pct: 0.05  # 5% дневной убыток
+    max_weekly_loss_pct: 0.15  # 15% недельный убыток
+
+# Настройки базы данных
+database:
+  url: "${DATABASE_URL}"
+  pool_size: 10
+  max_overflow: 20
+  echo: false
+
+# Настройки логирования
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/market_meta.log"
+  max_size_mb: 100
+  backup_count: 5
+
+# Настройки мониторинга
+monitoring:
+  metrics_enabled: true
+  health_check_interval_seconds: 60
+  alert_thresholds:
+    validation_failure_rate: 0.05  # 5% неудачных валидаций
+    cache_hit_rate: 0.8  # 80% попаданий в кэш
+    api_latency_ms: 1000  # 1 секунда
+
+# Настройки обновления метаданных
+refresh:
+  auto_refresh: true
+  interval_seconds: 3600  # 1 час
+  retry_attempts: 3
+  retry_delay_seconds: 60
+  instrument_types:
+    - "SPOT"
+    - "SWAP"
+    - "FUTURES"
+    - "OPTIONS"
+
+# Настройки интеграции с системой сигналов
+signals:
+  # Блокировка Decision с нарушениями
+  block_invalid_decisions: true
+  # Логирование всех валидаций
+  log_all_validations: true
+  # Требуемые поля для Decision
+  required_fields:
+    - "symbol_id"
+    - "price"
+    - "qty"
+    - "leverage"
+    - "margin_mode"

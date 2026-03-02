@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test-no-talib:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    env:
+      FEATURES_TA_BACKEND: pandas_ta
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Enforce immutable market_selection migrations
+      if: github.event_name == 'pull_request'
+      run: |
+        BASE_SHA="${{ github.event.pull_request.base.sha }}"
+        git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+        CHANGED="$(git diff --name-status "${BASE_SHA}" "${{ github.sha }}" -- src/market_selection/migrations/*.sql || true)"
+        if [ -z "${CHANGED}" ]; then
+          echo "No market_selection migration changes."
+          exit 0
+        fi
+        echo "Changed migration files:"
+        echo "${CHANGED}"
+        if echo "${CHANGED}" | grep -E '^(M|D|R|C|T|U)'; then
+          echo "Existing migration files are immutable. Add a new migration file instead of modifying/deleting."
+          exit 1
+        fi
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt', '**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run linting with ruff
+      run: |
+        ruff check src/
+        ruff format --check src/
+
+    - name: Run type checking with mypy
+      run: |
+        mypy src/
+        python -m mypy -p src.core -p src.ml
+
+    - name: Run tests with pytest
+      run: |
+        pytest tests/ml/ tests/backtest/ src/features/tests/ tests/test_feature_contracts.py tests/test_batch_builder_contracts.py tests/test_talib_bridge_dispatch.py tests/test_ta_safe_lazy_init.py tests/test_persistence_modules_coverage.py tests/test_features_backend_settings.py --override-ini addopts="" -v --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=0
+
+    - name: Run look-ahead bias gate
+      run: |
+        pytest -m lookahead -v --tb=short tests/ml/test_lookahead.py
+
+    - name: Run persistence coverage gate (>=85%)
+      run: |
+        pytest tests/test_batch_builder_contracts.py tests/test_persistence_modules_coverage.py --override-ini addopts="" --cov=src/features/infrastructure/persistence --cov-report=term-missing --cov-fail-under=85 -q
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  test-talib:
+    runs-on: ubuntu-latest
+    if: ${{ vars.TALIB_AVAILABLE == 'true' }}
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    env:
+      FEATURES_TA_BACKEND: talib
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-talib-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt', '**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-talib-${{ matrix.python-version }}-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+        pip install TA-Lib
+
+    - name: Run TA-Lib backend tests
+      run: |
+        pytest tests/test_talib_bridge_dispatch.py tests/test_feature_contracts.py -v --tb=short
+
+  performance:
+    runs-on: ubuntu-latest
+    needs: test-no-talib
+    env:
+      FEATURES_TA_BACKEND: pandas_ta
+      FEATURES_BENCH_ROWS: "10000"
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest-benchmark
+
+    - name: Run pytest-benchmark
+      run: |
+        pytest tests/features/benchmarks/bench_pipeline.py -q --benchmark-json=benchmarks/results/pytest_benchmark.json --no-cov
+
+    - name: Run grouped performance benchmark
+      run: |
+        python scripts/run_features_group_benchmark.py
+
+    - name: Upload benchmark artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: features-group-benchmark
+        path: |
+          benchmarks/results/group_baseline_*.json
+          benchmarks/results/pytest_benchmark.json
+        if-no-files-found: error
+
+  candles_dod:
+    runs-on: ubuntu-latest
+    needs: test-no-talib
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run candles DoD gate
+      run: |
+        python scripts/run_candles_dod.py --cov-fail-under=50

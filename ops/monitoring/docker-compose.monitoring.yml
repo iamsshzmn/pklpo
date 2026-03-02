@@ -1,0 +1,59 @@
+name: pklpo-monitoring
+
+networks:
+  pklpo_network:
+    external: true
+    name: pklpo_pklpo_network
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: pklpo-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    networks:
+      - pklpo_network
+    restart: unless-stopped
+
+  pushgateway:
+    image: prom/pushgateway:v1.7.0
+    container_name: pklpo-pushgateway
+    ports:
+      - "9091:9091"
+    networks:
+      - pklpo_network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: pklpo-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+      GF_ALERTING_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    networks:
+      - pklpo_network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+    name: pklpo-prometheus-data
+  grafana_data:
+    name: pklpo-grafana-data
