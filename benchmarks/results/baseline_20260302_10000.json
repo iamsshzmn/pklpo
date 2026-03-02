@@ -1,0 +1,26 @@
+{
+  "timestamp_utc": "2026-03-02T15:52:09.038766+00:00",
+  "rows": 10000,
+  "peak_ram_mb": 9.26,
+  "shape": [
+    10000,
+    25
+  ],
+  "specs": [
+    "hl2",
+    "ema_21",
+    "sma_50",
+    "rsi_14",
+    "macd",
+    "atr_14",
+    "bb_upper",
+    "bb_middle",
+    "bb_lower",
+    "obv",
+    "adx_14",
+    "ha_close",
+    "ttm_squeeze_hist",
+    "zscore_20",
+    "log_return"
+  ]
+}

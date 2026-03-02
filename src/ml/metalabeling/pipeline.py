@@ -64,7 +64,7 @@ class MetaLabeler:
             from sklearn.ensemble import RandomForestClassifier
 
             base_model = RandomForestClassifier(
-                n_estimators=100, random_state=0, n_jobs=-1
+                n_estimators=100, random_state=0, n_jobs=1
             )
         self.base_model = base_model
         self.calibrate = calibrate

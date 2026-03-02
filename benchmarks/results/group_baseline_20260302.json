@@ -1,0 +1,181 @@
+{
+  "timestamp_utc": "2026-03-02T15:51:38.898123+00:00",
+  "backend": "auto",
+  "benchmark": "compute_features_grouped",
+  "cases": [
+    {
+      "rows": 10000,
+      "runs": 3,
+      "total_elapsed_seconds": [
+        7.969980599998962,
+        6.913322899999912,
+        6.74863760000153
+      ],
+      "total_p50_seconds": 6.9133,
+      "total_p95_seconds": 7.8643,
+      "peak_ram_mb_max": 55.59,
+      "shape": [
+        10000,
+        172
+      ],
+      "groups": {
+        "overlap": {
+          "p50_seconds": 0.0105,
+          "p95_seconds": 0.0138
+        },
+        "ma": {
+          "p50_seconds": 0.2677,
+          "p95_seconds": 0.3012
+        },
+        "oscillators": {
+          "p50_seconds": 0.45,
+          "p95_seconds": 0.4923
+        },
+        "volatility": {
+          "p50_seconds": 0.1342,
+          "p95_seconds": 0.1456
+        },
+        "volume": {
+          "p50_seconds": 0.1778,
+          "p95_seconds": 0.1877
+        },
+        "trend": {
+          "p50_seconds": 2.3057,
+          "p95_seconds": 2.8543
+        },
+        "squeeze": {
+          "p50_seconds": 0.038,
+          "p95_seconds": 0.0385
+        },
+        "candles": {
+          "p50_seconds": 2.0069,
+          "p95_seconds": 2.0655
+        },
+        "statistics": {
+          "p50_seconds": 0.0214,
+          "p95_seconds": 0.0223
+        },
+        "performance": {
+          "p50_seconds": 0.2147,
+          "p95_seconds": 0.223
+        }
+      }
+    },
+    {
+      "rows": 50000,
+      "runs": 3,
+      "total_elapsed_seconds": [
+        25.94638660000055,
+        27.023443099998985,
+        26.72258729999885
+      ],
+      "total_p50_seconds": 26.7226,
+      "total_p95_seconds": 26.9934,
+      "peak_ram_mb_max": 274.04,
+      "shape": [
+        50000,
+        172
+      ],
+      "groups": {
+        "overlap": {
+          "p50_seconds": 0.0141,
+          "p95_seconds": 0.0145
+        },
+        "ma": {
+          "p50_seconds": 0.7579,
+          "p95_seconds": 0.8004
+        },
+        "oscillators": {
+          "p50_seconds": 1.4095,
+          "p95_seconds": 1.5106
+        },
+        "volatility": {
+          "p50_seconds": 0.394,
+          "p95_seconds": 0.4092
+        },
+        "volume": {
+          "p50_seconds": 0.594,
+          "p95_seconds": 0.6196
+        },
+        "trend": {
+          "p50_seconds": 10.6851,
+          "p95_seconds": 10.7589
+        },
+        "squeeze": {
+          "p50_seconds": 0.1431,
+          "p95_seconds": 0.15
+        },
+        "candles": {
+          "p50_seconds": 8.9605,
+          "p95_seconds": 9.1082
+        },
+        "statistics": {
+          "p50_seconds": 0.0755,
+          "p95_seconds": 0.0807
+        },
+        "performance": {
+          "p50_seconds": 0.9838,
+          "p95_seconds": 0.9918
+        }
+      }
+    },
+    {
+      "rows": 200000,
+      "runs": 3,
+      "total_elapsed_seconds": [
+        103.63037070000064,
+        103.75969760000226,
+        105.19555590000164
+      ],
+      "total_p50_seconds": 103.7597,
+      "total_p95_seconds": 105.052,
+      "peak_ram_mb_max": 1093.59,
+      "shape": [
+        200000,
+        172
+      ],
+      "groups": {
+        "overlap": {
+          "p50_seconds": 0.029,
+          "p95_seconds": 0.0302
+        },
+        "ma": {
+          "p50_seconds": 2.7175,
+          "p95_seconds": 2.8574
+        },
+        "oscillators": {
+          "p50_seconds": 5.0733,
+          "p95_seconds": 5.1395
+        },
+        "volatility": {
+          "p50_seconds": 1.2996,
+          "p95_seconds": 1.3002
+        },
+        "volume": {
+          "p50_seconds": 2.3753,
+          "p95_seconds": 2.4396
+        },
+        "trend": {
+          "p50_seconds": 44.1994,
+          "p95_seconds": 44.4176
+        },
+        "squeeze": {
+          "p50_seconds": 0.6047,
+          "p95_seconds": 0.6143
+        },
+        "candles": {
+          "p50_seconds": 36.3816,
+          "p95_seconds": 36.8002
+        },
+        "statistics": {
+          "p50_seconds": 0.3261,
+          "p95_seconds": 0.3285
+        },
+        "performance": {
+          "p50_seconds": 4.0889,
+          "p95_seconds": 4.0912
+        }
+      }
+    }
+  ]
+}

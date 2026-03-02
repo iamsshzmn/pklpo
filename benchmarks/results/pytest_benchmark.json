@@ -1,0 +1,147 @@
+{
+    "machine_info": {
+        "node": "AL_ZM",
+        "processor": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel",
+        "machine": "AMD64",
+        "python_compiler": "MSC v.1938 64 bit (AMD64)",
+        "python_implementation": "CPython",
+        "python_implementation_version": "3.11.9",
+        "python_version": "3.11.9",
+        "python_build": [
+            "tags/v3.11.9:de54cf5",
+            "Apr  2 2024 10:12:12"
+        ],
+        "release": "10",
+        "system": "Windows",
+        "cpu": {
+            "python_version": "3.11.9.final.0 (64 bit)",
+            "cpuinfo_version": [
+                9,
+                0,
+                0
+            ],
+            "cpuinfo_version_string": "9.0.0",
+            "arch": "X86_64",
+            "bits": 64,
+            "count": 12,
+            "arch_string_raw": "AMD64",
+            "vendor_id_raw": "GenuineIntel",
+            "brand_raw": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz",
+            "hz_advertised_friendly": "2.6000 GHz",
+            "hz_actual_friendly": "2.5920 GHz",
+            "hz_advertised": [
+                2600000000,
+                0
+            ],
+            "hz_actual": [
+                2592000000,
+                0
+            ],
+            "flags": [
+                "3dnow",
+                "acpi",
+                "clflush",
+                "cmov",
+                "de",
+                "dts",
+                "fxsr",
+                "ia64",
+                "mca",
+                "mce",
+                "mmx",
+                "mtrr",
+                "pse",
+                "sep",
+                "serial",
+                "ss",
+                "sse",
+                "sse2",
+                "tm"
+            ],
+            "stepping": 10,
+            "model": 158,
+            "family": 6
+        }
+    },
+    "commit_info": {
+        "id": "18a3462426076ca3197b8d1d89545ffc2e548bab",
+        "time": "2026-03-02T17:14:21+04:00",
+        "author_time": "2026-03-02T17:14:21+04:00",
+        "dirty": true,
+        "project": "pklpo",
+        "branch": "features_refactoring"
+    },
+    "benchmarks": [
+        {
+            "group": null,
+            "name": "test_compute_features_baseline_benchmark[10000]",
+            "fullname": "tests/features/benchmarks/bench_pipeline.py::test_compute_features_baseline_benchmark[10000]",
+            "params": {
+                "rows": 10000
+            },
+            "param": "10000",
+            "extra_info": {
+                "timestamp_utc": "2026-03-02T15:52:09.038766+00:00",
+                "rows": 10000,
+                "peak_ram_mb": 9.26,
+                "shape": [
+                    10000,
+                    25
+                ],
+                "specs": [
+                    "hl2",
+                    "ema_21",
+                    "sma_50",
+                    "rsi_14",
+                    "macd",
+                    "atr_14",
+                    "bb_upper",
+                    "bb_middle",
+                    "bb_lower",
+                    "obv",
+                    "adx_14",
+                    "ha_close",
+                    "ttm_squeeze_hist",
+                    "zscore_20",
+                    "log_return"
+                ]
+            },
+            "options": {
+                "disable_gc": false,
+                "timer": "perf_counter",
+                "min_rounds": 5,
+                "max_time": 1.0,
+                "min_time": 5e-06,
+                "warmup": false
+            },
+            "stats": {
+                "min": 3.7069220000012137,
+                "max": 4.010921999997663,
+                "mean": 3.8630544999999983,
+                "stddev": 0.12338572279559962,
+                "rounds": 5,
+                "median": 3.8718239000008907,
+                "iqr": 0.20405889999983629,
+                "q1": 3.7598027750000256,
+                "q3": 3.963861674999862,
+                "iqr_outliers": 0,
+                "stddev_outliers": 2,
+                "outliers": "2;0",
+                "ld15iqr": 3.7069220000012137,
+                "hd15iqr": 4.010921999997663,
+                "ops": 0.2588625141063892,
+                "total": 19.315272499999992,
+                "data": [
+                    4.010921999997663,
+                    3.948174900000595,
+                    3.7774296999996295,
+                    3.8718239000008907,
+                    3.7069220000012137
+                ],
+                "iterations": 1
+            }
+        }
+    ],
+    "datetime": "2026-03-02T15:52:09.668159+00:00",
+    "version": "5.2.3"
+}

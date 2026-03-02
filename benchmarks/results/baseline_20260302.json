@@ -1,0 +1,71 @@
+{
+  "timestamp_utc": "2026-03-02T13:35:24.926985+00:00",
+  "backend": "auto",
+  "specs": [
+    "hl2",
+    "ema_21",
+    "sma_50",
+    "rsi_14",
+    "macd",
+    "atr_14",
+    "bb_upper",
+    "bb_middle",
+    "bb_lower",
+    "obv",
+    "adx_14",
+    "ha_close",
+    "ttm_squeeze_hist",
+    "zscore_20",
+    "log_return"
+  ],
+  "cases": [
+    {
+      "rows": 10000,
+      "runs": 3,
+      "elapsed_seconds": [
+        4.305994800000917,
+        3.367797299999438,
+        3.3049800000007963
+      ],
+      "p50_seconds": 3.3678,
+      "p95_seconds": 4.2122,
+      "peak_ram_mb_max": 15.76,
+      "shape": [
+        10000,
+        25
+      ]
+    },
+    {
+      "rows": 50000,
+      "runs": 3,
+      "elapsed_seconds": [
+        15.533593399999518,
+        16.14895719999913,
+        17.09778069999993
+      ],
+      "p50_seconds": 16.149,
+      "p95_seconds": 17.0029,
+      "peak_ram_mb_max": 45.59,
+      "shape": [
+        50000,
+        25
+      ]
+    },
+    {
+      "rows": 200000,
+      "runs": 3,
+      "elapsed_seconds": [
+        65.27534580000065,
+        66.13899149999997,
+        65.35437289999936
+      ],
+      "p50_seconds": 65.3544,
+      "p95_seconds": 66.0605,
+      "peak_ram_mb_max": 181.79,
+      "shape": [
+        200000,
+        25
+      ]
+    }
+  ]
+}

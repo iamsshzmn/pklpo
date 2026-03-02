@@ -122,6 +122,9 @@ class FeaturesSettings(BaseSettings):
     log_memory: bool = True
     verbose: bool = False
 
+    # TA backend selection (Phase 2 follow-up)
+    ta_backend: Literal["auto", "pandas_ta", "talib", "fallback"] = "auto"
+
     # =========================================================================
     # OCP Configuration (Phase 2.2): Configurable indicators and thresholds
     # =========================================================================

@@ -6,8 +6,22 @@ This module contains configuration constants, allowlists, and rename mappings.
 
 import os
 
+from src.config import get_settings
+
+
+def _resolve_backend() -> str:
+    """Resolve TA backend from env/settings with safe fallback."""
+    env_backend = os.getenv("FEATURES_TA_BACKEND")
+    if env_backend:
+        return env_backend
+    try:
+        return get_settings().features.ta_backend
+    except Exception:
+        return "auto"
+
+
 # Backend configuration
-BACKEND = os.getenv("FEATURES_TA_BACKEND", "auto")
+BACKEND = _resolve_backend()
 
 # Обязательные колонки для OHLCV
 REQ = ("open", "high", "low", "close", "volume")
