@@ -10,6 +10,7 @@ Part of Phase 1.2 refactoring: Split GroupCalculator into SRP components.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -21,7 +22,6 @@ from ..observability.logging import (
     get_category_logger,
     should_log,
 )
-from ..observability.prometheus import get_metrics as get_prom_metrics
 from ..validation.code_validator import CodeValidator, ValidationConfig
 from .group_calculator import GroupFeatureCalculator
 from .group_metrics import GroupMetricsRecorder
@@ -33,6 +33,8 @@ from .pipeline import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pandas as pd
 
     from src.config.settings import FeaturesSettings
@@ -110,6 +112,10 @@ class GroupCalculationConfig:
                 from src.config import get_settings
                 settings = get_settings().features
             except ImportError:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "src.config not available, using default GroupCalculationConfig"
+                )
                 return cls()
 
         # Get default values for fallback
@@ -146,6 +152,7 @@ class GroupCalculationOrchestrator:
         persister: GroupPersister | None = None,
         metrics_recorder: GroupMetricsRecorder | None = None,
         code_validator: CodeValidator | None = None,
+        calc_timer: Callable | None = None,
     ):
         """
         Initialize the orchestrator with optional component injection.
@@ -156,9 +163,12 @@ class GroupCalculationOrchestrator:
             persister: Data persister (created if None)
             metrics_recorder: Metrics recorder (created if None)
             code_validator: Code validator (created if None)
+            calc_timer: Context manager factory for timing calculations.
+                Injected from application layer to avoid core→observability coupling.
         """
         self.config = config or GroupCalculationConfig()
         self._logger = get_category_logger(LogCategory.CALC)
+        self._calc_timer = calc_timer or contextlib.nullcontext
 
         # Dependency injection for components (DIP compliance)
         self._calculator = calculator or GroupFeatureCalculator()
@@ -183,83 +193,87 @@ class GroupCalculationOrchestrator:
         Returns:
             DataFrame with all calculated features
         """
-        # Get ordered groups from calculator
         ordered_groups = self._calculator.get_ordered_groups()
-
         symbol = str(kwargs.get("symbol", "unknown"))
         timeframe = str(kwargs.get("timeframe", "unknown"))
 
-        # Create pipeline context
         ctx = PipelineContext(
             symbol=symbol,
             timeframe=timeframe,
             feature_count=len(ordered_groups),
         )
 
-        prom = get_prom_metrics()
-
-        # Use aggregator for summary logging — whole calculation timed
         with LogAggregator(LogCategory.CALC, "group_calculation") as agg, \
-             prom.calc_timer(symbol, timeframe):
+             self._calc_timer(symbol, timeframe):
             try:
-                # Pre-calculation phase
                 result_df = run_pre_calculation(df_ohlcv, ctx, validate_specs=False)
-
-                # Extract available indicators once to avoid passing it twice
-                # (as positional arg and inside **kwargs).
                 run_kwargs = dict(kwargs)
                 available = set(run_kwargs.pop("available", set()))
 
-                # Calculate each group (timed via Prometheus)
-                for group_entry in ordered_groups:
-                    group_name = group_entry.name
-                    try:
-                        # Calculate group
-                        group_result = self._calculator.calculate_group(
-                            result_df, group_name, available, **run_kwargs
-                        )
-
-                        # Merge results into DataFrame
-                        for indicator_name, series in group_result.items():
-                            result_df[indicator_name] = series
-
-                        # Persist if enabled
-                        if persist:
-                            success = self._persister.persist_batch(
-                                result_df, group_name, **run_kwargs
-                            )
-                            if not success:
-                                agg.add_warning(f"Failed to persist {group_name}")
-
-                        # Record metrics
-                        fill_rate = self._metrics.record_group_metrics(
-                            result_df, group_name, group_result
-                        )
-                        agg.add("groups", group_name, value=fill_rate)
-
-                    except Exception as e:
-                        agg.add_error(f"Failed to process {group_name}: {e}")
-                        ctx.failed_groups.append(group_name)
-                        ctx.data_status = "inc"
-                        # Continue with next group
-
-                # Run code validations
-                self._run_code_validations(result_df, ctx)
-
-                # Post-calculation phase
-                result_df = run_post_calculation(result_df, ctx)
-
-                # Set summary info
-                agg.set_extra("bars", len(result_df))
-                agg.set_extra("status", ctx.data_status)
-                if ctx.failed_groups:
-                    agg.set_extra("failed", len(ctx.failed_groups))
-
-                return result_df
+                result_df = self._run_groups(
+                    result_df, ordered_groups, available, persist, ctx, agg, **run_kwargs
+                )
+                return self._finalize(result_df, ctx, agg)
 
             except Exception as e:
                 self._logger.error(f"Group-based calculation failed: {e}")
                 raise FeatureError(f"Group-based calculation failed: {e}") from e
+
+    def _run_groups(
+        self,
+        result_df: pd.DataFrame,
+        ordered_groups: list,
+        available: set,
+        persist: bool,
+        ctx: PipelineContext,
+        agg: LogAggregator,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """Calculate each group, persist, and record metrics."""
+        for group_entry in ordered_groups:
+            group_name = group_entry.name
+            try:
+                group_result = self._calculator.calculate_group(
+                    result_df, group_name, available, **kwargs
+                )
+                for indicator_name, series in group_result.items():
+                    result_df[indicator_name] = series
+
+                if persist:
+                    success = self._persister.persist_batch(
+                        result_df, group_name, **kwargs
+                    )
+                    if not success:
+                        agg.add_warning(f"Failed to persist {group_name}")
+
+                fill_rate = self._metrics.record_group_metrics(
+                    result_df, group_name, group_result
+                )
+                agg.add("groups", group_name, value=fill_rate)
+
+            except Exception as e:
+                agg.add_error(f"Failed to process {group_name}: {e}")
+                ctx.failed_groups.append(group_name)
+                ctx.data_status = "inc"
+
+        return result_df
+
+    def _finalize(
+        self,
+        result_df: pd.DataFrame,
+        ctx: PipelineContext,
+        agg: LogAggregator,
+    ) -> pd.DataFrame:
+        """Run validations, post-processing, and set summary info."""
+        self._run_code_validations(result_df, ctx)
+        result_df = run_post_calculation(result_df, ctx)
+
+        agg.set_extra("bars", len(result_df))
+        agg.set_extra("status", ctx.data_status)
+        if ctx.failed_groups:
+            agg.set_extra("failed", len(ctx.failed_groups))
+
+        return result_df
 
     def _run_code_validations(
         self,
@@ -308,5 +322,18 @@ def compute_features_grouped(
     Returns:
         DataFrame with all calculated features
     """
-    orchestrator = GroupCalculationOrchestrator(config)
+    # Wire observability from application layer (DIP)
+    try:
+        from ..observability.metrics import record_fill_rate
+        from ..observability.prometheus import get_metrics as get_prom_metrics
+        calc_timer = get_prom_metrics().calc_timer
+        fill_rate_recorder = record_fill_rate
+    except ImportError:
+        calc_timer = None
+        fill_rate_recorder = None
+
+    metrics_recorder = GroupMetricsRecorder(fill_rate_recorder=fill_rate_recorder)
+    orchestrator = GroupCalculationOrchestrator(
+        config, metrics_recorder=metrics_recorder, calc_timer=calc_timer,
+    )
     return orchestrator.calculate_all_groups(df_ohlcv, **kwargs)

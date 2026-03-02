@@ -1,13 +1,12 @@
 """
-Репозиторий для работы с метриками качества данных.
+Repository for data quality metrics.
 
-Предоставляет:
-- Запись результатов проверок в ops.data_quality_metrics
-- Чтение последних метрик для дашбордов
+Provides:
+- Writing check results to ops.data_quality_metrics
+- Reading latest metrics for dashboards
 """
 
 from typing import Any, Protocol
-
 
 from ..domain.quality import CheckResult
 
@@ -17,18 +16,18 @@ class MetricsPoolPort(Protocol):
 
 
 class QualityMetricsRepository:
-    """Репозиторий метрик качества данных."""
+    """Data quality metrics repository."""
 
     def __init__(self, pool: MetricsPoolPort) -> None:
-        """Инициализация с пулом соединений asyncpg."""
+        """Initialize with asyncpg connection pool."""
         self._pool = pool
 
     async def save_result(self, result: CheckResult) -> None:
-        """Сохранить один результат проверки."""
+        """Save a single check result."""
         await self.save_results([result])
 
     async def save_results(self, results: list[CheckResult]) -> None:
-        """Сохранить несколько результатов проверки."""
+        """Save multiple check results."""
         if not results:
             return
 
@@ -59,7 +58,7 @@ class QualityMetricsRepository:
         check_name: str,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        """Получить последние метрики по типу проверки."""
+        """Get latest metrics by check type."""
         query = """
             SELECT ts, check_name, severity, symbol, timeframe, value, meta
             FROM ops.data_quality_metrics
@@ -72,7 +71,7 @@ class QualityMetricsRepository:
             return [dict(r) for r in rows]
 
     async def get_critical_last_hour(self) -> list[dict[str, Any]]:
-        """Получить критические метрики за последний час."""
+        """Get critical metrics from the last hour."""
         query = """
             SELECT ts, check_name, severity, symbol, timeframe, value, meta
             FROM ops.data_quality_metrics
@@ -85,7 +84,7 @@ class QualityMetricsRepository:
             return [dict(r) for r in rows]
 
     async def cleanup_old_metrics(self, days: int = 30) -> int:
-        """Удалить метрики старше N дней. Возвращает количество удаленных."""
+        """Delete metrics older than N days. Returns count of deleted rows."""
         query = """
             DELETE FROM ops.data_quality_metrics
             WHERE ts < now() - ($1 || ' days')::interval

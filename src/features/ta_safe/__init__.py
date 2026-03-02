@@ -10,7 +10,7 @@ from src.logging import get_logger
 
 from .backend import _get_available_functions, safe_ta
 from .bridge import _talib_bridge
-from .constants import ALLOW, BACKEND
+from .constants import ALLOW, get_backend
 from .errors import FeatureCalcError
 from .fallback import safe_ta_fallback
 from .normalization import _normalize_to_df
@@ -45,16 +45,18 @@ def safe_ta_with_fallback(
         logger.debug("Function %s excluded from pipeline", name)
         return pd.DataFrame(index=df.index)
 
-    if BACKEND in ("pandas_ta", "auto"):
+    backend = get_backend()
+
+    if backend in ("pandas_ta", "auto"):
         available_functions = _get_available()
         if name in available_functions:
             try:
                 return safe_ta(df, name, **kwargs)
             except Exception as e:
-                if BACKEND == "pandas_ta":
+                if backend == "pandas_ta":
                     raise FeatureCalcError(f"pandas_ta failed for {name}: {e}") from e
                 logger.warning("pandas_ta.%s failed: %s, trying TA-Lib/fallback", name, e)
-        elif BACKEND == "pandas_ta":
+        elif backend == "pandas_ta":
             logger.warning("Function %s not available in pandas_ta, using fallback", name)
             out = safe_ta_fallback(df, name, **kwargs)
             return _normalize_to_df(out, name, df, **kwargs)
@@ -63,7 +65,7 @@ def safe_ta_with_fallback(
                 "Function %s not available in pandas_ta, trying TA-Lib/fallback", name
             )
 
-    if BACKEND in ("talib", "auto"):
+    if backend in ("talib", "auto"):
         try:
             return _talib_bridge(df, name, **kwargs)
         except Exception as e:
@@ -73,7 +75,7 @@ def safe_ta_with_fallback(
                 logger.warning("TA-Lib mapping missing for %s, using fallback", name)
                 out = safe_ta_fallback(df, name, **kwargs)
                 return _normalize_to_df(out, name, df, **kwargs)
-            if BACKEND == "talib":
+            if backend == "talib":
                 raise FeatureCalcError(f"TA-Lib failed for {name}: {e}") from e
             logger.warning("TA-Lib.%s failed: %s, trying fallback", name, e)
 

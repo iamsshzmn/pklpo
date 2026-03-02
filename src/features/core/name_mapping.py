@@ -227,8 +227,9 @@ def normalize_indicator_name(raw_name: str) -> str:
     """
     Normalize raw pandas_ta indicator name to standardized feature name.
 
-    This function handles the complex mapping between pandas_ta's naming
-    conventions and our standardized feature names.
+    .. deprecated::
+        Use ``schema.name_aliases.normalize_name()`` instead.
+        This function will be removed in a future release.
 
     Args:
         raw_name: Raw indicator name from pandas_ta
@@ -236,18 +237,24 @@ def normalize_indicator_name(raw_name: str) -> str:
     Returns:
         Standardized feature name
     """
+    import warnings
+
+    warnings.warn(
+        "normalize_indicator_name() is deprecated. "
+        "Use schema.name_aliases.normalize_name() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     raw = str(raw_name).strip()
     if not raw:
         return raw
 
-    # Сначала проверяем маппинг из name_aliases (для overlap и других критических индикаторов)
-    try:
-        from .schema.name_aliases import PANDAS_TA_TO_CANONICAL
+    # Delegate to SSoT (schema/name_aliases.py)
+    from ..schema.name_aliases import PANDAS_TA_TO_CANONICAL
 
-        if raw in PANDAS_TA_TO_CANONICAL:
-            return PANDAS_TA_TO_CANONICAL[raw]
-    except ImportError:
-        pass
+    if raw in PANDAS_TA_TO_CANONICAL:
+        return PANDAS_TA_TO_CANONICAL[raw]
 
     up = raw.upper()
 
@@ -313,7 +320,7 @@ def normalize_indicator_name(raw_name: str) -> str:
         elif up == base_name:
             return standard_name
 
-    # ШАГ 4: Улучшенная нормализация имен (исправить EMA200 → ema_200)
+    # Step 4: Improved name normalization (e.g. EMA200 → ema_200)
     import re
 
     # Handle patterns like EMA200 -> ema_200, SMA200 -> sma_200

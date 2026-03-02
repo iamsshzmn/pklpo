@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import importlib
 import os
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from src.candles.ccxt_okx_adapter import CcxtOKXAdapter
 from src.candles.ports import MarketDataAdapterPort
-
 
 LegacyAdapterFactory = Callable[[], MarketDataAdapterPort]
 

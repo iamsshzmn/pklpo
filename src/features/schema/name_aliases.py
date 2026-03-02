@@ -1,13 +1,13 @@
 """
-Единый маппинг имён индикаторов для устранения рассинхронизации.
+Unified indicator name mapping to eliminate drift between name sources.
 
-Этот модуль обеспечивает консистентность имён между:
-- pandas_ta именами
-- нашими каноническими именами
-- именами в схеме БД
+This module ensures consistent names across:
+- pandas_ta names
+- our canonical names
+- DB schema column names
 """
 
-# Маппинг pandas_ta имён на канонические
+# Mapping of pandas_ta names to canonical names
 PANDAS_TA_TO_CANONICAL = {
     # Bollinger Bands
     "BBL_20_2.0": "bb_lower",
@@ -62,6 +62,9 @@ PANDAS_TA_TO_CANONICAL = {
     # PSAR
     "PSARl_0.02_0.2": "psar_long",
     "PSARs_0.02_0.2": "psar_short",
+    # RSI / ATR (pandas_ta raw names)
+    "RSI_14": "rsi_14",
+    "ATRr_14": "atr_14",
 }
 
 # Unified aliases used by persistence normalization.
@@ -78,7 +81,7 @@ NAME_ALIASES = {
     "sma200": "sma_200",
 }
 
-# Обратный маппинг (канонические -> возможные варианты)
+# Reverse mapping (canonical -> possible aliases)
 CANONICAL_ALIASES = {
     "bb_upper": ["bbands_upper", "BBU_20_2.0"],
     "bb_middle": ["bbands_middle", "BBM_20_2.0"],
@@ -99,7 +102,7 @@ CANONICAL_ALIASES = {
     "dc_lower": ["DCL_20"],
 }
 
-# Критические поля, которые должны сохраняться даже с NaN
+# Critical fields that must be saved even with NaN values
 CRITICAL_ALWAYS_SAVE = {
     "bb_upper",
     "bb_middle",
@@ -120,23 +123,23 @@ CRITICAL_ALWAYS_SAVE = {
 
 def normalize_name(name: str) -> str:
     """
-    Нормализует имя индикатора к каноническому виду.
+    Normalize indicator name to canonical form.
 
     Args:
-        name: Имя индикатора (может быть из pandas_ta или другое)
+        name: Indicator name (may come from pandas_ta or other source)
 
     Returns:
-        Каноническое имя индикатора
+        Canonical indicator name
     """
-    # Сначала проверяем прямой маппинг
+    # Check direct mapping first
     if name in PANDAS_TA_TO_CANONICAL:
         return PANDAS_TA_TO_CANONICAL[name]
 
-    # Если имя уже каноническое, возвращаем как есть
+    # If name is already canonical, return as-is
     if name in CANONICAL_ALIASES or name in CRITICAL_ALWAYS_SAVE:
         return name
 
-    # Проверяем по префиксам для BB
+    # Check by prefix for BB
     if (
         name.startswith("BBL_")
         or name.startswith("bbands_lower")
@@ -156,5 +159,5 @@ def normalize_name(name: str) -> str:
     ):
         return "bb_upper"
 
-    # Для остальных возвращаем как есть (lowercase)
+    # For others return as-is (lowercase)
     return name.lower().replace(" ", "_")

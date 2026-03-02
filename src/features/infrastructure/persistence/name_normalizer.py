@@ -42,7 +42,7 @@ def normalize_record_names(
 
     safe_batch_data = []
     for record in filtered_batch:
-        safe_record = {k: v for k, v in record.items() if k in db_cols}
+        safe_record = {k: v for k, v in record.items() if k in db_cols or k in pk}
         safe_batch_data.append(safe_record)
 
     if not safe_batch_data:

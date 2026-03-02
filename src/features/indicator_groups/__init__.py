@@ -1,9 +1,16 @@
 """
-Indicator Groups Registry
+Indicator Groups (calculation layer).
 
-This module provides a registry of all indicator group calculators.
-Groups are executed in the order defined here, which is important for
-dependencies between groups.
+This package implements HOW indicators are calculated, using ta_safe.
+Each module (ma.py, oscillators.py, etc.) contains a calc_*_indicators() function.
+
+Boundary:
+    specs/ -> declares indicator metadata (names, params)
+    indicator_groups/ -> implements calculation logic
+    ta_safe/ -> provides safe_ta_with_fallback() for TA library calls
+
+Groups are executed in the order defined in registry.py, which is important
+for dependencies between groups (e.g., overlap must run before oscillators).
 
 All group calculators follow the GroupCalculatorProtocol:
 - Accept (df: pd.DataFrame, available: set[str], **kwargs)
@@ -165,14 +172,12 @@ from .registry import (
 )
 
 __all__ = [
-    # Legacy exports (backward compatibility)
     "GROUP_CALCULATORS",
     "GROUP_METADATA",
     "GroupCalculator",
+    "GroupEntry",
+    "GroupRegistry",
     "get_group_calculator",
     "get_group_order",
     "get_ordered_groups",
-    # New registry exports
-    "GroupEntry",
-    "GroupRegistry",
 ]
