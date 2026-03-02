@@ -42,6 +42,9 @@ class OKXClient:
             self._instrument_limiters[symbol] = AsyncLimiter(27, 1)
         return self._instrument_limiters[symbol]
 
+    def get_public_limiter(self) -> AsyncLimiter:
+        return self._public_limiter
+
     async def __aenter__(self):
         if self._session is None:
             self._session = aiohttp.ClientSession(

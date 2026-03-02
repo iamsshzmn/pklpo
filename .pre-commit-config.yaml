@@ -27,6 +27,15 @@ repos:
       - id: detect-private-key
       - id: mixed-line-ending
         args: ["--fix=lf"]
+
+  - repo: local
+    hooks:
+      - id: language-policy
+        name: Enforce language policy (code=EN, README=RU)
+        entry: python scripts/check_language_policy.py
+        language: python
+        pass_filenames: true
+        files: ^(README\.md|src/.*\.py|tests/.*\.py|scripts/.*\.py)$
 # ============================================
 # ПРИМЕЧАНИЯ:
 # ============================================

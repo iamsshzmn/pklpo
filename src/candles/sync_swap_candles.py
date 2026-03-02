@@ -1,433 +1,286 @@
 #!/usr/bin/env python3
 """
-Модуль для синхронизации swap OHLCV данных с биржи OKX.
-Обеспечивает загрузку исторических и текущих данных по всем swap инструментам
-с дополнительными данными: funding rate, open interest, long/short ratios.
+Module for syncing OKX swap OHLCV candles.
+Includes historical/regular candle fetch and optional extra data such as
+funding rate and open interest.
 """
+
+from __future__ import annotations
 
 import asyncio
 import datetime
 import json
-import logging
-import os
 import random
-from pathlib import Path
+import time
 from typing import Any
 
-from aiolimiter import AsyncLimiter
-from sqlalchemy import select, text
 from tqdm import tqdm
 
-from src.market_meta.infrastructure.market import OKXMarket
-from src.models import Instrument
-from src.utils.session_utils import get_db_session
+from src.candles.domain.timeframes import TF_TO_MS
+from src.candles.infrastructure.adapters import build_market_data_adapter
+from src.candles.infrastructure.extra_data import ExtraDataFetcher
+from src.candles.instruments_service import (
+    refresh_instruments_list,
+    resolve_instruments_cache_file,
+)
+from src.candles.ports import CandleRepositoryPort, MarketDataAdapterPort
+from src.candles.repository import SwapCandlesRepository
+from src.candles.sync_policy import SwapSyncPolicy
+from src.logging import get_logger, setup_logging
 
-# Конфигурация
-logger = logging.getLogger(__name__)
+# Logging
+logger = get_logger("candles.sync_swap_candles")
 
-# Поддерживаемые таймфреймы для swap
-SWAP_BARS = ["1m", "5m", "15m", "30m", "1H", "4H", "12H", "1D", "1W", "1M"]
+# Supported swap timeframes
+SWAP_BARS = list(TF_TO_MS.keys())
 
-# Конфигурация по умолчанию
+# Default runtime configuration
 DEFAULT_CONFIG = {
-    "max_requests_per_second": 80,  # Увеличиваем до 80 req/s (безопасно для публичных данных по IP)
-    "batch_size": 300,  # Количество свечей за запрос
+    "max_requests_per_second": 80,  # Global request rate limiter
+    "batch_size": 300,  # Candles per request
     "max_retries": 3,
     "retry_delay": 1.0,
-    "max_concurrent_symbols": 3,  # Параллельная обработка символов для ускорения
-    "extra_data": False,  # По умолчанию не тянем дополнительные метрики (во избежание 429)
+    "max_concurrent_symbols": 3,  # Parallel symbol workers
+    "extra_data": False,  # Disable optional metrics by default (avoid 429)
+    "use_ccxt": True,
 }
+
+
+class UnavailableMarketDataAdapter:
+    """Adapter placeholder used when no runtime adapter can be initialized."""
+
+    def __init__(self, reason: str) -> None:
+        self._reason = reason
+
+    async def __aenter__(self) -> UnavailableMarketDataAdapter:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        return None
+
+    async def get_candles(self, **kwargs):
+        raise RuntimeError(self._reason)
+
+    async def get_funding_rates(self, symbols):
+        raise RuntimeError(self._reason)
+
+    async def get_open_interest(self, symbols):
+        raise RuntimeError(self._reason)
 
 
 class SwapCandlesSync:
     """
-    Класс для синхронизации swap свечей с OKX.
+    Sync service for OKX swap candles.
     """
 
-    def __init__(self, config: dict[str, Any] | None = None):
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        *,
+        repository: CandleRepositoryPort | None = None,
+        market_adapter: MarketDataAdapterPort | None = None,
+        extra_data_fetcher: ExtraDataFetcher | None = None,
+    ):
         """
-        Инициализация синхронизатора.
+        Initialize sync service.
 
         Args:
-            config: Конфигурация синхронизации
+            config: Runtime sync configuration.
         """
         self.config = {**DEFAULT_CONFIG, **(config or {})}
 
-        # Инициализируем клиенты
-        self.okx_client = OKXMarket()  # Use OKXMarket instead of OKXClient
-        # Список инструментов берём из БД/файла, поэтому metadata_loader не нужен
-
-        # Rate limiting
-        self.request_limiter = AsyncLimiter(
-            max_rate=self.config["max_requests_per_second"], time_period=1.0
+        # Build adapters and policies.
+        self.okx_client: MarketDataAdapterPort = (
+            market_adapter or self._build_market_adapter()
         )
-        # Дополнительные локальные лимитеры по эндпоинтам (консервативные значения)
-        # Эти лимитеры дополняют клиентские, чтобы сгладить пики.
-        self._candles_limiter = AsyncLimiter(16, 1.0)
-        self._history_candles_limiter = AsyncLimiter(9, 1.0)
-        self._funding_limiter = AsyncLimiter(3, 1.0)
-        # Per-instrument лимитер для funding-rate (IP+Instrument ID правило)
-        self._funding_per_instrument: dict[str, AsyncLimiter] = {}
+        self.repository = repository or SwapCandlesRepository()
+        self.sync_policy = SwapSyncPolicy(
+            max_retries=int(self.config.get("max_retries", 3)),
+            retry_delay=float(self.config.get("retry_delay", 1.0)),
+            batch_size=int(self.config.get("batch_size", 300)),
+        )
+        # Symbol list is resolved from input/file/DB fallback at runtime.
 
-        # Кэши допданных в рамках одного запуска
-        self._funding_cache: dict[tuple[str, str], dict[str, Any]] = {}
-        self._oi_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        if self.config.get("extra_data", False):
+            self.extra_data_fetcher = extra_data_fetcher or ExtraDataFetcher(
+                self.okx_client
+            )
+        else:
+            self.extra_data_fetcher = None
 
-        # Метрики по эндпоинтам
+        # Endpoint-level counters.
         self.endpoint_stats: dict[str, dict[str, float]] = {
             "candles": {"ok": 0, "retries": 0, "rate_limit": 0},
-            "history_candles": {"ok": 0, "retries": 0, "rate_limit": 0},
-            "funding": {"ok": 0, "retries": 0, "rate_limit": 0, "errors": 0},
-            "open_interest": {"ok": 0, "retries": 0, "rate_limit": 0, "errors": 0},
         }
 
-        # Счетчики для метрик
+        # Aggregated run metrics.
         self.total_candles_synced = 0
         self.total_symbols_processed = 0
         self.errors_count = 0
+        self._db_write_latencies_sec: list[float] = []
+        self._db_write_batch_sizes: list[int] = []
 
-        logger.info(f"SwapCandlesSync инициализирован с конфигурацией: {self.config}")
+        logger.info("SwapCandlesSync initialized with config: %s", self.config)
         logger.debug(f"Rate limiter: {self.config['max_requests_per_second']} req/s")
         logger.debug(f"Batch size: {self.config['batch_size']} candles")
         logger.debug(f"Max concurrent symbols: {self.config['max_concurrent_symbols']}")
 
+    def _build_market_adapter(self) -> MarketDataAdapterPort:
+        try:
+            adapter = build_market_data_adapter(self.config)
+            logger.info("Initialized market adapter: %s", adapter.__class__.__name__)
+            return adapter
+        except Exception as exc:
+            logger.warning("Adapter init failed (%s), fallback to legacy", exc)
+            try:
+                return build_market_data_adapter(
+                    {
+                        "adapter": "legacy",
+                        "legacy_adapter_factory": self.config.get("legacy_adapter_factory"),
+                    }
+                )
+            except Exception as fallback_exc:
+                reason = (
+                    "No market adapter available. Primary init failed: "
+                    f"{exc}. Legacy fallback failed: {fallback_exc}"
+                )
+                logger.error(reason)
+                return UnavailableMarketDataAdapter(reason)
+
+    @staticmethod
+    def _percentile(values: list[float], pct: float) -> float:
+        if not values:
+            return 0.0
+        ordered = sorted(values)
+        index = int(round((len(ordered) - 1) * pct))
+        return ordered[index]
+
     async def resolve_symbols(self, symbols: list[str] | None) -> list[str]:
         """
-        Определяет список символов для синхронизации с автообновлением:
-        1) Если symbols переданы — используем их напрямую
-        2) Иначе — обновляем список из БД и загружаем из файла
+        Resolve symbol list for sync.
+        1) If symbols are passed explicitly, use them.
+        2) Otherwise refresh cache and load symbols from file (or DB fallback).
         """
         if symbols:
-            logger.info(f"Используем переданные символы: {len(symbols)} шт")
+            logger.info("Using provided symbols: %s", len(symbols))
             return symbols
 
-        # Автоматически обновляем список инструментов
-        logger.info("🔄 Автообновление списка инструментов...")
-        await self._update_instruments_list()
+        logger.info("Refreshing instruments list...")
+        await refresh_instruments_list(repository=self.repository, logger=logger)
 
-        # Загружаем обновленный список
-        instruments_file = self._get_instruments_file()
+        # Load refreshed list from file cache.
+        instruments_file = resolve_instruments_cache_file()
         if instruments_file.exists():
             try:
                 with open(instruments_file, encoding="utf-8") as f:
                     file_symbols: list[str] = json.load(f)
                 logger.info(
-                    f"Загружено {len(file_symbols)} символов из обновленного файла {instruments_file}"
+                    "Loaded %s symbols from refreshed cache file %s",
+                    len(file_symbols),
+                    instruments_file,
                 )
                 return file_symbols
             except Exception as e:
                 logger.warning(
-                    f"Не удалось загрузить список символов из файла: {e}. Переходим к БД по умолчанию."
+                    "Failed to read symbols from cache file (%s). Falling back to DB.",
+                    e,
                 )
 
-        # Fallback — все SWAP USDT из БД
-        logger.info("Загружаем символы из базы данных...")
-        async with get_db_session() as session:
-            result = await session.execute(
-                select(Instrument).where(
-                    Instrument.settle_ccy == "USDT",
-                    Instrument.inst_type == "SWAP",
-                )
-            )
-            db_instruments = result.scalars().all()
-            symbols_list = sorted(
-                (inst.symbol for inst in db_instruments), key=lambda s: s
-            )
-            logger.info(f"Загружено {len(symbols_list)} символов из БД")
-            return symbols_list
-
-    async def _update_instruments_list(self) -> None:
-        """
-        Внутренний метод для обновления списка инструментов.
-        Сохраняет BTC и ETH в начале, остальные добавляет по алфавиту.
-        """
-        instruments_file = self._get_instruments_file()
-
-        # Загружаем текущий список
-        current_symbols: list[str] = []
-        if instruments_file.exists():
-            try:
-                with open(instruments_file, encoding="utf-8") as f:
-                    current_symbols = json.load(f)
-                logger.debug(
-                    f"📋 Загружен текущий список: {len(current_symbols)} символов"
-                )
-            except Exception as e:
-                logger.warning(f"⚠️ Ошибка загрузки текущего списка: {e}")
-
-        # Получаем все SWAP USDT символы из БД
-        logger.info("🔄 Загружаем символы из базы данных...")
-        async with get_db_session() as session:
-            # Сначала проверим что есть в БД
-            all_instruments = await session.execute(select(Instrument))
-            all_count = len(all_instruments.fetchall())
-            logger.info(f"📊 Всего инструментов в БД: {all_count}")
-
-            # Проверим SWAP инструменты
-            swap_instruments = await session.execute(
-                select(Instrument).where(Instrument.inst_type == "SWAP")
-            )
-            swap_count = len(swap_instruments.fetchall())
-            logger.info(f"📊 SWAP инструментов в БД: {swap_count}")
-
-            # Проверим USDT инструменты
-            usdt_instruments = await session.execute(
-                select(Instrument).where(Instrument.settle_ccy == "USDT")
-            )
-            usdt_count = len(usdt_instruments.fetchall())
-            logger.info(f"📊 USDT инструментов в БД: {usdt_count}")
-
-            # Теперь основной запрос
-            result = await session.execute(
-                select(Instrument.symbol).where(
-                    Instrument.settle_ccy == "USDT",
-                    Instrument.inst_type == "SWAP",
-                )
-            )
-            db_symbols = [row[0] for row in result.fetchall()]
-
-        logger.info(f"📊 Найдено {len(db_symbols)} SWAP USDT символов в БД")
-        if db_symbols:
-            logger.info(f"📋 Первые 5 символов: {db_symbols[:5]}")
-        else:
-            logger.warning("⚠️ Не найдено SWAP USDT символов в БД!")
-
-        # Определяем приоритетные символы (всегда в начале)
-        priority_symbols = ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
-
-        # Создаем новый список
-        new_symbols = []
-
-        # 1. Добавляем приоритетные символы (если есть в БД)
-        for priority in priority_symbols:
-            if priority in db_symbols:
-                new_symbols.append(priority)
-                logger.debug(f"➕ Добавлен приоритетный символ: {priority}")
-
-        # 2. Добавляем остальные символы по алфавиту
-        remaining_symbols = sorted([s for s in db_symbols if s not in priority_symbols])
-        new_symbols.extend(remaining_symbols)
-
-        logger.debug(f"📝 Новый список содержит {len(new_symbols)} символов")
-
-        # Проверяем изменения
-        current_set = set(current_symbols)
-        new_set = set(new_symbols)
-
-        added = new_set - current_set
-        removed = current_set - new_set
-
-        if added:
-            logger.info(f"➕ Добавлены новые символы: {sorted(added)}")
-        if removed:
-            logger.info(f"➖ Удалены символы: {sorted(removed)}")
-
-        if not added and not removed:
-            logger.debug("✅ Список актуален, изменений не требуется")
-            return
-
-        # Сохраняем новый список
-        try:
-            with open(instruments_file, "w", encoding="utf-8") as f:
-                json.dump(new_symbols, f, indent=2, ensure_ascii=False)
-            logger.info(f"💾 Список обновлен и сохранен в {instruments_file}")
-
-            # Показываем статистику
-            logger.info("📊 СТАТИСТИКА ОБНОВЛЕНИЯ:")
-            logger.info(f"   • Всего символов: {len(new_symbols)}")
-            logger.info(
-                f"   • Приоритетных: {len([s for s in new_symbols if s in priority_symbols])}"
-            )
-            logger.info(
-                f"   • Обычных: {len([s for s in new_symbols if s not in priority_symbols])}"
-            )
-            if added:
-                logger.info(f"   • Добавлено: {len(added)}")
-            if removed:
-                logger.info(f"   • Удалено: {len(removed)}")
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка сохранения списка: {e}")
-            raise
-
-    def _get_instruments_file(self) -> Path:
-        """Возвращает путь к файлу кэша инструментов в доступной для записи директории.
-        По умолчанию используем `/opt/airflow/project/logs` внутри контейнера Airflow.
-        Путь можно переопределить через переменную окружения `INSTRUMENTS_CACHE_DIR`.
-        """
-        cache_dir = Path(
-            os.getenv("INSTRUMENTS_CACHE_DIR", "/opt/airflow/project/logs")
-        )
-        try:
-            cache_dir.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            # Если не удалось создать, откатываемся в /tmp
-            cache_dir = Path("/tmp")
-            cache_dir.mkdir(parents=True, exist_ok=True)
-        return cache_dir / "instruments_list.json"
+        # Fallback to repository read-model if file cache is unavailable.
+        logger.info("Loading swap symbols from repository fallback")
+        symbols_list = await self.repository.fetch_swap_usdt_symbols()
+        logger.info("Loaded %s swap symbols from repository fallback", len(symbols_list))
+        return symbols_list
 
     async def sync_swap_bar(
         self, symbol: str, timeframe: str, before: str | None = None
     ) -> tuple[int, str | None]:
         """
-        Синхронизация одного таймфрейма для одного swap инструмента.
+        Sync one timeframe page for one symbol.
 
         Args:
-            symbol: Символ инструмента
-            timeframe: Таймфрейм
-            before: Timestamp для пагинации
+            symbol: Instrument symbol.
+            timeframe: Candle timeframe.
+            before: Pagination timestamp.
 
         Returns:
-            Кортеж: (количество синхронизированных свечей, ts последней свечи)
+            Tuple: (saved_count, last_timestamp).
         """
         try:
-            logger.debug(f"Запрашиваем свечи {symbol} {timeframe} (before: {before})")
-            # Экспоненциальный backoff с джиттером при 429/5xx
+            logger.debug("Fetching candles %s %s (before=%s)", symbol, timeframe, before)
+            # Exponential backoff with jitter on 429/5xx errors.
             attempts = 0
-            delay = max(self.config.get("retry_delay", 1.0), 0.5)
+            delay = self.sync_policy.initial_delay()
+            requested_limit = self.sync_policy.request_limit()
             while True:
                 try:
-                    async with self._candles_limiter:
-                        async with self.okx_client._public_limiter:
-                            async with self.okx_client.get_instrument_limiter(symbol):
-                                candles = await self.okx_client.get_candles(
-                                    inst_id=symbol,
-                                    bar=timeframe,
-                                    limit=self.config["batch_size"],
-                                    before=before,
-                                )
+                    candles = await self.okx_client.get_candles(
+                        inst_id=symbol,
+                        bar=timeframe,
+                        limit=requested_limit,
+                        before=before,
+                    )
                     self.endpoint_stats["candles"]["ok"] += 1
                     break
                 except Exception as fetch_err:
                     msg = str(fetch_err)
-                    retriable = any(
-                        x in msg
-                        for x in [
-                            "429",
-                            "Too Many Requests",
-                            "50011",
-                            "5xx",
-                            "temporarily",
-                        ]
-                    )
-                    if not retriable or attempts >= self.config.get("max_retries", 3):
+                    retriable = self.sync_policy.is_retriable(msg)
+                    if not retriable or not self.sync_policy.can_retry(attempts):
                         raise
                     attempts += 1
-                    if any(x in msg for x in ["429", "Too Many Requests", "50011"]):
+                    if self.sync_policy.is_rate_limited(msg):
                         self.endpoint_stats["candles"]["rate_limit"] += 1
                     self.endpoint_stats["candles"]["retries"] += 1
-                    jitter = random.uniform(0.2, 0.5)
-                    sleep_for = min(60.0, delay) + jitter
+                    sleep_for = self.sync_policy.next_sleep(delay)
                     logger.warning(
-                        f"{symbol} {timeframe}: ограничение/сбой запроса, повтор через {sleep_for:.2f}s (попытка {attempts})"
+                        "%s %s: request limited/failed, retry in %.2fs (attempt %s)",
+                        symbol,
+                        timeframe,
+                        sleep_for,
+                        attempts,
                     )
                     await asyncio.sleep(sleep_for)
-                    delay *= 1.5
+                    delay = self.sync_policy.bump_delay(delay)
 
             if not candles:
-                logger.debug(f"Нет свечей для {symbol} {timeframe}")
+                logger.debug("No candles returned for %s %s", symbol, timeframe)
                 return 0, None
 
-            logger.debug(f"Получено {len(candles)} свечей для {symbol} {timeframe}")
-            # Доп. данные для swap
-            additional_data = await self._get_swap_additional_data(symbol, candles)
+            logger.debug("Received %s candles for %s %s", len(candles), symbol, timeframe)
+            # Optional extra data for swap instruments.
+            additional_data = await self._get_swap_additional_data(symbol)
 
-            # Сохраняем в БД
+            # Persist to DB.
             saved_count = await self._save_swap_candles(
                 symbol, timeframe, candles, additional_data
             )
             last_ts: str | None = str(candles[-1]["ts"]) if candles else None
-            logger.debug(f"Сохранено {saved_count} свечей для {symbol} {timeframe}")
+            logger.debug("Saved %s candles for %s %s", saved_count, symbol, timeframe)
             return saved_count, last_ts
 
         except Exception as e:
             if "51000" in str(e) and "Parameter bar error" in str(e):
-                logger.warning(f"{symbol}: Таймфрейм {timeframe} не поддерживается")
+                logger.warning("%s: timeframe %s is not supported", symbol, timeframe)
                 return 0, None
-            logger.error(f"Ошибка при синхронизации {symbol} {timeframe}: {e}")
+            logger.error("Failed syncing %s %s: %s", symbol, timeframe, e)
             self.errors_count += 1
             raise
 
-    async def _get_swap_additional_data(
-        self, symbol: str, candles: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    async def _get_swap_additional_data(self, symbol: str) -> dict[str, Any]:
         """
-        Получает дополнительные данные для swap инструментов.
+        Fetch optional extra data for swap candles.
 
         Args:
-            symbol: Символ инструмента
-            candles: Список свечей
-
+            symbol: Instrument symbol.
         Returns:
-            Дополнительные данные
+            Extra data map.
         """
-        # По умолчанию дополнительные данные отключены для снижения 429
-        if not self.config.get("extra_data", False):
-            logger.debug(f"Дополнительные данные отключены для {symbol}")
+        if self.extra_data_fetcher is None:
+            logger.debug("Extra data is disabled for %s", symbol)
             return {}
 
-        logger.debug(f"Запрашиваем дополнительные данные для {symbol}")
-        additional_data: dict[str, Any] = {}
-
-        # Ключи кэша будут построены после получения данных (symbol, fundingTime/ts)
-
-        # Funding rate (ограниченный эндпоинт: IP+Instrument)
-        try:
-            async with self._funding_limiter:
-                limiter = self._funding_per_instrument.setdefault(
-                    symbol, AsyncLimiter(2, 1.0)
-                )
-                async with limiter, self.okx_client._public_limiter:
-                    async with self.okx_client.get_instrument_limiter(symbol):
-                        fr_map = await self.okx_client.get_funding_rates([symbol])
-            fr = fr_map.get(symbol)
-            if fr:
-                # ожидаем поля fundingTime/ts в ответе
-                f_time = str(fr.get("fundingTime") or fr.get("ts") or "")
-                cache_key = (symbol, f_time)
-                if cache_key not in self._funding_cache:
-                    self._funding_cache[cache_key] = fr
-                additional_data["funding_rate"] = self._funding_cache[cache_key]
-                logger.debug(
-                    f"Получен funding rate для {symbol} (cache_key={cache_key})"
-                )
-                self.endpoint_stats["funding"]["ok"] += 1
-        except Exception as e:
-            logger.warning(f"Не удалось получить funding rate для {symbol}: {e}")
-            msg = str(e)
-            if any(x in msg for x in ["429", "Too Many Requests", "50011"]):
-                self.endpoint_stats["funding"]["rate_limit"] += 1
-                self.endpoint_stats["funding"]["retries"] += 1
-            else:
-                self.endpoint_stats["funding"]["errors"] += 1
-
-        # Open interest (публичный, но тоже сдерживаем)
-        try:
-            async with self._funding_limiter:
-                async with self.okx_client._public_limiter:
-                    async with self.okx_client.get_instrument_limiter(symbol):
-                        oi_map = await self.okx_client.get_open_interest([symbol])
-            oi = oi_map.get(symbol)
-            if oi:
-                o_time = str(oi.get("ts") or oi.get("time") or "")
-                cache_key = (symbol, o_time)
-                if cache_key not in self._oi_cache:
-                    self._oi_cache[cache_key] = oi
-                additional_data["open_interest"] = self._oi_cache[cache_key]
-                logger.debug(
-                    f"Получен open interest для {symbol} (cache_key={cache_key})"
-                )
-                self.endpoint_stats["open_interest"]["ok"] += 1
-        except Exception as e:
-            logger.warning(f"Не удалось получить open interest для {symbol}: {e}")
-            msg = str(e)
-            if any(x in msg for x in ["429", "Too Many Requests", "50011"]):
-                self.endpoint_stats["open_interest"]["rate_limit"] += 1
-                self.endpoint_stats["open_interest"]["retries"] += 1
-            else:
-                self.endpoint_stats["open_interest"]["errors"] += 1
-
-        return additional_data
+        logger.debug("Fetching extra data for %s", symbol)
+        return await self.extra_data_fetcher.fetch_for_symbol(symbol)
 
     async def _save_swap_candles(
         self,
@@ -437,97 +290,40 @@ class SwapCandlesSync:
         additional_data: dict[str, Any],
     ) -> int:
         """
-        Сохраняет swap свечи в базу данных.
-
-        Args:
-            symbol: Символ инструмента
-            timeframe: Таймфрейм
-            candles: Список свечей
-            additional_data: Дополнительные данные
-
-        Returns:
-            Количество сохраненных свечей
+        Save swap candles to DB through repository abstraction.
         """
-        async with get_db_session() as session:
-            try:
-                saved_count = 0
-                logger.debug(
-                    f"Начинаем сохранение {len(candles)} свечей для {symbol} {timeframe}"
-                )
-
-                for candle in candles:
-                    # Базовые данные свечи
-                    candle_data = {
-                        "symbol": symbol,
-                        "timeframe": timeframe,
-                        "timestamp": candle["ts"],
-                        "open": candle["open"],
-                        "high": candle["high"],
-                        "low": candle["low"],
-                        "close": candle["close"],
-                        "volume": candle["volume"],
-                        "vol_ccy": candle.get("volCcy"),
-                        "vol_usd": candle.get("volUsd"),
-                        "fetched_at": datetime.datetime.utcnow(),
-                    }
-
-                    # Добавляем дополнительные данные если доступны
-                    if additional_data.get("funding_rate"):
-                        candle_data["funding_rate"] = additional_data[
-                            "funding_rate"
-                        ].get("fundingRate")
-
-                    if additional_data.get("open_interest"):
-                        candle_data["open_interest"] = additional_data[
-                            "open_interest"
-                        ].get("oi")
-
-                    # Вставляем или обновляем данные используя raw SQL
-                    columns = list(candle_data.keys())
-                    list(candle_data.values())
-                    placeholders = [f":{col}" for col in columns]
-
-                    sql = f"""
-                    INSERT INTO swap_ohlcv_p ({', '.join(columns)})
-                    VALUES ({', '.join(placeholders)})
-                    ON CONFLICT (symbol, timeframe, timestamp)
-                    DO UPDATE SET
-                    """
-                    update_parts = [
-                        f"{col} = EXCLUDED.{col}"
-                        for col in columns
-                        if col not in ["symbol", "timeframe", "timestamp"]
-                    ]
-                    sql += ", ".join(update_parts)
-
-                    stmt = text(sql)
-
-                    await session.execute(stmt, candle_data)
-                    saved_count += 1
-
-                await session.commit()
-                logger.debug(
-                    f"Успешно сохранено {saved_count} свечей в БД для {symbol} {timeframe}"
-                )
-                return saved_count
-
-            except Exception as e:
-                await session.rollback()
-                logger.error(f"Ошибка при сохранении свечей {symbol} {timeframe}: {e}")
-                raise
+        started = time.perf_counter()
+        saved_count = await self.repository.upsert_swap_candles(
+            symbol=symbol,
+            timeframe=timeframe,
+            candles=candles,
+            additional_data=additional_data,
+        )
+        elapsed = time.perf_counter() - started
+        self._db_write_latencies_sec.append(elapsed)
+        self._db_write_batch_sizes.append(len(candles))
+        logger.debug(
+            "Persisted %s candles via repository for %s %s in %.4fs (batch=%s)",
+            saved_count,
+            symbol,
+            timeframe,
+            elapsed,
+            len(candles),
+        )
+        return saved_count
 
     async def sync_swap_symbol(
         self, symbol: str, timeframes: list[str] | None = None
     ) -> dict[str, int]:
         """
-        Синхронизация всех таймфреймов для одного swap инструмента.
+        Sync all requested timeframes for one symbol.
 
         Args:
-            symbol: Символ инструмента
-            timeframes: Список таймфреймов для синхронизации
+            symbol: Instrument symbol.
+            timeframes: Timeframes to sync.
 
         Returns:
-            Статистика синхронизации по таймфреймам
+            Synced candles count by timeframe.
         """
         if timeframes is None:
             timeframes = SWAP_BARS
@@ -537,25 +333,27 @@ class SwapCandlesSync:
         async def sync_one_tf(tf: str) -> tuple[str, int]:
             total = 0
             before_local: str | None = None
-            logger.debug(f"Начинаем синхронизацию {symbol} {tf}")
+            logger.debug("Start sync for %s %s", symbol, tf)
             while True:
                 count, last_ts = await self.sync_swap_bar(symbol, tf, before_local)
                 total += count
-                if count < self.config["batch_size"] or not last_ts:
+                if count < self.sync_policy.request_limit() or not last_ts:
                     break
                 before_local = last_ts
-                logger.debug(f"{symbol} {tf}: загружено {count} свечей, всего {total}")
-            logger.info(f"{symbol} {tf}: синхронизировано {total} свечей")
+                logger.debug("%s %s: fetched=%s, total=%s", symbol, tf, count, total)
+            logger.info("%s %s: synced %s candles", symbol, tf, total)
             return tf, total
 
-        # Последовательно по таймфреймам, чтобы сгладить нагрузку
+        # Run sequentially by timeframe to reduce API pressure.
         logger.debug(
-            f"Запускаем последовательную синхронизацию {len(timeframes)} таймфреймов для {symbol}"
+            "Running sequential sync for %s timeframes on %s",
+            len(timeframes),
+            symbol,
         )
         for tf in timeframes:
             tf_name, total = await sync_one_tf(tf)
             stats[tf_name] = total
-            # Небольшой джиттер между барами
+            # Small jitter between timeframe loops.
             await asyncio.sleep(random.uniform(0.2, 0.5))
 
         return stats
@@ -564,73 +362,78 @@ class SwapCandlesSync:
         self, symbols: list[str] | None = None, timeframes: list[str] | None = None
     ) -> dict[str, Any]:
         """
-        Синхронизация всех swap свечей.
+        Sync all swap candles.
 
         Args:
-            symbols: Список символов для синхронизации (если None - все)
-            timeframes: Список таймфреймов для синхронизации
+            symbols: Optional explicit symbol list.
+            timeframes: Optional explicit timeframe list.
 
         Returns:
-            Общая статистика синхронизации
+            Aggregated sync statistics.
         """
-        logger.info("🚀 Начинаем синхронизацию swap свечей...")
+        logger.info("Starting swap candles sync...")
 
         start_time = datetime.datetime.now()
 
         try:
-            # Гарантируем корректную инициализацию/закрытие HTTP-сессии клиента OKX
+            # Ensure HTTP session lifecycle is handled by the adapter.
             async with self.okx_client:
-                # Получаем список символов из БД/файла (как в sync_candles.py)
+                # Resolve symbol list from input/file/DB fallback.
                 symbols = await self.resolve_symbols(symbols)
 
-                logger.info(f"📊 Синхронизируем {len(symbols)} swap инструментов")
-                logger.info(f"⏰ Таймфреймы: {timeframes or SWAP_BARS}")
-                logger.info(f"⚙️ Конфигурация: {self.config}")
+                logger.info("Will sync %s swap symbols", len(symbols))
+                logger.info("Timeframes: %s", timeframes or SWAP_BARS)
+                logger.info("Runtime config: %s", self.config)
 
-                # Параллельная обработка символов с ограничением через Semaphore
+                # Process symbols in parallel with semaphore guard.
                 max_concurrent = self.config.get("max_concurrent_symbols", 1)
                 semaphore = asyncio.Semaphore(max_concurrent)
                 results = {}
 
                 logger.info(
-                    f"🔄 Запускаем параллельную синхронизацию {len(symbols)} символов "
+                    f"Starting parallel symbol sync for {len(symbols)} symbols "
                     f"(max_concurrent={max_concurrent})"
                 )
 
                 async def sync_symbol_with_semaphore(
                     symbol: str,
                 ) -> tuple[str, dict[str, int] | Exception]:
-                    """Обрабатывает один символ с ограничением параллелизма."""
+                    """Sync one symbol with semaphore-limited concurrency."""
                     async with semaphore:
                         try:
-                            logger.info(f"🔄 Обрабатываем символ: {symbol}")
+                            logger.info("Syncing symbol: %s", symbol)
                             result = await self.sync_swap_symbol(symbol, timeframes)
 
-                            # Обновляем общую статистику (thread-safe через asyncio)
+                            # Update shared stats (safe in single-threaded event loop).
                             for _timeframe, count in result.items():
                                 self.total_candles_synced += count
                             self.total_symbols_processed += 1
 
                             total_candles = sum(result.values())
                             logger.info(
-                                f"✅ Символ {symbol} завершен: {total_candles} свечей"
+                                "Symbol %s completed: %s candles",
+                                symbol,
+                                total_candles,
                             )
                             return symbol, result
                         except Exception as e:
                             logger.error(
-                                f"❌ Ошибка при синхронизации символа {symbol}: {e}"
+                                "Error syncing symbol %s: %s",
+                                symbol,
+                                e,
                             )
-                            self.errors_count += 1
+                            # sync_swap_bar already increments error counters for
+                            # failed sync attempts; avoid double counting here.
                             return symbol, e
 
-                # Запускаем все задачи параллельно
+                # Create tasks for all symbols.
                 tasks = [
                     asyncio.create_task(sync_symbol_with_semaphore(symbol))
                     for symbol in symbols
                 ]
 
-                # Собираем результаты с обработкой исключений
-                with tqdm(total=len(symbols), desc="Синхронизация swap") as pbar:
+                # Collect results as tasks complete.
+                with tqdm(total=len(symbols), desc="Swap sync") as pbar:
                     for coro in asyncio.as_completed(tasks):
                         symbol, result = await coro
                         if isinstance(result, Exception):
@@ -642,7 +445,7 @@ class SwapCandlesSync:
             end_time = datetime.datetime.now()
             duration = (end_time - start_time).total_seconds()
 
-            # Подсчёт свежести за сегодня
+            # Read today's fill statistics.
             today_stats = {
                 "rows_today": 0,
                 "funding_rate_non_null": 0,
@@ -658,49 +461,34 @@ class SwapCandlesSync:
                     .timestamp()
                     * 1000
                 )
-                async with get_db_session() as session:
-                    q_total = await session.execute(
-                        text(
-                            """
-                        SELECT COUNT(*) FROM swap_ohlcv_p WHERE timestamp >= :t
-                    """
-                        ),
-                        {"t": start_of_day_ms},
-                    )
-                    today_stats["rows_today"] = int(q_total.scalar() or 0)
-
-                    q_fill = await session.execute(
-                        text(
-                            """
-                        SELECT
-                          COUNT(*) FILTER (WHERE funding_rate IS NOT NULL) AS fr,
-                          COUNT(*) FILTER (WHERE open_interest IS NOT NULL) AS oi
-                        FROM swap_ohlcv_p
-                        WHERE timestamp >= :t
-                    """
-                        ),
-                        {"t": start_of_day_ms},
-                    )
-                    fr, oi = q_fill.fetchone()
-                    today_stats["funding_rate_non_null"] = int(fr or 0)
-                    today_stats["open_interest_non_null"] = int(oi or 0)
-                    if today_stats["rows_today"] > 0:
-                        today_stats["funding_rate_fill_pct"] = round(
-                            100.0
-                            * today_stats["funding_rate_non_null"]
-                            / today_stats["rows_today"],
-                            2,
-                        )
-                        today_stats["open_interest_fill_pct"] = round(
-                            100.0
-                            * today_stats["open_interest_non_null"]
-                            / today_stats["rows_today"],
-                            2,
-                        )
+                today_stats = await self.repository.fetch_today_fill_stats(start_of_day_ms)
             except Exception as e:
-                logger.warning(f"Не удалось вычислить свежесть за сегодня: {e}")
+                logger.warning("Failed to compute today's fill stats: %s", e)
 
-            # Формируем итоговую статистику
+            # Build DB write stats.
+            db_write_stats = {
+                "writes_count": len(self._db_write_latencies_sec),
+                "latency_avg_ms": (
+                    round(
+                        (sum(self._db_write_latencies_sec) / len(self._db_write_latencies_sec))
+                        * 1000.0,
+                        3,
+                    )
+                    if self._db_write_latencies_sec
+                    else 0.0
+                ),
+                "latency_p95_ms": round(
+                    self._percentile(self._db_write_latencies_sec, 0.95) * 1000.0,
+                    3,
+                ),
+                "batch_size_avg": (
+                    round(sum(self._db_write_batch_sizes) / len(self._db_write_batch_sizes), 2)
+                    if self._db_write_batch_sizes
+                    else 0.0
+                ),
+                "batch_size_max": max(self._db_write_batch_sizes) if self._db_write_batch_sizes else 0,
+            }
+
             total_stats = {
                 "total_symbols": len(symbols),
                 "total_candles_synced": self.total_candles_synced,
@@ -714,27 +502,41 @@ class SwapCandlesSync:
                 "results_by_symbol": results,
                 "endpoint_stats": self.endpoint_stats,
                 "today_fill": today_stats,
+                "db_write": db_write_stats,
             }
+            if self.extra_data_fetcher is not None:
+                total_stats["endpoint_stats"].update(
+                    self.extra_data_fetcher.snapshot_stats()
+                )
 
-            logger.info("✅ Синхронизация swap свечей завершена!")
-            logger.info("📊 Итоговая статистика:")
-            logger.info(f"   • Символов обработано: {total_stats['total_symbols']}")
+            logger.info("Swap candles sync completed")
+            logger.info("Summary:")
+            logger.info("  Symbols processed: %s", total_stats["total_symbols"])
             logger.info(
-                f"   • Свечей синхронизировано: {total_stats['total_candles_synced']:,}"
+                "  Candles synced: %s",
+                f"{total_stats['total_candles_synced']:,}",
             )
-            logger.info(f"   • Ошибок: {total_stats['errors_count']}")
+            logger.info("  Errors: %s", total_stats["errors_count"])
             logger.info(
-                f"   • Время выполнения: {total_stats['duration_seconds']:.2f} сек"
+                "  Duration: %.2f sec",
+                total_stats["duration_seconds"],
             )
             logger.info(
-                f"   • Скорость: {total_stats['candles_per_second']:.2f} свечей/сек"
+                "  Throughput: %.2f candles/sec",
+                total_stats["candles_per_second"],
             )
-            logger.debug(f"📋 Детальная статистика: {total_stats}")
+            logger.info(
+                "  DB write p95: %.3f ms, avg: %.3f ms, avg batch: %.2f",
+                total_stats["db_write"]["latency_p95_ms"],
+                total_stats["db_write"]["latency_avg_ms"],
+                total_stats["db_write"]["batch_size_avg"],
+            )
+            logger.debug("Detailed stats: %s", total_stats)
 
             return total_stats
 
         except Exception as e:
-            logger.error(f"❌ Критическая ошибка при синхронизации swap свечей: {e}")
+            logger.error("Critical error during swap candle sync: %s", e)
             raise
 
 
@@ -744,29 +546,24 @@ async def sync_swap_candles(
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Основная функция для синхронизации swap свечей.
+    Top-level API for swap candles sync.
 
     Args:
-        symbols: Список символов для синхронизации
-        timeframes: Список таймфреймов для синхронизации
-        config: Конфигурация синхронизации
+        symbols: Optional explicit symbol list.
+        timeframes: Optional explicit timeframe list.
+        config: Runtime sync configuration.
 
     Returns:
-        Статистика синхронизации
+        Aggregated sync statistics.
     """
     sync = SwapCandlesSync(config)
     return await sync.sync_all_swap_candles(symbols, timeframes)
 
 
 if __name__ == "__main__":
-    # Настройка логирования
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-    )
+    # Configure logging.
+    setup_logging(level="INFO")
+    logger.info("Launching swap candles sync module")
 
-    logger = logging.getLogger(__name__)
-    logger.info("🚀 Запуск модуля синхронизации swap свечей")
-
-    # Запуск синхронизации
+    # Run sync.
     asyncio.run(sync_swap_candles())

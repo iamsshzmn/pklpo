@@ -7,14 +7,13 @@ Phase 2.1: Added DIP compliance with optional validator injection.
 from __future__ import annotations
 
 import datetime
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 import numpy as np
 import pandas as pd
 
 from src.logging import get_logger
 
-from ...observability.prometheus import get_metrics as get_prom_metrics
 from ...schema.name_aliases import CRITICAL_ALWAYS_SAVE
 
 logger = get_logger(__name__)
@@ -35,6 +34,8 @@ def build_batch_data(
     timeframe: str,
     db_cols: set[str],
     timestamp_validator: TimestampValidatorProtocol | None = None,
+    seen_timestamps: set[int] | None = None,
+    on_duplicate: Callable[[str, str, int], None] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """
     Build batch data from DataFrame for database insertion.
@@ -49,6 +50,10 @@ def build_batch_data(
         db_cols: Set of database column names
         timestamp_validator: Optional custom timestamp validator.
                             If None, uses the default validate_timestamp.
+        seen_timestamps: Optional shared set of seen timestamps.
+            Pass the same set across chunks to detect boundary duplicates.
+        on_duplicate: Optional callback called as
+            on_duplicate(symbol, timeframe, duplicate_rows).
 
     Returns:
         Tuple of (batch_data list, skipped_rows count)
@@ -61,7 +66,8 @@ def build_batch_data(
     batch_data: list[dict[str, Any]] = []
     skipped_rows = 0
     duplicate_rows = 0
-    seen_timestamps: set[int] = set()
+    if seen_timestamps is None:
+        seen_timestamps = set()
 
     # Используем itertuples() для лучшей производительности (быстрее iterrows())
     # itertuples() возвращает namedtuple с атрибутами, соответствующими колонкам
@@ -200,10 +206,8 @@ def build_batch_data(
             skipped_rows += 1
             continue
 
-    # F.2: Record duplicate metrics to Prometheus
-    if duplicate_rows > 0:
-        prom = get_prom_metrics()
-        prom.record_duplicates(symbol, timeframe, duplicate_rows)
+    if duplicate_rows > 0 and on_duplicate:
+        on_duplicate(symbol, timeframe, duplicate_rows)
         logger.warning(
             "Detected %d duplicate timestamps in batch for %s/%s",
             duplicate_rows,

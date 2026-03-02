@@ -56,6 +56,7 @@ class Thresholds:
 FRESHNESS_THRESHOLDS = Thresholds(warn=5.0, critical=15.0, direction="gt")
 COVERAGE_THRESHOLDS = Thresholds(warn=90.0, critical=70.0, direction="lt")
 SMOKE_THRESHOLDS = Thresholds(warn=9.0, critical=8.0, direction="lt")
+DUPLICATE_RATE_THRESHOLDS = Thresholds(warn=0.01, critical=0.1, direction="gt")
 
 # Fill-rate пороги
 FUNDING_FILL_THRESHOLDS = Thresholds(warn=95.0, critical=80.0, direction="lt")

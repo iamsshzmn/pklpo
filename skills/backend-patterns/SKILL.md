@@ -1,722 +1,323 @@
 ---
 name: backend-patterns
-description: Backend architecture patterns, API design, database optimization, and server-side best practices for Node.js, Express, and Next.js API routes.
+description: Python backend patterns for this project: SQLAlchemy 2.0 async, repository pattern, UPSERT, chunked processing, dependency injection via container.py.
 ---
 
-# Backend Development Patterns
+# Backend Development Patterns (Python / SQLAlchemy async)
 
-Backend architecture patterns and best practices for scalable server-side applications.
+Patterns for the PKLPO Python backend: asyncpg, SQLAlchemy 2.0, PostgreSQL, OKX data pipeline.
 
-## ⚠️ Security First
+## Database: SQLAlchemy 2.0 Async
 
-**CRITICAL**: All examples in this document are educational patterns. In production:
+### Session Setup
 
-- ✅ Always validate and sanitize user input
-- ✅ Never hardcode secrets (use environment variables)
-- ✅ Verify environment variables exist before use
-- ✅ Use parameterized queries (never string concatenation)
-- ✅ Implement rate limiting on all public endpoints
-- ✅ Enable Row Level Security (RLS) on database tables
-- ✅ Use HTTPS in production
-- ✅ Sanitize error messages (don't expose internal details)
-- ✅ Implement proper authentication and authorization
-- ✅ Log security events but never log secrets or PII
+```python
+# src/database.py
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
-## API Design Patterns
-
-### RESTful API Structure
-
-```typescript
-// ✅ Resource-based URLs
-GET    /api/markets                 # List resources
-GET    /api/markets/:id             # Get single resource
-POST   /api/markets                 # Create resource
-PUT    /api/markets/:id             # Replace resource
-PATCH  /api/markets/:id             # Update resource
-DELETE /api/markets/:id             # Delete resource
-
-// ✅ Query parameters for filtering, sorting, pagination
-GET /api/markets?status=active&sort=volume&limit=20&offset=0
-```
-
-### Repository Pattern
-
-```typescript
-// Abstract data access logic
-interface MarketRepository {
-  findAll(filters?: MarketFilters): Promise<Market[]>
-  findById(id: string): Promise<Market | null>
-  create(data: CreateMarketDto): Promise<Market>
-  update(id: string, data: UpdateMarketDto): Promise<Market>
-  delete(id: string): Promise<void>
-}
-
-class SupabaseMarketRepository implements MarketRepository {
-  async findAll(filters?: MarketFilters): Promise<Market[]> {
-    // ✅ SECURITY: Select specific columns (not *) to prevent data leakage
-    let query = supabase.from('markets').select('id, name, status, volume, created_at')
-
-    // ✅ SECURITY: Validate and sanitize filter inputs
-    if (filters?.status) {
-      // Whitelist allowed status values
-      const allowedStatuses = ['active', 'inactive', 'pending']
-      if (allowedStatuses.includes(filters.status)) {
-        query = query.eq('status', filters.status)
-      }
-    }
-
-    // ✅ SECURITY: Limit max results to prevent DoS
-    const limit = filters?.limit
-      ? Math.min(Math.max(1, filters.limit), 100)  // Between 1 and 100
-      : 10
-    query = query.limit(limit)
-
-    const { data, error } = await query
-
-    if (error) {
-      // ✅ SECURITY: Don't expose database error details
-      console.error('Database error:', error)
-      throw new Error('Failed to fetch markets')
-    }
-    return data || []
-  }
-
-  // Other methods...
-}
-```
-
-### Service Layer Pattern
-
-```typescript
-// Business logic separated from data access
-class MarketService {
-  constructor(private marketRepo: MarketRepository) {}
-
-  async searchMarkets(query: string, limit: number = 10): Promise<Market[]> {
-    // ✅ SECURITY: Validate and sanitize search query
-    if (!query || typeof query !== 'string') {
-      throw new Error('Invalid search query')
-    }
-
-    // ✅ SECURITY: Sanitize query (remove potentially dangerous characters)
-    const sanitizedQuery = query.trim().slice(0, 500)  // Max length
-
-    // ✅ SECURITY: Limit max results to prevent DoS
-    const safeLimit = Math.min(Math.max(1, limit), 50)  // Between 1 and 50
-
-    // Business logic
-    const embedding = await generateEmbedding(sanitizedQuery)
-    const results = await this.vectorSearch(embedding, safeLimit)
-
-    // Fetch full data
-    const markets = await this.marketRepo.findByIds(results.map(r => r.id))
-
-    // Sort by similarity
-    return markets.sort((a, b) => {
-      const scoreA = results.find(r => r.id === a.id)?.score || 0
-      const scoreB = results.find(r => r.id === b.id)?.score || 0
-      return scoreA - scoreB
-    })
-  }
-
-  private async vectorSearch(embedding: number[], limit: number) {
-    // Vector search implementation
-  }
-}
-```
-
-### Middleware Pattern
-
-```typescript
-// Request/response processing pipeline
-export function withAuth(handler: NextApiHandler): NextApiHandler {
-  return async (req, res) => {
-    const token = req.headers.authorization?.replace('Bearer ', '')
-
-    if (!token) {
-      return res.status(401).json({ error: 'Unauthorized' })
-    }
-
-    try {
-      const user = await verifyToken(token)
-      req.user = user
-      return handler(req, res)
-    } catch (error) {
-      return res.status(401).json({ error: 'Invalid token' })
-    }
-  }
-}
-
-// Usage
-export default withAuth(async (req, res) => {
-  // Handler has access to req.user
-})
-```
-
-## Database Patterns
-
-### Query Optimization
-
-```typescript
-// ✅ GOOD: Select only needed columns
-const { data } = await supabase
-  .from('markets')
-  .select('id, name, status, volume')
-  .eq('status', 'active')
-  .order('volume', { ascending: false })
-  .limit(10)
-
-// ❌ BAD: Select everything
-const { data } = await supabase
-  .from('markets')
-  .select('*')
-```
-
-### N+1 Query Prevention
-
-```typescript
-// ❌ BAD: N+1 query problem
-const markets = await getMarkets()
-for (const market of markets) {
-  market.creator = await getUser(market.creator_id)  // N queries
-}
-
-// ✅ GOOD: Batch fetch
-const markets = await getMarkets()
-const creatorIds = markets.map(m => m.creator_id)
-const creators = await getUsers(creatorIds)  // 1 query
-const creatorMap = new Map(creators.map(c => [c.id, c]))
-
-markets.forEach(market => {
-  market.creator = creatorMap.get(market.creator_id)
-})
-```
-
-### Transaction Pattern
-
-```typescript
-async function createMarketWithPosition(
-  marketData: CreateMarketDto,
-  positionData: CreatePositionDto
-) {
-  // Use Supabase transaction
-  const { data, error } = await supabase.rpc('create_market_with_position', {
-    market_data: marketData,
-    position_data: positionData
-  })
-
-  if (error) throw new Error('Transaction failed')
-  return data
-}
-
-// SQL function in Supabase
-CREATE OR REPLACE FUNCTION create_market_with_position(
-  market_data jsonb,
-  position_data jsonb
+engine = create_async_engine(
+    "postgresql+asyncpg://user:pass@host/db",
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
 )
-RETURNS jsonb
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  -- Start transaction automatically
-  INSERT INTO markets VALUES (market_data);
-  INSERT INTO positions VALUES (position_data);
-  RETURN jsonb_build_object('success', true);
-EXCEPTION
-  WHEN OTHERS THEN
-    -- Rollback happens automatically
-    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+
+async_session_maker = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 ```
 
-## Caching Strategies
+### Async Context Manager
 
-### Redis Caching Layer
+```python
+from contextlib import asynccontextmanager
+from sqlalchemy.ext.asyncio import AsyncSession
 
-```typescript
-class CachedMarketRepository implements MarketRepository {
-  constructor(
-    private baseRepo: MarketRepository,
-    private redis: RedisClient
-  ) {}
-
-  async findById(id: string): Promise<Market | null> {
-    // Check cache first
-    const cached = await this.redis.get(`market:${id}`)
-
-    if (cached) {
-      return JSON.parse(cached)
-    }
-
-    // Cache miss - fetch from database
-    const market = await this.baseRepo.findById(id)
-
-    if (market) {
-      // Cache for 5 minutes
-      await this.redis.setex(`market:${id}`, 300, JSON.stringify(market))
-    }
-
-    return market
-  }
-
-  async invalidateCache(id: string): Promise<void> {
-    await this.redis.del(`market:${id}`)
-  }
-}
+@asynccontextmanager
+async def get_session():
+    async with async_session_maker() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 ```
 
-### Cache-Aside Pattern
+## Repository Pattern
 
-```typescript
-async function getMarketWithCache(id: string): Promise<Market> {
-  // ✅ SECURITY: Validate and sanitize ID input
-  if (!id || typeof id !== 'string' || id.length > 100) {
-    throw new Error('Invalid market ID')
-  }
+```python
+# src/candles/repository.py
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.models import Instrument, OHLCV
 
-  // ✅ SECURITY: Sanitize cache key to prevent injection
-  const sanitizedId = id.replace(/[^a-zA-Z0-9-_]/g, '')
-  const cacheKey = `market:${sanitizedId}`
+class InstrumentRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
 
-  // Try cache
-  const cached = await redis.get(cacheKey)
-  if (cached) {
-    try {
-      return JSON.parse(cached)
-    } catch (error) {
-      // Invalid cache data - continue to DB fetch
-      console.warn('Invalid cache data for', cacheKey)
-    }
-  }
+    async def get_by_symbol(self, symbol: str) -> Instrument | None:
+        result = await self._session.execute(
+            select(Instrument).where(Instrument.symbol == symbol)
+        )
+        return result.scalar_one_or_none()
 
-  // Cache miss - fetch from DB
-  const market = await db.markets.findUnique({ where: { id: sanitizedId } })
+    async def list_active(self) -> list[Instrument]:
+        result = await self._session.execute(
+            select(Instrument).where(Instrument.is_active.is_(True))
+        )
+        return list(result.scalars().all())
 
-  if (!market) throw new Error('Market not found')
-
-  // Update cache
-  await redis.setex(cacheKey, 300, JSON.stringify(market))
-
-  return market
-}
+    async def upsert(self, data: dict) -> None:
+        await self._session.execute(
+            text("""
+                INSERT INTO instruments (symbol, base, quote, is_active)
+                VALUES (:symbol, :base, :quote, :is_active)
+                ON CONFLICT (symbol) DO UPDATE SET
+                    is_active = EXCLUDED.is_active
+            """),
+            data,
+        )
 ```
 
-## Error Handling Patterns
+## UPSERT Pattern (Composite Key)
 
-### Centralized Error Handler
+All DB writes use `(symbol, timeframe, timestamp)` composite key for idempotency:
 
-```typescript
-class ApiError extends Error {
-  constructor(
-    public statusCode: number,
-    public message: string,
-    public isOperational = true
-  ) {
-    super(message)
-    Object.setPrototypeOf(this, ApiError.prototype)
-  }
-}
+```python
+# src/features/infrastructure/db_operations.py
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+import pandas as pd
 
-export function errorHandler(error: unknown, req: Request): Response {
-  if (error instanceof ApiError) {
-    return NextResponse.json({
-      success: false,
-      error: error.message
-    }, { status: error.statusCode })
-  }
+async def upsert_indicators(
+    session: AsyncSession,
+    df: pd.DataFrame,
+    symbol: str,
+    timeframe: str,
+) -> int:
+    """UPSERT indicator rows. Returns number of rows affected."""
+    records = df.to_dict("records")
 
-  if (error instanceof z.ZodError) {
-    return NextResponse.json({
-      success: false,
-      error: 'Validation failed',
-      details: error.errors
-    }, { status: 400 })
-  }
+    stmt = text("""
+        INSERT INTO indicators_p (symbol, timeframe, timestamp, rsi_14, ema_21)
+        VALUES (:symbol, :timeframe, :timestamp, :rsi_14, :ema_21)
+        ON CONFLICT (symbol, timeframe, timestamp) DO UPDATE SET
+            rsi_14 = EXCLUDED.rsi_14,
+            ema_21 = EXCLUDED.ema_21
+    """)
 
-  // ✅ SECURITY: Log errors but don't expose sensitive details
-  console.error('Unexpected error:', {
-    message: error instanceof Error ? error.message : 'Unknown error',
-    // Never log full stack traces or sensitive data in production
-    ...(process.env.NODE_ENV === 'development' && { stack: error instanceof Error ? error.stack : undefined })
-  })
-
-  // ✅ SECURITY: Generic error message for users (don't leak internal details)
-  return NextResponse.json({
-    success: false,
-    error: 'Internal server error'
-  }, { status: 500 })
-}
-
-// Usage
-export async function GET(request: Request) {
-  try {
-    const data = await fetchData()
-    return NextResponse.json({ success: true, data })
-  } catch (error) {
-    return errorHandler(error, request)
-  }
-}
+    await session.execute(stmt, records)
+    return len(records)
 ```
 
-### Retry with Exponential Backoff
+## Chunked Processing (200K rows default)
 
-```typescript
-async function fetchWithRetry<T>(
-  fn: () => Promise<T>,
-  maxRetries = 3
-): Promise<T> {
-  let lastError: Error
+Large datasets are split into overlapping chunks to fit in memory:
 
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn()
-    } catch (error) {
-      lastError = error as Error
+```python
+# src/features/core/pipeline.py
+from collections.abc import Iterator
+import pandas as pd
 
-      if (i < maxRetries - 1) {
-        // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, i) * 1000
-        await new Promise(resolve => setTimeout(resolve, delay))
-      }
-    }
-  }
+CHUNK_SIZE = 200_000
+OVERLAP = 500  # extra rows for indicator warmup
 
-  throw lastError!
-}
+def iter_chunks(df: pd.DataFrame, chunk_size: int = CHUNK_SIZE) -> Iterator[pd.DataFrame]:
+    """Yield overlapping chunks for streaming calculation."""
+    n = len(df)
+    start = 0
+    while start < n:
+        end = min(start + chunk_size, n)
+        # include overlap from previous chunk for indicator warmup
+        overlap_start = max(0, start - OVERLAP)
+        chunk = df.iloc[overlap_start:end]
+        yield chunk, start, end
+        start = end
 
-// Usage
-const data = await fetchWithRetry(() => fetchFromAPI())
+
+async def process_large_dataset(
+    df: pd.DataFrame,
+    session: AsyncSession,
+    symbol: str,
+    timeframe: str,
+) -> int:
+    total = 0
+    for chunk, start, end in iter_chunks(df):
+        result = compute_features(chunk, specs=["rsi_14", "ema_21"])
+        # trim overlap before saving
+        result_trimmed = result.iloc[max(0, start - (start // CHUNK_SIZE * CHUNK_SIZE)):]
+        total += await upsert_indicators(session, result_trimmed, symbol, timeframe)
+    return total
 ```
 
-## Authentication & Authorization
+## Dependency Injection (container.py)
 
-### JWT Token Validation
+```python
+# src/features/container.py
+from dataclasses import dataclass
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.database import async_session_maker
+from src.features.infrastructure.database import IndicatorRepository
+from src.features.application.calc import FeatureCalculator
 
-```typescript
-import jwt from 'jsonwebtoken'
+@dataclass
+class Container:
+    session: AsyncSession
+    indicator_repo: IndicatorRepository
+    calculator: FeatureCalculator
 
-interface JWTPayload {
-  userId: string
-  email: string
-  role: 'admin' | 'user'
-}
+    @classmethod
+    async def create(cls) -> "Container":
+        session = async_session_maker()
+        return cls(
+            session=session,
+            indicator_repo=IndicatorRepository(session),
+            calculator=FeatureCalculator(),
+        )
 
-export function verifyToken(token: string): JWTPayload {
-  // ✅ SECURITY: Verify secret exists before use
-  const secret = process.env.JWT_SECRET
-  if (!secret) {
-    throw new Error('JWT_SECRET environment variable not configured')
-  }
+    async def __aenter__(self) -> "Container":
+        return self
 
-  // ✅ SECURITY: Validate token format
-  if (!token || typeof token !== 'string' || token.length < 10) {
-    throw new ApiError(401, 'Invalid token format')
-  }
-
-  try {
-    const payload = jwt.verify(token, secret) as JWTPayload
-    return payload
-  } catch (error) {
-    throw new ApiError(401, 'Invalid token')
-  }
-}
-
-export async function requireAuth(request: Request) {
-  // ✅ SECURITY: Validate authorization header format
-  const authHeader = request.headers.get('authorization')
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    throw new ApiError(401, 'Missing or invalid authorization header')
-  }
-
-  const token = authHeader.replace('Bearer ', '').trim()
-
-  if (!token) {
-    throw new ApiError(401, 'Missing authorization token')
-  }
-
-  return verifyToken(token)
-}
-
-// Usage in API route
-export async function GET(request: Request) {
-  const user = await requireAuth(request)
-
-  const data = await getDataForUser(user.userId)
-
-  return NextResponse.json({ success: true, data })
-}
+    async def __aexit__(self, *exc) -> None:
+        await self.session.close()
 ```
 
-### Role-Based Access Control
-
-```typescript
-type Permission = 'read' | 'write' | 'delete' | 'admin'
-
-interface User {
-  id: string
-  role: 'admin' | 'moderator' | 'user'
-}
-
-const rolePermissions: Record<User['role'], Permission[]> = {
-  admin: ['read', 'write', 'delete', 'admin'],
-  moderator: ['read', 'write', 'delete'],
-  user: ['read', 'write']
-}
-
-export function hasPermission(user: User, permission: Permission): boolean {
-  return rolePermissions[user.role].includes(permission)
-}
-
-export function requirePermission(permission: Permission) {
-  return async (request: Request) => {
-    const user = await requireAuth(request)
-
-    if (!hasPermission(user, permission)) {
-      throw new ApiError(403, 'Insufficient permissions')
-    }
-
-    return user
-  }
-}
-
-// Usage
-export const DELETE = requirePermission('delete')(async (request: Request) => {
-  // Handler with permission check
-})
+Usage:
+```python
+async with await Container.create() as c:
+    df = await c.indicator_repo.fetch_ohlcv("BTC-USDT-SWAP", "1m")
+    result = c.calculator.compute(df)
+    await c.indicator_repo.upsert(result)
 ```
 
-## Rate Limiting
+## Service Layer Pattern
 
-### Simple In-Memory Rate Limiter
+```python
+# src/features/application/calc.py
+from src.features.core import compute_features
+from src.features.infrastructure.database import OHLCVRepository, IndicatorRepository
+import pandas as pd
 
-```typescript
-class RateLimiter {
-  private requests = new Map<string, number[]>()
+class FeatureService:
+    def __init__(
+        self,
+        ohlcv_repo: OHLCVRepository,
+        indicator_repo: IndicatorRepository,
+    ) -> None:
+        self._ohlcv = ohlcv_repo
+        self._indicators = indicator_repo
 
-  async checkLimit(
-    identifier: string,
-    maxRequests: number,
-    windowMs: number
-  ): Promise<boolean> {
-    const now = Date.now()
-    const requests = this.requests.get(identifier) || []
-
-    // Remove old requests outside window
-    const recentRequests = requests.filter(time => now - time < windowMs)
-
-    if (recentRequests.length >= maxRequests) {
-      return false  // Rate limit exceeded
-    }
-
-    // Add current request
-    recentRequests.push(now)
-    this.requests.set(identifier, recentRequests)
-
-    return true
-  }
-}
-
-const limiter = new RateLimiter()
-
-export async function GET(request: Request) {
-  // ✅ SECURITY: Sanitize IP address to prevent injection
-  const forwardedFor = request.headers.get('x-forwarded-for')
-  const ip = forwardedFor
-    ? forwardedFor.split(',')[0].trim()  // Take first IP if multiple
-    : 'unknown'
-
-  // ✅ SECURITY: Validate IP format (basic check)
-  if (ip !== 'unknown' && !/^[\d.:a-fA-F]+$/.test(ip)) {
-    return NextResponse.json({
-      error: 'Invalid request'
-    }, { status: 400 })
-  }
-
-  const allowed = await limiter.checkLimit(ip, 100, 60000)  // 100 req/min
-
-  if (!allowed) {
-    return NextResponse.json({
-      error: 'Rate limit exceeded'
-    }, { status: 429 })
-  }
-
-  // Continue with request
-}
+    async def run(self, symbol: str, timeframe: str) -> int:
+        df = await self._ohlcv.fetch(symbol, timeframe)
+        if df.empty:
+            return 0
+        result = compute_features(df, specs=["rsi_14", "ema_21", "macd"])
+        return await self._indicators.upsert(result, symbol, timeframe)
 ```
 
-## Background Jobs & Queues
+## Connection Pooling Configuration
 
-### Simple Queue Pattern
-
-```typescript
-class JobQueue<T> {
-  private queue: T[] = []
-  private processing = false
-
-  async add(job: T): Promise<void> {
-    this.queue.push(job)
-
-    if (!this.processing) {
-      this.process()
-    }
-  }
-
-  private async process(): Promise<void> {
-    this.processing = true
-
-    while (this.queue.length > 0) {
-      const job = this.queue.shift()!
-
-      try {
-        await this.execute(job)
-      } catch (error) {
-        console.error('Job failed:', error)
-      }
-    }
-
-    this.processing = false
-  }
-
-  private async execute(job: T): Promise<void> {
-    // Job execution logic
-  }
-}
-
-// Usage for indexing markets
-interface IndexJob {
-  marketId: string
-}
-
-const indexQueue = new JobQueue<IndexJob>()
-
-export async function POST(request: Request) {
-  // ✅ SECURITY: Validate input data
-  const body = await request.json()
-
-  if (!body || typeof body.marketId !== 'string') {
-    return NextResponse.json({
-      error: 'Invalid request: marketId required'
-    }, { status: 400 })
-  }
-
-  // ✅ SECURITY: Sanitize marketId (UUID format check)
-  const marketId = body.marketId.trim()
-  if (!/^[a-f0-9-]{36}$/i.test(marketId)) {
-    return NextResponse.json({
-      error: 'Invalid marketId format'
-    }, { status: 400 })
-  }
-
-  // Add to queue instead of blocking
-  await indexQueue.add({ marketId })
-
-  return NextResponse.json({ success: true, message: 'Job queued' })
-}
+```python
+engine = create_async_engine(
+    dsn,
+    pool_size=5,           # persistent connections
+    max_overflow=10,       # extra connections under load
+    pool_timeout=30,       # seconds to wait for a connection
+    pool_recycle=1800,     # recycle connections after 30 min
+    pool_pre_ping=True,    # validate connection before use
+)
 ```
 
-## Logging & Monitoring
+## Error Handling
 
-### Structured Logging
+```python
+from sqlalchemy.exc import IntegrityError, OperationalError
+import logging
 
-```typescript
-interface LogContext {
-  userId?: string
-  requestId?: string
-  method?: string
-  path?: string
-  [key: string]: unknown
-}
+logger = logging.getLogger(__name__)
 
-class Logger {
-  log(level: 'info' | 'warn' | 'error', message: string, context?: LogContext) {
-    const entry = {
-      timestamp: new Date().toISOString(),
-      level,
-      message,
-      ...context
-    }
+async def safe_upsert(session: AsyncSession, records: list[dict]) -> int:
+    try:
+        await upsert_indicators(session, records)
+        await session.commit()
+        return len(records)
+    except IntegrityError as e:
+        await session.rollback()
+        logger.error("Integrity error during upsert: %s", e)
+        raise
+    except OperationalError as e:
+        await session.rollback()
+        logger.error("DB connection error: %s", e)
+        raise
+```
 
-    console.log(JSON.stringify(entry))
-  }
+## Retry with Exponential Backoff
 
-  info(message: string, context?: LogContext) {
-    this.log('info', message, context)
-  }
+```python
+# src/features/infrastructure/retry.py
+import asyncio
+import logging
+from collections.abc import Callable, Awaitable
+from typing import TypeVar
 
-  warn(message: string, context?: LogContext) {
-    this.log('warn', message, context)
-  }
+T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
-  error(message: string, error: Error, context?: LogContext) {
-    this.log('error', message, {
-      ...context,
-      error: error.message,
-      stack: error.stack
-    })
-  }
-}
+async def with_retry(
+    fn: Callable[[], Awaitable[T]],
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+) -> T:
+    for attempt in range(max_retries):
+        try:
+            return await fn()
+        except Exception as exc:
+            if attempt == max_retries - 1:
+                raise
+            delay = base_delay * (2 ** attempt)
+            logger.warning("Attempt %d failed (%s), retrying in %.1fs", attempt + 1, exc, delay)
+            await asyncio.sleep(delay)
+    raise RuntimeError("unreachable")
+```
 
-const logger = new Logger()
+## Group-Based Calculation Pipeline
 
-// Usage
-export async function GET(request: Request) {
-  const requestId = crypto.randomUUID()
+Indicators are calculated in dependency order across 10 groups:
 
-  logger.info('Fetching markets', {
-    requestId,
-    method: 'GET',
-    path: '/api/markets'
-  })
+```python
+# src/features/core/group_calculation.py
+from src.features.specs import (
+    candles, ma, oscillators, overlap,
+    performance, statistics, trend, volatility, volume,
+)
 
-  try {
-    const markets = await fetchMarkets()
-    return NextResponse.json({ success: true, data: markets })
-  } catch (error) {
-    logger.error('Failed to fetch markets', error as Error, { requestId })
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
+INDICATOR_GROUPS = [
+    ("candles",     candles.SPECS),
+    ("ma",          ma.SPECS),
+    ("overlap",     overlap.SPECS),
+    ("oscillators", oscillators.SPECS),
+    ("volatility",  volatility.SPECS),
+    ("trend",       trend.SPECS),
+    ("volume",      volume.SPECS),
+    ("statistics",  statistics.SPECS),
+    ("performance", performance.SPECS),
+]
+
+def compute_all_groups(df: pd.DataFrame) -> pd.DataFrame:
+    result = df.copy()
+    for group_name, specs in INDICATOR_GROUPS:
+        result = compute_features(result, specs=specs)
+    return result
 ```
 
 ## Security Reminders
 
-Before deploying any code based on these patterns:
+- Never commit `POSTGRES_PASSWORD` or other secrets — use env vars
+- Validate symbol/timeframe inputs at CLI boundary before DB calls
+- Use parameterized queries (SQLAlchemy does this automatically)
+- Sanitize error messages — don't expose DB credentials in logs
 
-1. **Environment Variables**: Never commit secrets. Always verify they exist:
-
-```typescript
-const secret = process.env.SECRET_KEY
-if (!secret) throw new Error('SECRET_KEY not configured')
-```
-
-2. **Input Validation**: Always validate and sanitize user input using Zod or similar:
-
-```typescript
-const schema = z.object({ id: z.string().uuid() })
-const validated = schema.parse(input)
-```
-
-3. **Database Security**:
-   - Use parameterized queries (Supabase client does this automatically)
-   - Enable Row Level Security (RLS) on all tables
-   - Never expose database credentials
-
-4. **Error Handling**: Never expose internal error details to users:
-
-```typescript
-// ❌ BAD
-return res.json({ error: error.message })
-
-// ✅ GOOD
-console.error('Internal error:', error)
-return res.json({ error: 'An error occurred' })
-```
-
-5. **Rate Limiting**: Always implement rate limiting on public endpoints
-
-6. **Authentication**: Verify tokens on every protected endpoint
-
-7. **Logging**: Log security events but never log secrets, passwords, or PII
-
-**Remember**: Backend patterns enable scalable, maintainable server-side applications. Choose patterns that fit your complexity level, but **never compromise on security**.
+**Remember**: async + SQLAlchemy 2.0 is the project standard. Never use sync sessions or raw psycopg2 in application code.

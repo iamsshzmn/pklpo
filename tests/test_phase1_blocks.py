@@ -54,9 +54,13 @@ class TestPrometheusMetricsDisabled:
         m = get_metrics()
         assert m.push() is False
 
-    def test_enabled_property_false_by_default(self):
+    def test_enabled_property_false_by_default(self, monkeypatch):
+        monkeypatch.delenv("OBSERVABILITY_PROMETHEUS_ENABLED", raising=False)
+        monkeypatch.delenv("OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", raising=False)
+        from src.config import reload_settings
         from src.features.observability.prometheus import get_metrics, reset_metrics
 
+        reload_settings()
         reset_metrics()
         m = get_metrics()
         assert m.enabled is False
@@ -159,7 +163,11 @@ class TestPrometheusMetricsEnabled:
 
 
 class TestObservabilitySettings:
-    def test_default_values(self):
+    def test_default_values(self, monkeypatch):
+        monkeypatch.delenv("OBSERVABILITY_PROMETHEUS_ENABLED", raising=False)
+        monkeypatch.delenv("OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", raising=False)
+        monkeypatch.delenv("OBSERVABILITY_METRICS_PREFIX", raising=False)
+        monkeypatch.delenv("OBSERVABILITY_JOB_NAME", raising=False)
         from src.config.settings import ObservabilitySettings
 
         s = ObservabilitySettings()

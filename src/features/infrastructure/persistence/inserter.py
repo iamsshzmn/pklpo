@@ -156,6 +156,7 @@ async def insert_indicators(
     timeframe: str,
     *,
     trim_warmup: bool = True,
+    seen_timestamps: set[int] | None = None,
 ) -> int:
     """
     Batch UPSERT indicators to database.
@@ -173,6 +174,8 @@ async def insert_indicators(
         symbol: Instrument symbol (e.g., 'BTC-USDT-SWAP')
         timeframe: Timeframe (e.g., '1m', '5m', '1h')
         trim_warmup: Whether to trim warmup rows (default: True)
+        seen_timestamps: Optional shared set of seen timestamps. Pass the same set
+            across chunked calls to detect duplicates at chunk boundaries.
 
     Returns:
         Number of successfully saved records
@@ -231,13 +234,21 @@ async def insert_indicators(
         db_cols = schema_info.db_columns
         indicators_table = schema_info.indicators_table
         numeric_cols = schema_info.numeric_columns
+        prom = get_prom_metrics()
 
         # 6. Filter columns by DB schema
         ind_df = filter_columns_by_schema(ind_df, db_cols)
         validate_required_fields(ind_df)
 
         # 7. Build batch data
-        batch_data, skipped = build_batch_data(ind_df, symbol, timeframe, db_cols)
+        batch_data, skipped = build_batch_data(
+            ind_df,
+            symbol,
+            timeframe,
+            db_cols,
+            seen_timestamps=seen_timestamps,
+            on_duplicate=prom.record_duplicates,
+        )
         if not batch_data:
             logger.warning("No valid data to insert")
             return 0
@@ -265,7 +276,6 @@ async def insert_indicators(
         )
 
         # 11. Execute UPSERT with retry
-        prom = get_prom_metrics()
         try:
             # Check state before (for diagnostics) - only in DEBUG mode
             count_before = None

@@ -5,11 +5,12 @@
 Поддержка: .env файлы, переменные окружения, валидация, типизация.
 """
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -335,6 +336,30 @@ class AirflowSettings(BaseSettings):
     secret_key: SecretStr = SecretStr("")
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+class ObservabilitySettings(BaseModel):
+    """Observability settings (Prometheus/Pushgateway)."""
+
+    prometheus_enabled: bool = Field(
+        default_factory=lambda: _env_bool("OBSERVABILITY_PROMETHEUS_ENABLED", False)
+    )
+    prometheus_pushgateway_url: str = Field(
+        default_factory=lambda: os.getenv("OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", "")
+    )
+    metrics_prefix: str = Field(
+        default_factory=lambda: os.getenv("OBSERVABILITY_METRICS_PREFIX", "pklpo")
+    )
+    job_name: str = Field(
+        default_factory=lambda: os.getenv("OBSERVABILITY_JOB_NAME", "features_pipeline")
+    )
+
+
 class QuantSettings(BaseSettings):
     """
     Настройки Quant Stack (Phase 3).
@@ -427,6 +452,7 @@ class Settings(BaseSettings):
     cache: CacheSettings = Field(default_factory=CacheSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     airflow: AirflowSettings = Field(default_factory=AirflowSettings)
+    observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     quant: QuantSettings = Field(default_factory=QuantSettings)
 
     # Paths

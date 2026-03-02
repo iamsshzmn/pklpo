@@ -8,7 +8,7 @@ skills:
   # Development Skills
   tdd-workflow:
     path: skills/tdd-workflow/SKILL.md
-    description: "Test-driven development process with 80%+ coverage"
+    description: "Test-driven development with pytest, 85%+ coverage"
     category: development
     model: sonnet
     tools: [Read, Grep, Glob, Edit, Bash]
@@ -44,15 +44,16 @@ skills:
   # Backend Skills
   backend-patterns:
     path: skills/backend-patterns/SKILL.md
-    description: "Backend architecture, API design, database optimization"
+    description: "Python backend patterns: SQLAlchemy async, repository, UPSERT, chunking"
     category: backend
     model: sonnet
     tools: [Read, Grep, Glob, Edit]
     triggers:
-      - "API endpoint"
+      - "SQLAlchemy"
       - "database query"
-      - "backend service"
+      - "async session"
       - "repository pattern"
+      - "UPSERT"
 
   clickhouse-io:
     path: skills/clickhouse-io/SKILL.md
@@ -65,19 +66,6 @@ skills:
       - "analytics query"
       - "OLAP"
       - "materialized view"
-
-  # Frontend Skills
-  frontend-patterns:
-    path: skills/frontend-patterns/SKILL.md
-    description: "React, Next.js, state management, and UI patterns"
-    category: frontend
-    model: sonnet
-    tools: [Read, Grep, Glob, Edit]
-    triggers:
-      - "React component"
-      - "state management"
-      - "performance optimization"
-      - "UI pattern"
 
   # Quality & Testing Skills
   verification-loop:
@@ -154,9 +142,6 @@ categories:
   backend:
     description: "Server-side development patterns"
     color: "#FF9800"
-  frontend:
-    description: "Client-side development patterns"
-    color: "#00BCD4"
   data:
     description: "Data engineering and analytics"
     color: "#795548"

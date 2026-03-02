@@ -172,6 +172,7 @@ scripts/migration_report*.json
 **/*(old)*/
 src/main_with_options*.py
 src/main_v2.py
+src/_backups
 
 # Reports in src/ (не коммитить)
 src/*/reports/

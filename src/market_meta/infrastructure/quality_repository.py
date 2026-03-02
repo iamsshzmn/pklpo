@@ -6,17 +6,20 @@
 - Чтение последних метрик для дашбордов
 """
 
-from typing import Any
+from typing import Any, Protocol
 
-from asyncpg import Connection, Pool
 
 from ..domain.quality import CheckResult
+
+
+class MetricsPoolPort(Protocol):
+    def acquire(self): ...
 
 
 class QualityMetricsRepository:
     """Репозиторий метрик качества данных."""
 
-    def __init__(self, pool: Pool) -> None:
+    def __init__(self, pool: MetricsPoolPort) -> None:
         """Инициализация с пулом соединений asyncpg."""
         self._pool = pool
 
@@ -35,7 +38,6 @@ class QualityMetricsRepository:
             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
         """
         async with self._pool.acquire() as conn:
-            conn: Connection
             await conn.executemany(
                 query,
                 [

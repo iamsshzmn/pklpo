@@ -9,11 +9,11 @@
 - check_event_freshness: свежесть событий funding/oi/l2
 """
 
-
-from asyncpg import Pool
+from typing import Protocol
 
 from ..domain.quality import (
     COVERAGE_THRESHOLDS,
+    DUPLICATE_RATE_THRESHOLDS,
     FRESHNESS_THRESHOLDS,
     FUNDING_EVENT_LAG_THRESHOLDS,
     FUNDING_FILL_THRESHOLDS,
@@ -28,8 +28,12 @@ from ..domain.quality import (
 )
 
 
+class QueryPoolPort(Protocol):
+    def acquire(self): ...
+
+
 async def check_freshness(
-    pool: Pool,
+    pool: QueryPoolPort,
     thresholds: Thresholds = FRESHNESS_THRESHOLDS,
 ) -> list[CheckResult]:
     """
@@ -70,7 +74,7 @@ async def check_freshness(
 
 
 async def check_smoke_10m(
-    pool: Pool,
+    pool: QueryPoolPort,
     min_rows: int = 8,
 ) -> list[CheckResult]:
     """
@@ -113,7 +117,7 @@ async def check_smoke_10m(
 
 
 async def check_coverage_1m(
-    pool: Pool,
+    pool: QueryPoolPort,
     window_minutes: int = 60,
     thresholds: Thresholds = COVERAGE_THRESHOLDS,
 ) -> list[CheckResult]:
@@ -173,7 +177,7 @@ async def check_coverage_1m(
 
 
 async def check_fill_rate(
-    pool: Pool,
+    pool: QueryPoolPort,
     window_hours: int = 6,
 ) -> list[CheckResult]:
     """
@@ -243,7 +247,7 @@ async def check_fill_rate(
 
 
 async def check_event_freshness(
-    pool: Pool,
+    pool: QueryPoolPort,
     window_hours: int = 6,
 ) -> list[CheckResult]:
     """
@@ -308,7 +312,68 @@ async def check_event_freshness(
     return results
 
 
-async def run_all_checks(pool: Pool) -> QualityReport:
+async def check_duplicates_1m(
+    pool: QueryPoolPort,
+    window_minutes: int = 60,
+    thresholds: Thresholds = DUPLICATE_RATE_THRESHOLDS,
+) -> list[CheckResult]:
+    """
+    Duplicate-rate метрика по symbol за окно N минут.
+
+    Returns:
+        Список CheckResult по каждому symbol.
+    """
+    query = """
+        WITH grouped AS (
+            SELECT
+                symbol,
+                bar_timestamp,
+                COUNT(*) AS rows_per_bar
+            FROM core.market_data_ext
+            WHERE timeframe = '1m'
+              AND bar_timestamp >= now() - ($1 || ' minutes')::interval
+            GROUP BY symbol, bar_timestamp
+        )
+        SELECT
+            symbol,
+            COUNT(*) AS total_bars,
+            SUM(GREATEST(rows_per_bar - 1, 0)) AS duplicate_rows,
+            ROUND(
+                100.0 * SUM(GREATEST(rows_per_bar - 1, 0)) / NULLIF(COUNT(*), 0),
+                4
+            ) AS duplicate_rate_pct
+        FROM grouped
+        GROUP BY symbol
+    """
+    results: list[CheckResult] = []
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(query, str(window_minutes))
+
+    for row in rows:
+        symbol = row["symbol"]
+        duplicate_rate_pct = (
+            float(row["duplicate_rate_pct"]) if row["duplicate_rate_pct"] else 0.0
+        )
+        severity = thresholds.evaluate(duplicate_rate_pct)
+        results.append(
+            CheckResult(
+                check_name="duplicate_rate_1m",
+                severity=severity,
+                symbol=symbol,
+                timeframe="1m",
+                value=duplicate_rate_pct,
+                meta={
+                    "duplicate_rows": int(row["duplicate_rows"] or 0),
+                    "total_bars": int(row["total_bars"] or 0),
+                    "window_minutes": window_minutes,
+                    "thresholds": {"warn": thresholds.warn, "critical": thresholds.critical},
+                },
+            )
+        )
+    return results
+
+
+async def run_all_checks(pool: QueryPoolPort) -> QualityReport:
     """Запустить все проверки и вернуть агрегированный отчет."""
     report = QualityReport()
 
@@ -322,5 +387,6 @@ async def run_all_checks(pool: Pool) -> QualityReport:
     # День 3: fill-rate + event freshness
     report.extend(await check_fill_rate(pool))
     report.extend(await check_event_freshness(pool))
+    report.extend(await check_duplicates_1m(pool))
 
     return report

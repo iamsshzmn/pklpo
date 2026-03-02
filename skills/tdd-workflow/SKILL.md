@@ -1,422 +1,273 @@
 ---
 name: tdd-workflow
-description: Use this skill when writing new features, fixing bugs, or refactoring code. Enforces test-driven development with 80%+ coverage including unit, integration, and E2E tests.
+description: Use this skill when writing new features, fixing bugs, or refactoring code. Enforces test-driven development with pytest, 85%+ coverage, unit/integration markers, and async support.
 ---
 
-# Test-Driven Development Workflow
+# Test-Driven Development Workflow (Python / pytest)
 
-> **⚠️ ВАЖНО**: Этот файл содержит примеры кода для документации.
->
-> - Примеры с пометкой "❌ WRONG" демонстрируют **НЕПРАВИЛЬНЫЕ** паттерны и **НЕ ДОЛЖНЫ** использоваться в реальном коде
-> - Все примеры являются учебными и требуют адаптации под конкретный проект
-> - Никогда не копируйте код напрямую без понимания контекста и требований вашего проекта
-
-This skill ensures all code development follows TDD principles with comprehensive test coverage.
+This skill ensures all code follows TDD principles with comprehensive test coverage using the project's pytest stack.
 
 ## When to Activate
 
 - Writing new features or functionality
 - Fixing bugs or issues
 - Refactoring existing code
-- Adding API endpoints
-- Creating new components
+- Adding new indicator groups or services
 
 ## Core Principles
 
 ### 1. Tests BEFORE Code
-ALWAYS write tests first, then implement code to make tests pass.
+Write tests first, then implement the minimum code to make them pass.
 
-### 2. Coverage Requirements
-- Minimum 80% coverage (unit + integration + E2E)
-- All edge cases covered
-- Error scenarios tested
-- Boundary conditions verified
+### 2. Coverage Requirements (from CLAUDE.md)
+- Minimum **85% total** coverage
+- **90%** on changed lines
+- All edge cases and error paths covered
 
-### 3. Test Types
+### 3. Test Markers
 
-#### Unit Tests
-- Individual functions and utilities
-- Component logic
-- Pure functions
-- Helpers and utilities
+```python
+import pytest
 
-#### Integration Tests
-- API endpoints
-- Database operations
-- Service interactions
-- External API calls
+@pytest.mark.unit
+def test_something(): ...
 
-#### E2E Tests (Playwright)
-- Critical user flows
-- Complete workflows
-- Browser automation
-- UI interactions
+@pytest.mark.integration
+def test_db_something(): ...
+
+@pytest.mark.slow
+def test_heavy_computation(): ...
+
+@pytest.mark.smoke
+def test_critical_path(): ...
+```
+
+Run selectively:
+```bash
+pytest -m "not slow"       # skip slow tests during development
+pytest -m integration      # only integration tests
+pytest -m "unit or smoke"  # fast feedback loop
+```
 
 ## TDD Workflow Steps
 
-### Step 1: Write User Journeys
-```
-As a [role], I want to [action], so that [benefit]
+### Step 1: Write the failing test
 
-Example:
-As a user, I want to search for markets semantically,
-so that I can find relevant markets even without exact keywords.
-```
+```python
+# tests/test_rsi_service.py
+import pytest
+from src.features.specs.oscillators import rsi_spec
 
-### Step 2: Generate Test Cases
-For each user journey, create comprehensive test cases:
+def test_rsi_returns_series_with_correct_length(sample_ohlcv):
+    result = rsi_spec(sample_ohlcv, period=14)
+    assert len(result) == len(sample_ohlcv)
 
-```typescript
-describe('Semantic Search', () => {
-  it('returns relevant markets for query', async () => {
-    // Test implementation
-  })
+def test_rsi_values_within_bounds(sample_ohlcv):
+    result = rsi_spec(sample_ohlcv, period=14)
+    valid = result.dropna()
+    assert (valid >= 0).all() and (valid <= 100).all()
 
-  it('handles empty query gracefully', async () => {
-    // Test edge case
-  })
-
-  it('falls back to substring search when Redis unavailable', async () => {
-    // Test fallback behavior
-  })
-
-  it('sorts results by similarity score', async () => {
-    // Test sorting logic
-  })
-})
+def test_rsi_raises_on_insufficient_data():
+    import pandas as pd
+    tiny = pd.DataFrame({"close": [1.0, 2.0]})
+    with pytest.raises(ValueError, match="insufficient"):
+        rsi_spec(tiny, period=14)
 ```
 
-### Step 3: Run Tests (They Should Fail)
+### Step 2: Run — tests should fail
 ```bash
-npm test
-# Tests should fail - we haven't implemented yet
+pytest tests/test_rsi_service.py -v
+# FAILED — not implemented yet
 ```
 
-### Step 4: Implement Code
-Write minimal code to make tests pass:
+### Step 3: Implement the minimum code to pass
+```python
+# src/features/specs/oscillators.py
+import pandas as pd
 
-```typescript
-// Implementation guided by tests
-export async function searchMarkets(query: string) {
-  // Implementation here
-}
+def rsi_spec(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    if len(df) < period + 1:
+        raise ValueError(f"insufficient data: need {period+1} rows, got {len(df)}")
+    delta = df["close"].diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = (-delta.clip(upper=0)).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 ```
 
-### Step 5: Run Tests Again
+### Step 4: Run tests — should pass
 ```bash
-npm test
-# Tests should now pass
+pytest tests/test_rsi_service.py -v
+# PASSED
 ```
 
-### Step 6: Refactor
-Improve code quality while keeping tests green:
-- Remove duplication
-- Improve naming
-- Optimize performance
-- Enhance readability
+### Step 5: Refactor while keeping tests green
+Improve naming, extract helpers, clean up. Run tests after each change.
 
-### Step 7: Verify Coverage
+### Step 6: Verify coverage
 ```bash
-npm run test:coverage
-# Verify 80%+ coverage achieved
+pytest --cov=src --cov-report=term-missing
+# Ensure 85%+ total, 90%+ on changed lines
 ```
 
-## Testing Patterns
+## Fixtures and conftest.py
 
-### Unit Test Pattern (Jest/Vitest)
-```typescript
-import { render, screen, fireEvent } from '@testing-library/react'
-import { Button } from './Button'
+Shared fixtures go in `conftest.py`:
 
-describe('Button Component', () => {
-  it('renders with correct text', () => {
-    render(<Button>Click me</Button>)
-    expect(screen.getByText('Click me')).toBeInTheDocument()
-  })
+```python
+# tests/conftest.py
+import pytest
+import pandas as pd
+import numpy as np
 
-  it('calls onClick when clicked', () => {
-    const handleClick = jest.fn()
-    render(<Button onClick={handleClick}>Click</Button>)
+@pytest.fixture
+def sample_ohlcv() -> pd.DataFrame:
+    """200 bars of synthetic OHLCV data."""
+    n = 200
+    rng = np.random.default_rng(42)
+    close = 100 + rng.normal(0, 1, n).cumsum()
+    return pd.DataFrame({
+        "open":   close * 0.999,
+        "high":   close * 1.002,
+        "low":    close * 0.998,
+        "close":  close,
+        "volume": rng.integers(1000, 5000, n).astype(float),
+    })
 
-    fireEvent.click(screen.getByRole('button'))
-
-    expect(handleClick).toHaveBeenCalledTimes(1)
-  })
-
-  it('is disabled when disabled prop is true', () => {
-    render(<Button disabled>Click</Button>)
-    expect(screen.getByRole('button')).toBeDisabled()
-  })
-})
+@pytest.fixture
+def db_session():
+    """Async DB session for integration tests (uses test DB)."""
+    # configure via POSTGRES_DB=test_pklpo env var
+    from src.database import async_session_maker
+    return async_session_maker()
 ```
 
-### API Integration Test Pattern
-```typescript
-import { NextRequest } from 'next/server'
-import { GET } from './route'
+## Parametrize Pattern
 
-describe('GET /api/markets', () => {
-  it('returns markets successfully', async () => {
-    const request = new NextRequest('http://localhost/api/markets')
-    const response = await GET(request)
-    const data = await response.json()
-
-    expect(response.status).toBe(200)
-    expect(data.success).toBe(true)
-    expect(Array.isArray(data.data)).toBe(true)
-  })
-
-  it('validates query parameters', async () => {
-    const request = new NextRequest('http://localhost/api/markets?limit=invalid')
-    const response = await GET(request)
-
-    expect(response.status).toBe(400)
-  })
-
-  it('handles database errors gracefully', async () => {
-    // Mock database failure
-    const request = new NextRequest('http://localhost/api/markets')
-    // Test error handling
-  })
-})
+```python
+@pytest.mark.parametrize("period,expected_nulls", [
+    (14, 14),
+    (20, 20),
+    (5,  5),
+])
+def test_rsi_null_prefix_length(sample_ohlcv, period, expected_nulls):
+    result = rsi_spec(sample_ohlcv, period=period)
+    assert result.isna().sum() == expected_nulls
 ```
 
-### E2E Test Pattern (Playwright)
-```typescript
-import { test, expect } from '@playwright/test'
+## Async Tests (pytest-asyncio)
 
-test('user can search and filter markets', async ({ page }) => {
-  // Navigate to markets page
-  await page.goto('/')
-  await page.click('a[href="/markets"]')
+```python
+import pytest
+import pytest_asyncio
 
-  // Verify page loaded
-  await expect(page.locator('h1')).toContainText('Markets')
+@pytest.mark.asyncio
+async def test_fetch_instruments(db_session):
+    from src.features.infrastructure.database import fetch_instruments
+    instruments = await fetch_instruments(db_session)
+    assert isinstance(instruments, list)
+    assert len(instruments) > 0
+```
 
-  // Search for markets
-  await page.fill('input[placeholder="Search markets"]', 'election')
+## Mocking with pytest-mock / unittest.mock
 
-  // Wait for debounce and results
-  await page.waitForTimeout(600)
+```python
+from unittest.mock import AsyncMock, patch
 
-  // Verify search results displayed
-  const results = page.locator('[data-testid="market-card"]')
-  await expect(results).toHaveCount(5, { timeout: 5000 })
-
-  // Verify results contain search term
-  const firstResult = results.first()
-  await expect(firstResult).toContainText('election', { ignoreCase: true })
-
-  // Filter by status
-  await page.click('button:has-text("Active")')
-
-  // Verify filtered results
-  await expect(results).toHaveCount(3)
-})
-
-test('user can create a new market', async ({ page }) => {
-  // Login first
-  await page.goto('/creator-dashboard')
-
-  // Fill market creation form
-  await page.fill('input[name="name"]', 'Test Market')
-  await page.fill('textarea[name="description"]', 'Test description')
-  await page.fill('input[name="endDate"]', '2025-12-31')
-
-  // Submit form
-  await page.click('button[type="submit"]')
-
-  // Verify success message
-  await expect(page.locator('text=Market created successfully')).toBeVisible()
-
-  // Verify redirect to market page
-  await expect(page).toHaveURL(/\/markets\/test-market/)
-})
+@pytest.mark.asyncio
+async def test_save_indicators_calls_upsert(sample_ohlcv):
+    with patch("src.features.infrastructure.db_operations.upsert_indicators") as mock_upsert:
+        mock_upsert.return_value = AsyncMock(return_value=None)()
+        from src.features.application.save import save_features
+        await save_features(sample_ohlcv, symbol="BTC-USDT-SWAP", timeframe="1m")
+        mock_upsert.assert_called_once()
 ```
 
 ## Test File Organization
 
 ```
-src/
-├── components/
-│   ├── Button/
-│   │   ├── Button.tsx
-│   │   ├── Button.test.tsx          # Unit tests
-│   │   └── Button.stories.tsx       # Storybook
-│   └── MarketCard/
-│       ├── MarketCard.tsx
-│       └── MarketCard.test.tsx
-├── app/
-│   └── api/
-│       └── markets/
-│           ├── route.ts
-│           └── route.test.ts         # Integration tests
-└── e2e/
-    ├── markets.spec.ts               # E2E tests
-    ├── trading.spec.ts
-    └── auth.spec.ts
+tests/
+├── conftest.py                    # shared fixtures
+├── test_phase1_blocks.py          # smoke / integration
+├── candles/
+│   ├── test_sync_candles.py
+│   └── test_repository.py
+src/features/tests/
+├── test_core.py                   # unit tests for compute_features
+├── test_pipeline.py
+└── test_group_calculation.py
 ```
 
-## Mocking External Services
+## Coverage Configuration (pyproject.toml)
 
-### Supabase Mock
-```typescript
-jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: jest.fn(() => ({
-      select: jest.fn(() => ({
-        eq: jest.fn(() => Promise.resolve({
-          data: [{ id: 1, name: 'Test Market' }],
-          error: null
-        }))
-      }))
-    }))
-  }
-}))
+```toml
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks integration tests",
+    "unit: marks unit tests",
+    "smoke: marks smoke tests",
+    "asyncio: marks async tests",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/migrations/*"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
 ```
 
-### Redis Mock
-```typescript
-jest.mock('@/lib/redis', () => ({
-  searchMarketsByVector: jest.fn(() => Promise.resolve([
-    { slug: 'test-market', similarity_score: 0.95 }
-  ])),
-  checkRedisHealth: jest.fn(() => Promise.resolve({ connected: true }))
-}))
+## Common Mistakes to Avoid
+
+### ❌ WRONG: Testing implementation details
+```python
+# Don't assert on private attributes
+assert service._cache == {}
 ```
 
-### OpenAI Mock
-```typescript
-jest.mock('@/lib/openai', () => ({
-  generateEmbedding: jest.fn(() => Promise.resolve(
-    new Array(1536).fill(0.1) // Mock 1536-dim embedding
-  ))
-}))
+### ✅ CORRECT: Test observable behavior
+```python
+assert service.get("key") is None
 ```
 
-## Test Coverage Verification
+### ❌ WRONG: Tests depend on each other
+```python
+def test_a():
+    shared_state.append(1)   # mutates shared state
 
-### Run Coverage Report
+def test_b():
+    assert len(shared_state) == 1  # depends on test_a running first
+```
+
+### ✅ CORRECT: Each test is independent
+```python
+def test_a(fresh_state):
+    fresh_state.append(1)
+    assert len(fresh_state) == 1
+
+def test_b(fresh_state):
+    assert len(fresh_state) == 0
+```
+
+## CI Pipeline
+
 ```bash
-npm run test:coverage
+# Run before every PR
+black src/ --check           # format check
+ruff check src/              # lint
+mypy src/                    # types
+pytest -m "not slow" --cov=src --cov-report=term-missing
 ```
-
-### Coverage Thresholds
-```json
-{
-  "jest": {
-    "coverageThresholds": {
-      "global": {
-        "branches": 80,
-        "functions": 80,
-        "lines": 80,
-        "statements": 80
-      }
-    }
-  }
-}
-```
-
-## Common Testing Mistakes to Avoid
-
-### ❌ WRONG: Testing Implementation Details
-```typescript
-// Don't test internal state
-expect(component.state.count).toBe(5)
-```
-
-### ✅ CORRECT: Test User-Visible Behavior
-```typescript
-// Test what users see
-expect(screen.getByText('Count: 5')).toBeInTheDocument()
-```
-
-### ❌ WRONG: Brittle Selectors
-```typescript
-// Breaks easily
-await page.click('.css-class-xyz')
-```
-
-### ✅ CORRECT: Semantic Selectors
-```typescript
-// Resilient to changes
-await page.click('button:has-text("Submit")')
-await page.click('[data-testid="submit-button"]')
-```
-
-### ❌ WRONG: No Test Isolation
-```typescript
-// Tests depend on each other
-test('creates user', () => { /* ... */ })
-test('updates same user', () => { /* depends on previous test */ })
-```
-
-### ✅ CORRECT: Independent Tests
-```typescript
-// Each test sets up its own data
-test('creates user', () => {
-  const user = createTestUser()
-  // Test logic
-})
-
-test('updates user', () => {
-  const user = createTestUser()
-  // Update logic
-})
-```
-
-## Continuous Testing
-
-### Watch Mode During Development
-```bash
-npm test -- --watch
-# Tests run automatically on file changes
-```
-
-### Pre-Commit Hook
-```bash
-# Runs before every commit
-npm test && npm run lint
-```
-
-### CI/CD Integration
-```yaml
-# GitHub Actions
-- name: Run Tests
-  run: npm test -- --coverage
-- name: Upload Coverage
-  uses: codecov/codecov-action@v3
-```
-
-## Best Practices
-
-1. **Write Tests First** - Always TDD
-2. **One Assert Per Test** - Focus on single behavior
-3. **Descriptive Test Names** - Explain what's tested
-4. **Arrange-Act-Assert** - Clear test structure
-5. **Mock External Dependencies** - Isolate unit tests
-6. **Test Edge Cases** - Null, undefined, empty, large
-7. **Test Error Paths** - Not just happy paths
-8. **Keep Tests Fast** - Unit tests < 50ms each
-9. **Clean Up After Tests** - No side effects
-10. **Review Coverage Reports** - Identify gaps
 
 ## Success Metrics
 
-- 80%+ code coverage achieved
-- All tests passing (green)
-- No skipped or disabled tests
-- Fast test execution (< 30s for unit tests)
-- E2E tests cover critical user flows
-- Tests catch bugs before production
+- 85%+ total coverage, 90%+ on changed lines
+- All tests pass (`pytest` exits 0)
+- No skipped or xfail tests without explanation
+- Unit tests complete in < 30s
+- Integration tests complete in < 2 min
 
----
-
-## ⚠️ Важные напоминания
-
-1. **Все примеры кода в этом документе являются учебными** - адаптируйте их под ваш проект
-2. **Примеры с пометкой "❌ WRONG" демонстрируют неправильные паттерны** - никогда не используйте их в реальном коде
-3. **Проверяйте все примеры** перед использованием в production
-4. **Используйте инструменты статического анализа** для проверки качества кода
-
-**Remember**: Tests are not optional. They are the safety net that enables confident refactoring, rapid development, and production reliability.
+**Remember**: Tests are not optional. They are the safety net that enables confident refactoring and reliable indicator calculations.
