@@ -1,8 +1,14 @@
 """
-Feature specifications for the features module.
+Feature specifications (declarative layer).
 
-This package contains all available technical feature specifications organized
-by category. The main entry point is FEATURE_SPECS which contains all features.
+This package defines WHAT indicators exist: names, parameters, and metadata.
+It does NOT contain calculation logic.
+
+Boundary:
+    specs/ -> declares indicator metadata (FeatureSpec dataclasses)
+    indicator_groups/ -> implements calculation logic using ta_safe
+
+Flow: specs define available indicators -> indicator_groups calculate them.
 """
 
 from ..domain.models import FeatureSpec

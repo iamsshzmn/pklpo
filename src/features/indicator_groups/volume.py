@@ -20,21 +20,10 @@ import pandas as pd
 from src.logging import get_logger
 
 from ..ta_safe import safe_ta_with_fallback
+from ..utils import _first_col_or_series as _ensure_series
 from ..utils.indicator_utils import check_min_length
 
 logger = get_logger(__name__)
-
-
-def _ensure_series(value: object, name: str, index: pd.Index) -> pd.Series:
-    """Normalize TA output to a 1D Series."""
-    if isinstance(value, pd.Series):
-        return value
-    if isinstance(value, pd.DataFrame):
-        if name in value.columns:
-            return value[name]
-        if len(value.columns) > 0:
-            return value.iloc[:, 0]
-    return pd.Series([np.nan] * len(index), index=index, name=name)
 
 
 def calc_volume_indicators(
@@ -67,7 +56,7 @@ def calc_volume_indicators(
         cmf_series = safe_ta_with_fallback(df, "cmf", length=20)
         result["cmf"] = _ensure_series(cmf_series, "cmf", df.index)
 
-    # VWAP - упрощенная версия
+    # VWAP - simplified cumulative version
     if "vwap" in available:
         try:
             typical_price = (df["high"] + df["low"] + df["close"]) / 3
@@ -76,7 +65,7 @@ def calc_volume_indicators(
             ].cumsum()
             result["vwap"] = vwap_series
         except Exception as e:
-            print(f"❌ Ошибка VWAP: {e}")
+            logger.error("VWAP calculation failed: %s", e)
             result["vwap"] = pd.Series([np.nan] * len(df), index=df.index)
 
     # Volume SMA
@@ -104,14 +93,14 @@ def calc_volume_indicators(
         vwma_series = safe_ta_with_fallback(df, "vwma", length=20)
         result["vwma"] = _ensure_series(vwma_series, "vwma", df.index)
 
-    # Volume Profile indicators (вызываем один раз)
+    # Volume Profile indicators (computed once for all VP outputs)
     if (
         "vp_point_of_control" in available
         or "vp_value_area_high" in available
         or "vp_value_area_low" in available
     ):
         if not check_min_length(df, "vp"):
-            logger.warning("VP: недостаточно данных (len<50), возвращаю NaN")
+            logger.warning("VP: insufficient data (len<50), returning NaN")
             if "vp_point_of_control" in available:
                 result["vp_point_of_control"] = pd.Series(
                     [np.nan] * len(df), index=df.index
@@ -127,7 +116,7 @@ def calc_volume_indicators(
             return result
         vp_result = safe_ta_with_fallback(df, "vp")
         if isinstance(vp_result, pd.DataFrame):
-            # ta_safe.fallback возвращает 'vpc', 'vah', 'val' (lowercase)
+            # ta_safe.fallback returns 'vpc', 'vah', 'val' (lowercase)
             if "vp_point_of_control" in available:
                 col = next((c for c in vp_result.columns if c.lower() == "vpc"), None)
                 result["vp_point_of_control"] = (
@@ -150,7 +139,7 @@ def calc_volume_indicators(
                     else pd.Series([np.nan] * len(df), index=df.index)
                 )
         else:
-            logger.warning("VP: результат не DataFrame, возвращаю NaN")
+            logger.warning("VP: result is not a DataFrame, returning NaN")
             if "vp_point_of_control" in available:
                 result["vp_point_of_control"] = pd.Series(
                     [np.nan] * len(df), index=df.index

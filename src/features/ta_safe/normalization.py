@@ -9,18 +9,18 @@ import re
 
 import pandas as pd
 
-from .constants import RENAME_MAP
+from ..schema.name_aliases import NAME_ALIASES
 
 
 def _auto_rename(col: str) -> str:
     """
-    Автоматическое переименование колонок по шаблонам.
+    Auto-rename columns using regex patterns.
 
     Args:
-        col: Имя колонки для переименования
+        col: Column name to rename
 
     Returns:
-        Нормализованное имя колонки
+        Normalized column name
     """
     # MACD
     m = re.fullmatch(r"MACD_(\d+)_(\d+)_(\d+)", col)
@@ -64,7 +64,7 @@ def _auto_rename(col: str) -> str:
     m = re.fullmatch(r"AROOND_(\d+)", col)
     if m:
         return "aroon_down"
-    # KC: KCL/KCM/KCU_20_2.0 или kcle/kcbe/kcue_20_2.0
+    # KC: KCL/KCM/KCU_20_2.0 or kcle/kcbe/kcue_20_2.0
     m = re.fullmatch(r"KCL[E]?_(\d+)_([0-9.]+)", col, re.IGNORECASE)
     if m:
         return "kc_lower"
@@ -122,26 +122,26 @@ def _auto_rename(col: str) -> str:
     m = re.fullmatch(r"PSARr_([0-9.]+)_([0-9.]+)", col)
     if m:
         return "psar_reversal"
-    # UO и WILLR
+    # UO and WILLR
     if col.upper() == "UO":
         return "ultosc"
     if col.upper() == "WILLR" or col.upper().startswith("WILLR_"):
         return "willr"
-    # по умолчанию
+    # default
     return col.lower()
 
 
 def _rename_like_specs(df_out: pd.DataFrame) -> pd.DataFrame:
     """
-    Переименование колонок под наши specs.
+    Rename columns to match our specs.
 
     Args:
-        df_out: DataFrame для переименования
+        df_out: DataFrame to rename
 
     Returns:
-        DataFrame с переименованными колонками
+        DataFrame with renamed columns
     """
-    df_out.columns = [RENAME_MAP.get(c, _auto_rename(c)) for c in df_out.columns]
+    df_out.columns = [NAME_ALIASES.get(c, _auto_rename(c)) for c in df_out.columns]
     return df_out
 
 
@@ -152,27 +152,27 @@ def _normalize_to_df(
     **kwargs: dict[str, object],
 ) -> pd.DataFrame:
     """
-    Нормализует результат к DataFrame с правильными именами и индексом.
+    Normalize result to a DataFrame with correct names and index.
 
-    Специальная обработка для BB и Ichimoku для правильного unpack.
+    Special handling for BB and Ichimoku unpacking.
 
     Args:
-        out: Результат расчёта (DataFrame, Series или None)
-        name: Имя индикатора
-        df: Исходный DataFrame
-        **kwargs: Дополнительные параметры
+        out: Calculation result (DataFrame, Series, or None)
+        name: Indicator name
+        df: Source DataFrame
+        **kwargs: Additional parameters
 
     Returns:
-        Нормализованный DataFrame
+        Normalized DataFrame
 
     Raises:
-        FeatureCalcError: Если длина результата не совпадает с входом или есть object-колонки
+        FeatureCalcError: If result length mismatches input or object-dtype columns exist
     """
     import numpy as np
 
     from .errors import FeatureCalcError
 
-    # Если библиотека вернула None/пусто — возвращаем NaN-столбец нужной длины
+    # If library returned None/empty — return NaN column of correct length
     if out is None or callable(out):
         return pd.Series([np.nan] * len(df), index=df.index).to_frame(name)
 
@@ -182,13 +182,13 @@ def _normalize_to_df(
     elif not isinstance(out, pd.DataFrame):
         return pd.Series([np.nan] * len(df), index=df.index).to_frame(name)
 
-    # Специальная обработка для BB: явный unpack в именованные колонки
+    # Special BB handling: explicit unpack into named columns
     if name == "bbands":
-        # Если pandas_ta вернул DataFrame с нестандартными именами, переименовываем
+        # If pandas_ta returned DataFrame with non-standard names, rename them
         cols = list(out.columns)
         if len(cols) >= 3:
-            # Ожидаем порядок: lower, middle, upper
-            # Или ищем по префиксам
+            # Expected order: lower, middle, upper
+            # Or search by prefix
             col_lower = next(
                 (c for c in cols if "BBL" in c.upper() or "lower" in c.lower()), None
             )
@@ -203,10 +203,10 @@ def _normalize_to_df(
                 out = out[[col_lower, col_middle, col_upper]].copy()
                 out.columns = ["bb_lower", "bb_middle", "bb_upper"]
             elif len(cols) == 3:
-                # Если 3 колонки без явных имён, предполагаем порядок lower, middle, upper
+                # If 3 columns with no explicit names, assume order: lower, middle, upper
                 out.columns = ["bb_lower", "bb_middle", "bb_upper"]
         else:
-            # Fallback: создаём пустые колонки
+            # Fallback: create empty columns
             out = pd.DataFrame(
                 {
                     "bb_lower": [np.nan] * len(df),
@@ -216,16 +216,16 @@ def _normalize_to_df(
                 index=df.index,
             )
 
-    # Специальная обработка для Ichimoku: явный unpack в 5 компонентов
+    # Special Ichimoku handling: explicit unpack into 5 components
     elif name == "ichimoku":
-        # Если pandas_ta вернул tuple или list, берём первый элемент
+        # If pandas_ta returned tuple or list, take first element
         if isinstance(out, list | tuple):
             out = out[0] if len(out) > 0 else pd.DataFrame()
 
-        # Если вернулся DataFrame с нестандартными именами, переименовываем
+        # If DataFrame returned with non-standard names, rename them
         if isinstance(out, pd.DataFrame):
             cols = list(out.columns)
-            # Маппинг возможных имён pandas_ta на наши
+            # Mapping of possible pandas_ta names to ours
             ichimoku_mapping = {
                 "ITS_9": "ichimoku_tenkan",
                 "IKS_26": "ichimoku_kijun",
@@ -233,7 +233,7 @@ def _normalize_to_df(
                 "ISB_26": "ichimoku_senkou_b",
                 "ICS_26": "ichimoku_chikou",
             }
-            # Переименовываем найденные колонки
+            # Rename matched columns
             rename_dict = {}
             for col in cols:
                 for ta_name, our_name in ichimoku_mapping.items():
@@ -244,7 +244,7 @@ def _normalize_to_df(
             if rename_dict:
                 out = out.rename(columns=rename_dict)
 
-            # Если после переименования не все колонки есть, добавляем недостающие
+            # If after renaming some columns are missing, add them
             required_cols = [
                 "ichimoku_tenkan",
                 "ichimoku_kijun",
@@ -256,10 +256,10 @@ def _normalize_to_df(
             if missing_cols:
                 for col in missing_cols:
                     out[col] = np.nan
-            # Оставляем только нужные колонки в правильном порядке
+            # Keep only required columns in correct order
             out = out[required_cols].copy()
         else:
-            # Fallback: создаём пустые колонки
+            # Fallback: create empty columns
             out = pd.DataFrame(
                 {
                     "ichimoku_tenkan": [np.nan] * len(df),
@@ -271,32 +271,32 @@ def _normalize_to_df(
                 index=df.index,
             )
 
-    # Имена под specs (для остальных индикаторов)
+    # Rename to spec names (for remaining indicators)
     if name not in ("bbands", "ichimoku"):
         out = _rename_like_specs(out)
 
-    # Если после нормализации колонок ничего не осталось — вернём NaN-столбец
+    # If no columns remain after normalization — return NaN column
     if out.shape[1] == 0:
         return pd.Series([np.nan] * len(df), index=df.index).to_frame(name)
 
-    # Индекс строго как у входа
+    # Index must match input exactly
     if not out.index.equals(df.index):
         out = out.reindex(df.index, fill_value=np.nan)
 
-    # Жёсткая проверка длины после reindex
+    # Hard length check after reindex
     if len(out) != len(df):
-        raise FeatureCalcError(f"длина результата != входу: {len(out)} != {len(df)}")
+        raise FeatureCalcError(f"result length != input length: {len(out)} != {len(df)}")
 
-    # Типы числовые (не понижаем bool)
+    # Numeric types only (do not downcast bool)
     num = out.select_dtypes(include=["number"]).columns.difference(
         out.select_dtypes(include=["bool"]).columns
     )
-    # Явное приведение типов перед присваиванием для избежания FutureWarning
-    # Используем pd.to_numeric для безопасного преобразования
+    # Explicit type cast before assignment to avoid FutureWarning
+    # Use pd.to_numeric for safe conversion
     for col in num:
         out[col] = pd.to_numeric(out[col], errors="coerce").astype("float64")
     bad = [c for c in out.columns if out[c].dtype == "object"]
     if bad:
-        raise FeatureCalcError(f"object-колонки недопустимы: {bad}")
+        raise FeatureCalcError(f"object-dtype columns not allowed: {bad}")
 
     return out

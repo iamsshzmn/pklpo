@@ -21,10 +21,10 @@ from src.features.application.freshness_gate import (
 )
 from src.features.core import compute_features
 from src.features.infrastructure.persistence.inserter import insert_indicators
-from src.market_meta.application.quality_pipeline import run_quality_pipeline
-from src.market_meta.infrastructure.sqlalchemy_pool_adapter import SQLAlchemyPoolAdapter
 from src.features.presets.features_calc_short_v1 import FEATURES_CALC_SHORT_SPECS
 from src.logging import get_logger
+from src.market_meta.application.quality_pipeline import run_quality_pipeline
+from src.market_meta.infrastructure.sqlalchemy_pool_adapter import SQLAlchemyPoolAdapter
 
 logger = get_logger("features.application.features_calc_short_service")
 

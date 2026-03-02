@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -12,17 +13,12 @@ from src.logging import get_logger
 from ...schema.name_aliases import CRITICAL_ALWAYS_SAVE
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     import pandas as pd
 
 logger = get_logger(__name__)
 
-
-@runtime_checkable
-class TimestampValidatorProtocol(Protocol):
-    def __call__(self, timestamp: int | None, row_index: int | str) -> bool:
-        ...
+# Type alias replacing the former TimestampValidatorProtocol
+TimestampValidatorProtocol = Callable[[int | None, int | str], bool]
 
 
 def build_batch_data(

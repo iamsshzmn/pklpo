@@ -13,9 +13,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..observability.logging import LogCategory, get_category_logger
-from ..observability.metrics import record_fill_rate
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pandas as pd
 
 
@@ -33,9 +34,18 @@ class GroupMetricsRecorder:
     calculated features. It does not handle calculation or persistence.
     """
 
-    def __init__(self):
-        """Initialize the metrics recorder."""
+    def __init__(
+        self,
+        fill_rate_recorder: Callable[[str, float], None] | None = None,
+    ):
+        """Initialize the metrics recorder.
+
+        Args:
+            fill_rate_recorder: Callback to record fill rate metrics.
+                Injected from application layer to avoid core→observability coupling.
+        """
         self._logger = get_category_logger(LogCategory.PERF)
+        self._record_fill_rate = fill_rate_recorder or (lambda _name, _rate: None)
 
     def record_group_metrics(
         self,
@@ -64,7 +74,7 @@ class GroupMetricsRecorder:
         fill_rate = group_df.notna().mean().mean()
 
         # Record to metrics system
-        record_fill_rate(group_name, fill_rate)
+        self._record_fill_rate(group_name, fill_rate)
 
         return fill_rate
 
@@ -93,7 +103,7 @@ class GroupMetricsRecorder:
         fill_rate = group_df.notna().mean().mean()
 
         # Record to metrics system
-        record_fill_rate(group_name, fill_rate)
+        self._record_fill_rate(group_name, fill_rate)
 
         return fill_rate
 
