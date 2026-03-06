@@ -53,7 +53,7 @@ class FeaturesVersionManager:
 
         # Create a hash of the feature specs structure
         specs_data = []
-        for spec in FEATURE_SPECS:
+        for spec in FEATURE_SPECS.values():
             if hasattr(spec, "name"):
                 specs_data.append(
                     {
@@ -148,7 +148,7 @@ class FeaturesVersionManager:
             # Check Phase 2 compliance
             required_features = set(PHASE_2_REQUIRED_FEATURES)
             spec_names = set()
-            for spec in FEATURE_SPECS:
+            for spec in FEATURE_SPECS.values():
                 if hasattr(spec, "name"):
                     spec_names.add(spec.name)
                 elif isinstance(spec, str):

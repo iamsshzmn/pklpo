@@ -160,12 +160,35 @@ class Container:
     def __contains__(self, name: str) -> bool:
         return self.has(name)
 
+# =============================================================================
+# GLOBAL CONTAINER
+# =============================================================================
+
+_container: Container | None = None
+
+
+def get_container() -> Container:
+    """Get the global container instance."""
+    global _container
+    if _container is None:
+        _container = Container()
+        _configure_default_dependencies(_container)
+    return _container
+
 
 def create_default_container() -> Container:
-    """Create a freshly configured container with default dependencies."""
+    """Create a fresh container with default dependencies configured."""
     container = Container()
     _configure_default_dependencies(container)
     return container
+
+
+def reset_container() -> None:
+    """Reset the global container (for testing)."""
+    global _container
+    if _container is not None:
+        _container.clear()
+    _container = None
 
 
 def _configure_default_dependencies(container: Container) -> None:
