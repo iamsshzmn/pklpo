@@ -119,5 +119,5 @@ config = load_config_from_env()
 ## Тестирование
 
 ```bash
-pytest src/features/tests/test_core.py -v
+pytest tests/features/tests/test_core.py -v
 ```

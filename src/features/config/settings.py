@@ -17,10 +17,98 @@ Migration guide:
 
 from __future__ import annotations
 
+import os
 import warnings
 from typing import Any
 
 from src.config import FeaturesSettings, get_settings
+
+
+class LegacyFeaturesConfigAdapter:
+    """Backward-compatible adapter exposing legacy UPPERCASE config names."""
+
+    _LEGACY_TO_CANONICAL = {
+        "CHUNKSIZE": "chunk_size",
+        "MAX_LOOKBACK": "max_lookback",
+        "OVERLAP_SIZE": "overlap_size",
+        "INSERT_CHUNKSIZE": "insert_chunk_size",
+        "BATCH_SIZE": "batch_size",
+        "COMMIT_FREQUENCY": "batch_size",
+        "MAX_RETRIES": "max_retries",
+        "RETRY_DELAY": "retry_delay",
+        "RETRY_BACKOFF_FACTOR": "retry_backoff_factor",
+        "USE_COPY_FROM": "use_copy_from",
+        "TEMP_TABLE_PREFIX": "temp_table_prefix",
+        "ENABLE_VOLATILITY_NORMALIZE": "volatility_normalize",
+        "NORMALIZE_WINDOW": "normalize_window",
+        "MIN_FILL_RATE": "min_fill_rate",
+        "VALIDATE_RESULTS": "validate_results",
+        "FORCE_GC_AFTER_CHUNK": "force_gc_after_chunk",
+        "CLEAR_INTERMEDIATE_OBJECTS": "clear_intermediate_objects",
+        "PARALLEL_WORKERS": "parallel_workers",
+        "BATCH_TIMEOUT_SECONDS": "batch_timeout",
+        "LOG_MEMORY_USAGE": "log_memory",
+        "VERBOSE_LOGGING": "verbose",
+    }
+
+    def __init__(self, settings: FeaturesSettings) -> None:
+        object.__setattr__(self, "_settings", settings)
+
+    def __getattr__(self, name: str) -> Any:
+        canonical_name = self._LEGACY_TO_CANONICAL.get(name, name)
+        return getattr(self._settings, canonical_name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        canonical_name = self._LEGACY_TO_CANONICAL.get(name, name)
+        setattr(self._settings, canonical_name, value)
+
+    def __repr__(self) -> str:
+        return repr(self._settings)
+
+    def model_dump(self, *args, **kwargs) -> dict[str, Any]:
+        return self._settings.model_dump(*args, **kwargs)
+
+
+def _coerce_legacy_env_value(raw: str, current: Any) -> Any:
+    """Convert legacy env values to the type of the current config field."""
+    if isinstance(current, bool):
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(current, int) and not isinstance(current, bool):
+        return int(raw)
+    if isinstance(current, float):
+        return float(raw)
+    return raw
+
+
+def _apply_legacy_env_overrides(
+    settings: FeaturesSettings, key_mapping: dict[str, str]
+) -> FeaturesSettings:
+    """Apply support for legacy env vars like FEATURES_CHUNKSIZE."""
+    for legacy_key, canonical_key in key_mapping.items():
+        raw = os.getenv(f"FEATURES_{legacy_key}")
+        if raw is None:
+            continue
+        current = getattr(settings, canonical_key)
+        setattr(settings, canonical_key, _coerce_legacy_env_value(raw, current))
+    return settings
+
+
+def _build_legacy_adapter(
+    key_mapping: dict[str, str], overrides: dict[str, Any]
+) -> LegacyFeaturesConfigAdapter:
+    """Create a settings object with legacy env/override compatibility."""
+    base = FeaturesSettings(**get_settings().features.model_dump())
+    base = _apply_legacy_env_overrides(base, key_mapping)
+
+    normalized: dict[str, Any] = {}
+    for key, value in overrides.items():
+        new_key = key_mapping.get(key, key.lower())
+        normalized[new_key] = value
+
+    if normalized:
+        base = FeaturesSettings(**{**base.model_dump(), **normalized})
+
+    return LegacyFeaturesConfigAdapter(base)
 
 
 def _emit_deprecation_warning(func_name: str) -> None:
@@ -75,8 +163,6 @@ def create_streaming_config(**overrides) -> FeaturesSettings:
     """
     _emit_deprecation_warning("create_streaming_config")
 
-    base = get_settings().features
-
     # Map old UPPERCASE keys to new lowercase keys
     key_mapping = {
         "CHUNKSIZE": "chunk_size",
@@ -91,18 +177,7 @@ def create_streaming_config(**overrides) -> FeaturesSettings:
         "LOG_MEMORY_USAGE": "log_memory",
         "VERBOSE_LOGGING": "verbose",
     }
-
-    # Normalize overrides
-    normalized = {}
-    for key, value in overrides.items():
-        new_key = key_mapping.get(key, key.lower())
-        normalized[new_key] = value
-
-    if normalized:
-        # Create new instance with overrides
-        return FeaturesSettings(**{**base.model_dump(), **normalized})
-
-    return base
+    return _build_legacy_adapter(key_mapping, overrides)
 
 
 def create_database_config(**overrides) -> FeaturesSettings:
@@ -119,12 +194,11 @@ def create_database_config(**overrides) -> FeaturesSettings:
     """
     _emit_deprecation_warning("create_database_config")
 
-    base = get_settings().features
-
     # Map old UPPERCASE keys to new lowercase keys
     key_mapping = {
         "BATCH_SIZE": "batch_size",
         "MAX_RETRIES": "max_retries",
+        "COMMIT_FREQUENCY": "batch_size",
         "RETRY_DELAY": "retry_delay",
         "RETRY_BACKOFF_FACTOR": "retry_backoff_factor",
         "USE_COPY_FROM": "use_copy_from",
@@ -133,17 +207,7 @@ def create_database_config(**overrides) -> FeaturesSettings:
         "CLEAR_INTERMEDIATE_OBJECTS": "clear_intermediate_objects",
         "FORCE_GC_AFTER_CHUNK": "force_gc_after_chunk",
     }
-
-    # Normalize overrides
-    normalized = {}
-    for key, value in overrides.items():
-        new_key = key_mapping.get(key, key.lower())
-        normalized[new_key] = value
-
-    if normalized:
-        return FeaturesSettings(**{**base.model_dump(), **normalized})
-
-    return base
+    return _build_legacy_adapter(key_mapping, overrides)
 
 
 def create_feature_config(**overrides) -> FeaturesSettings:
@@ -160,8 +224,6 @@ def create_feature_config(**overrides) -> FeaturesSettings:
     """
     _emit_deprecation_warning("create_feature_config")
 
-    base = get_settings().features
-
     # Map old UPPERCASE keys to new lowercase keys
     key_mapping = {
         "ENABLE_VOLATILITY_NORMALIZE": "volatility_normalize",
@@ -169,17 +231,7 @@ def create_feature_config(**overrides) -> FeaturesSettings:
         "MIN_FILL_RATE": "min_fill_rate",
         "VALIDATE_RESULTS": "validate_results",
     }
-
-    # Normalize overrides
-    normalized = {}
-    for key, value in overrides.items():
-        new_key = key_mapping.get(key, key.lower())
-        normalized[new_key] = value
-
-    if normalized:
-        return FeaturesSettings(**{**base.model_dump(), **normalized})
-
-    return base
+    return _build_legacy_adapter(key_mapping, overrides)
 
 
 # =============================================================================
@@ -200,7 +252,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Features configuration")
-    parser.add_argument("--show", action="store_true", help="Show current configuration")
+    parser.add_argument(
+        "--show", action="store_true", help="Show current configuration"
+    )
     parser.add_argument("--env", action="store_true", help="Show environment variables")
     parser.add_argument(
         "--new", action="store_true", help="Show new centralized config approach"

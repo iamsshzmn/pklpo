@@ -119,5 +119,5 @@ is_valid = validate_feature_specs(specs_list)
 ## Тестирование
 
 ```bash
-pytest src/features/tests/test_core.py -v
+pytest tests/features/tests/test_core.py -v
 ```

@@ -24,16 +24,23 @@ from ..utils.indicator_utils import (
     _nan_series,
     check_min_length,
 )
+from .registry import GroupRegistry
 
 logger = get_logger(__name__)
 
 
+@GroupRegistry.register(
+    "volatility",
+    order=3,
+    dependencies=["overlap", "ma"],
+    description="Volatility indicators (ATR, BB, KC, etc.)",
+)
 def calc_volatility_indicators(
     df: pd.DataFrame, available: set[str], **kwargs
 ) -> dict[str, pd.Series]:
     """Calculate Volatility indicators for risk and breakout analysis.
 
-    Гарантирует: все значения Series, индекс == df.index, float dtype где применимо.
+    :   Series,  == df.index, float dtype  .
 
     Args:
         df: DataFrame with OHLC data (must have 'open', 'high', 'low', 'close' columns)
@@ -49,7 +56,7 @@ def calc_volatility_indicators(
     """
     result: dict[str, pd.Series] = {}
 
-    # Очистка данных один раз в начале
+    #
     df = df.copy()
     for col in ("open", "high", "low", "close"):
         if col in df.columns:
@@ -59,7 +66,7 @@ def calc_volatility_indicators(
     if "bb_upper" in available or "bb_middle" in available or "bb_lower" in available:
         try:
             if not check_min_length(df, "bb"):
-                logger.warning("BBANDS: недостаточно данных (len<20), возвращаю NaN")
+                logger.warning("BBANDS:   (len<20),  NaN")
                 for key in ["bb_upper", "bb_middle", "bb_lower"]:
                     if key in available:
                         result[key] = _nan_series(df.index, key)
@@ -70,7 +77,7 @@ def calc_volatility_indicators(
                 )
                 if isinstance(bb_result, pd.DataFrame):
                     if "bb_upper" in available:
-                        # Проверяем сначала каноническое имя, потом префикс
+                        #    ,
                         if "bb_upper" in bb_result.columns:
                             result["bb_upper"] = _first_col_or_series(
                                 bb_result["bb_upper"], "bb_upper", df.index
@@ -83,12 +90,12 @@ def calc_volatility_indicators(
                                 )
                             else:
                                 logger.warning(
-                                    f"BBANDS: не найдена колонка bb_upper, доступные: {list(bb_result.columns)}"
+                                    f"BBANDS:    bb_upper, : {list(bb_result.columns)}"
                                 )
                                 result["bb_upper"] = _nan_series(df.index, "bb_upper")
 
                     if "bb_middle" in available:
-                        # Проверяем сначала каноническое имя, потом префикс
+                        #    ,
                         if "bb_middle" in bb_result.columns:
                             result["bb_middle"] = _first_col_or_series(
                                 bb_result["bb_middle"], "bb_middle", df.index
@@ -101,12 +108,12 @@ def calc_volatility_indicators(
                                 )
                             else:
                                 logger.warning(
-                                    f"BBANDS: не найдена колонка bb_middle, доступные: {list(bb_result.columns)}"
+                                    f"BBANDS:    bb_middle, : {list(bb_result.columns)}"
                                 )
                                 result["bb_middle"] = _nan_series(df.index, "bb_middle")
 
                     if "bb_lower" in available:
-                        # Проверяем сначала каноническое имя, потом префикс
+                        #    ,
                         if "bb_lower" in bb_result.columns:
                             result["bb_lower"] = _first_col_or_series(
                                 bb_result["bb_lower"], "bb_lower", df.index
@@ -119,7 +126,7 @@ def calc_volatility_indicators(
                                 )
                             else:
                                 logger.warning(
-                                    f"BBANDS: не найдена колонка bb_lower, доступные: {list(bb_result.columns)}"
+                                    f"BBANDS:    bb_lower, : {list(bb_result.columns)}"
                                 )
                                 result["bb_lower"] = _nan_series(df.index, "bb_lower")
                 else:
@@ -127,7 +134,7 @@ def calc_volatility_indicators(
                         if key in available:
                             result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Bollinger Bands: {type(e).__name__}: {e}")
+            logger.error(f"  Bollinger Bands: {type(e).__name__}: {e}")
             for key in ["bb_upper", "bb_middle", "bb_lower"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -136,7 +143,7 @@ def calc_volatility_indicators(
     if "kc_upper" in available or "kc_middle" in available or "kc_lower" in available:
         try:
             if not check_min_length(df, "kc"):
-                logger.warning("KC: недостаточно данных (len<20), возвращаю NaN")
+                logger.warning("KC:   (len<20),  NaN")
                 for key in ["kc_upper", "kc_middle", "kc_lower"]:
                     if key in available:
                         result[key] = _nan_series(df.index, key)
@@ -147,7 +154,7 @@ def calc_volatility_indicators(
                 )
                 if isinstance(kc_result, pd.DataFrame):
                     if "kc_upper" in available:
-                        # Проверяем сначала каноническое имя, потом префикс
+                        #    ,
                         if "kc_upper" in kc_result.columns:
                             result["kc_upper"] = _first_col_or_series(
                                 kc_result["kc_upper"], "kc_upper", df.index
@@ -164,12 +171,12 @@ def calc_volatility_indicators(
                                 )
                             else:
                                 logger.warning(
-                                    f"KC: не найдена колонка kc_upper, доступные: {list(kc_result.columns)}"
+                                    f"KC:    kc_upper, : {list(kc_result.columns)}"
                                 )
                                 result["kc_upper"] = _nan_series(df.index, "kc_upper")
 
                     if "kc_middle" in available:
-                        # Проверяем сначала каноническое имя, потом префикс
+                        #    ,
                         if "kc_middle" in kc_result.columns:
                             result["kc_middle"] = _first_col_or_series(
                                 kc_result["kc_middle"], "kc_middle", df.index
@@ -186,12 +193,12 @@ def calc_volatility_indicators(
                                 )
                             else:
                                 logger.warning(
-                                    f"KC: не найдена колонка kc_middle, доступные: {list(kc_result.columns)}"
+                                    f"KC:    kc_middle, : {list(kc_result.columns)}"
                                 )
                                 result["kc_middle"] = _nan_series(df.index, "kc_middle")
 
                     if "kc_lower" in available:
-                        # Проверяем сначала каноническое имя, потом префикс
+                        #    ,
                         if "kc_lower" in kc_result.columns:
                             result["kc_lower"] = _first_col_or_series(
                                 kc_result["kc_lower"], "kc_lower", df.index
@@ -208,7 +215,7 @@ def calc_volatility_indicators(
                                 )
                             else:
                                 logger.warning(
-                                    f"KC: не найдена колонка kc_lower, доступные: {list(kc_result.columns)}"
+                                    f"KC:    kc_lower, : {list(kc_result.columns)}"
                                 )
                                 result["kc_lower"] = _nan_series(df.index, "kc_lower")
                 else:
@@ -216,7 +223,7 @@ def calc_volatility_indicators(
                         if key in available:
                             result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Keltner Channels: {type(e).__name__}: {e}")
+            logger.error(f"  Keltner Channels: {type(e).__name__}: {e}")
             for key in ["kc_upper", "kc_middle", "kc_lower"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -227,7 +234,7 @@ def calc_volatility_indicators(
             atr_result = safe_ta_with_fallback(df, "atr", length=14)
             result["atr_14"] = _first_col_or_series(atr_result, "atr_14", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта ATR: {type(e).__name__}: {e}")
+            logger.error(f"  ATR: {type(e).__name__}: {e}")
             result["atr_14"] = _nan_series(df.index, "atr_14")
 
     # NATR
@@ -236,7 +243,7 @@ def calc_volatility_indicators(
             natr_result = safe_ta_with_fallback(df, "natr", length=14)
             result["natr_14"] = _first_col_or_series(natr_result, "natr_14", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта NATR: {type(e).__name__}: {e}")
+            logger.error(f"  NATR: {type(e).__name__}: {e}")
             result["natr_14"] = _nan_series(df.index, "natr_14")
 
     # Donchian Channel
@@ -296,7 +303,7 @@ def calc_volatility_indicators(
                     if key in available:
                         result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Donchian Channels: {type(e).__name__}: {e}")
+            logger.error(f"  Donchian Channels: {type(e).__name__}: {e}")
             for key in ["dc_upper", "dc_middle", "dc_lower"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -309,9 +316,7 @@ def calc_volatility_indicators(
                 parkinson_result, "parkinson_vol", df.index
             )
         except Exception as e:
-            logger.error(
-                f"Ошибка расчёта Parkinson Volatility: {type(e).__name__}: {e}"
-            )
+            logger.error(f"  Parkinson Volatility: {type(e).__name__}: {e}")
             result["parkinson_vol"] = _nan_series(df.index, "parkinson_vol")
 
     # Mass Index
@@ -320,7 +325,7 @@ def calc_volatility_indicators(
             massi_result = safe_ta_with_fallback(df, "massi")
             result["massi"] = _first_col_or_series(massi_result, "massi", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Mass Index: {type(e).__name__}: {e}")
+            logger.error(f"  Mass Index: {type(e).__name__}: {e}")
             result["massi"] = _nan_series(df.index, "massi")
 
     # Relative Volatility Index
@@ -329,7 +334,7 @@ def calc_volatility_indicators(
             rvi_result = safe_ta_with_fallback(df, "rvi")
             result["rvi"] = _first_col_or_series(rvi_result, "rvi", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта RVI: {type(e).__name__}: {e}")
+            logger.error(f"  RVI: {type(e).__name__}: {e}")
             result["rvi"] = _nan_series(df.index, "rvi")
 
     # Ulcer Index
@@ -338,7 +343,7 @@ def calc_volatility_indicators(
             ui_result = safe_ta_with_fallback(df, "ui")
             result["ui"] = _first_col_or_series(ui_result, "ui", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Ulcer Index: {type(e).__name__}: {e}")
+            logger.error(f"  Ulcer Index: {type(e).__name__}: {e}")
             result["ui"] = _nan_series(df.index, "ui")
 
     # Price Distance
@@ -347,7 +352,7 @@ def calc_volatility_indicators(
             pdist_result = safe_ta_with_fallback(df, "pdist")
             result["pdist"] = _first_col_or_series(pdist_result, "pdist", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Price Distance: {type(e).__name__}: {e}")
+            logger.error(f"  Price Distance: {type(e).__name__}: {e}")
             result["pdist"] = _nan_series(df.index, "pdist")
 
     # Bollinger Bands Width
@@ -377,7 +382,7 @@ def calc_volatility_indicators(
                 else:
                     result["bb_width"] = _nan_series(df.index, "bb_width")
         except Exception as e:
-            logger.error(f"Ошибка расчёта BB Width: {type(e).__name__}: {e}")
+            logger.error(f"  BB Width: {type(e).__name__}: {e}")
             result["bb_width"] = _nan_series(df.index, "bb_width")
 
     # Bollinger Bands Percent
@@ -406,15 +411,13 @@ def calc_volatility_indicators(
                 else:
                     result["bb_percent"] = _nan_series(df.index, "bb_percent")
         except Exception as e:
-            logger.error(f"Ошибка расчёта BB Percent: {type(e).__name__}: {e}")
+            logger.error(f"  BB Percent: {type(e).__name__}: {e}")
             result["bb_percent"] = _nan_series(df.index, "bb_percent")
 
-    # True Range исключён из пайплайна
-    # ATR считает True Range внутри себя, отдельный trange не нужен
+    # True Range
+    # ATR  True Range  ,  trange
 
-    # Гарантируем, что все значения - Series
-    assert all(
-        isinstance(v, pd.Series) for v in result.values()
-    ), "Все значения должны быть Series"
+    # ,    - Series
+    assert all(isinstance(v, pd.Series) for v in result.values()), "    Series"
 
     return result

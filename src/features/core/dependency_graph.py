@@ -16,8 +16,69 @@ except ImportError:
     NETWORKX_AVAILABLE = False
     nx = None
 
+
+# =============================================================================
+# GROUP-LEVEL DEPENDENCY RESOLUTION
+# =============================================================================
+
+
+def resolve_group_order(group_deps: dict[str, list[str]]) -> list[str]:
+    """
+           .
+
+     source of truth    —
+     GROUP_METADATA.   hardcoded linear fallback-order.
+
+    Args:
+        group_deps: dict  {"group_name": ["dep1", "dep2"], ...}
+                     —  ;  —  .
+
+    Returns:
+              .
+
+    Raises:
+        ImportError:  networkx  .
+        ValueError:     .
+
+    Example:
+        >>> deps = {
+        ...     "overlap": [],
+        ...     "ma": ["overlap"],
+        ...     "oscillators": ["overlap", "ma"],
+        ... }
+        >>> resolve_group_order(deps)
+        ['overlap', 'ma', 'oscillators']
+    """
+    if not NETWORKX_AVAILABLE or nx is None:
+        raise ImportError(
+            "networkx is required for resolve_group_order(). "
+            "Install it: pip install networkx"
+        )
+
+    dag: Any = nx.DiGraph()
+
+    # Add all groups as nodes
+    for group in group_deps:
+        dag.add_node(group)
+
+    # Add dependency edges: dep -> group (dep must run before group)
+    for group, deps in group_deps.items():
+        for dep in deps:
+            if dep not in dag:
+                dag.add_node(dep)
+            dag.add_edge(dep, group)
+
+    # Detect cycles
+    if not nx.is_directed_acyclic_graph(dag):
+        cycles = list(nx.simple_cycles(dag))
+        raise ValueError(f"Circular dependency detected in group_deps: {cycles}")
+
+    return list(nx.topological_sort(dag))
+
+
+from src.logging import get_features_logger
+
 from ..domain.models import FeatureSpec
-from ..observability.logging import get_features_logger
 
 logger = get_features_logger("features.dependency_graph")
 

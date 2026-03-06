@@ -2,15 +2,15 @@
 Additional code validations as specified in the plan.
 
 This module implements additional validations:
-- fraction_outliers по цене/объему
-- окно "прогрева" для длинных MA/ATR
+- fraction_outliers  /
+-  ""   MA/ATR
 """
 
 from typing import Any
 
 import pandas as pd
 
-from ..observability.logging import get_features_logger
+from src.logging import get_features_logger
 
 logger = get_features_logger("features.code_validations")
 
@@ -49,6 +49,7 @@ class ValidationConfig:
         if use_settings:
             try:
                 from src.config import get_settings
+
                 settings = get_settings().features
                 self.price_outlier_threshold = settings.price_outlier_threshold
                 self.volume_outlier_threshold = settings.volume_outlier_threshold
@@ -117,7 +118,9 @@ class ValidationConfig:
     @ma_warmup_multiplier.setter
     def ma_warmup_multiplier(self, value: float) -> None:
         if not 1.0 <= value <= 5.0:
-            raise ValueError(f"ma_warmup_multiplier must be 1.0 <= x <= 5.0, got {value}")
+            raise ValueError(
+                f"ma_warmup_multiplier must be 1.0 <= x <= 5.0, got {value}"
+            )
         self._ma_warmup_multiplier = value
 
     @property
@@ -128,7 +131,9 @@ class ValidationConfig:
     @atr_warmup_multiplier.setter
     def atr_warmup_multiplier(self, value: float) -> None:
         if not 1.0 <= value <= 5.0:
-            raise ValueError(f"atr_warmup_multiplier must be 1.0 <= x <= 5.0, got {value}")
+            raise ValueError(
+                f"atr_warmup_multiplier must be 1.0 <= x <= 5.0, got {value}"
+            )
         self._atr_warmup_multiplier = value
 
     @property
@@ -370,9 +375,9 @@ class CodeValidator:
 
                     if total_count > 0:
                         valid_fraction = valid_count / total_count
-                        result["stats"][f"{feature_name}_warmup_valid_fraction"] = (
-                            valid_fraction
-                        )
+                        result["stats"][
+                            f"{feature_name}_warmup_valid_fraction"
+                        ] = valid_fraction
 
                         if valid_fraction < 0.8:  # 80% valid after warm-up
                             result["warnings"].append(
@@ -398,9 +403,9 @@ class CodeValidator:
 
                     if total_count > 0:
                         valid_fraction = valid_count / total_count
-                        result["stats"][f"{feature_name}_warmup_valid_fraction"] = (
-                            valid_fraction
-                        )
+                        result["stats"][
+                            f"{feature_name}_warmup_valid_fraction"
+                        ] = valid_fraction
 
                         if valid_fraction < 0.8:  # 80% valid after warm-up
                             result["warnings"].append(

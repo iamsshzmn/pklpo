@@ -97,6 +97,7 @@ class FeatureCalculationService:
         """Initialize compute function if not provided."""
         if self._compute_fn is None:
             from ..core.calculation import compute_features
+
             self._compute_fn = compute_features
 
     def calculate(
@@ -198,19 +199,3 @@ def create_feature_service(
         validator=validator or DefaultOHLCVValidator(),
         normalizer=normalizer or DefaultFeatureNormalizer(),
     )
-
-
-# =============================================================================
-# CONVENIENCE ALIAS
-# =============================================================================
-
-# Default service instance for simple use cases
-_default_service: FeatureCalculationService | None = None
-
-
-def get_default_service() -> FeatureCalculationService:
-    """Get or create default feature service instance."""
-    global _default_service
-    if _default_service is None:
-        _default_service = create_feature_service()
-    return _default_service

@@ -27,16 +27,23 @@ from ..utils.indicator_utils import (
     check_min_length,
 )
 from .debug_utils import log_group_results, log_group_start
+from .registry import GroupRegistry
 
 logger = get_logger(__name__)
 
 
+@GroupRegistry.register(
+    "oscillators",
+    order=2,
+    dependencies=["overlap", "ma"],
+    description="Oscillators (RSI, MACD, Stochastic, etc.)",
+)
 def calc_oscillator_indicators(
     df: pd.DataFrame, available: set[str], **kwargs
 ) -> dict[str, pd.Series]:
     """Calculate Oscillator indicators for momentum and mean-reversion analysis.
 
-    Гарантирует: все значения Series, индекс == df.index, float dtype где применимо.
+    :   Series,  == df.index, float dtype  .
 
     Args:
         df: DataFrame with OHLC data (must have 'open', 'high', 'low', 'close', 'volume' columns)
@@ -53,7 +60,7 @@ def calc_oscillator_indicators(
     log_group_start("OSCILLATORS", df, available)
     result: dict[str, pd.Series] = {}
 
-    # Очистка данных один раз в начале
+    #
     df = df.copy()
     for col in ("open", "high", "low", "close", "volume"):
         if col in df.columns:
@@ -65,7 +72,7 @@ def calc_oscillator_indicators(
             rsi_result = safe_ta_with_fallback(df, "rsi", length=14)
             result["rsi_14"] = _first_col_or_series(rsi_result, "rsi_14", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта RSI: {type(e).__name__}: {e}")
+            logger.error(f"  RSI: {type(e).__name__}: {e}")
             result["rsi_14"] = _nan_series(df.index, "rsi_14")
 
     # Stochastic
@@ -103,7 +110,7 @@ def calc_oscillator_indicators(
                     if key in available:
                         result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Stochastic: {type(e).__name__}: {e}")
+            logger.error(f"  Stochastic: {type(e).__name__}: {e}")
             for key in ["stoch_k", "stoch_d"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -147,7 +154,7 @@ def calc_oscillator_indicators(
                     else:
                         result["macd_signal"] = _nan_series(df.index, "macd_signal")
 
-                # Рассчитываем histogram, если он запрошен ИЛИ если запрошены и macd, и macd_signal
+                #  histogram,        macd,  macd_signal
                 should_calc_histogram = "macd_histogram" in available or (
                     "macd" in available and "macd_signal" in available
                 )
@@ -162,7 +169,7 @@ def calc_oscillator_indicators(
                             macd_result.iloc[:, [2]], "macd_histogram", df.index
                         )
                     else:
-                        # Вычисляем histogram как macd - macd_signal
+                        #  histogram  macd - macd_signal
                         if "macd" in result and "macd_signal" in result:
                             result["macd_histogram"] = (
                                 result["macd"] - result["macd_signal"]
@@ -176,7 +183,7 @@ def calc_oscillator_indicators(
                     if key in available:
                         result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта MACD: {type(e).__name__}: {e}")
+            logger.error(f"  MACD: {type(e).__name__}: {e}")
             for key in ["macd", "macd_signal", "macd_histogram"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -189,7 +196,7 @@ def calc_oscillator_indicators(
                 cci_result = safe_ta_with_fallback(df, "cci", length=period)
                 result[key] = _first_col_or_series(cci_result, key, df.index)
             except Exception as e:
-                logger.error(f"Ошибка расчёта CCI_{period}: {type(e).__name__}: {e}")
+                logger.error(f"  CCI_{period}: {type(e).__name__}: {e}")
                 result[key] = _nan_series(df.index, key)
 
     # MFI
@@ -198,7 +205,7 @@ def calc_oscillator_indicators(
             mfi_result = safe_ta_with_fallback(df, "mfi", length=14)
             result["mfi"] = _first_col_or_series(mfi_result, "mfi", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта MFI: {type(e).__name__}: {e}")
+            logger.error(f"  MFI: {type(e).__name__}: {e}")
             result["mfi"] = _nan_series(df.index, "mfi")
 
     # ROC
@@ -209,7 +216,7 @@ def calc_oscillator_indicators(
                 roc_result = safe_ta_with_fallback(df, "roc", length=period)
                 result[key] = _first_col_or_series(roc_result, key, df.index)
             except Exception as e:
-                logger.error(f"Ошибка расчёта ROC_{period}: {type(e).__name__}: {e}")
+                logger.error(f"  ROC_{period}: {type(e).__name__}: {e}")
                 result[key] = _nan_series(df.index, key)
 
     # PPO
@@ -218,7 +225,7 @@ def calc_oscillator_indicators(
             ppo_result = safe_ta_with_fallback(df, "ppo", fast=12, slow=26)
             result["ppo"] = _first_col_or_series(ppo_result, "ppo", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта PPO: {type(e).__name__}: {e}")
+            logger.error(f"  PPO: {type(e).__name__}: {e}")
             result["ppo"] = _nan_series(df.index, "ppo")
 
     # TRIX
@@ -227,7 +234,7 @@ def calc_oscillator_indicators(
             trix_result = safe_ta_with_fallback(df, "trix", length=14)
             result["trix"] = _first_col_or_series(trix_result, "trix", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта TRIX: {type(e).__name__}: {e}")
+            logger.error(f"  TRIX: {type(e).__name__}: {e}")
             result["trix"] = _nan_series(df.index, "trix")
 
     # Williams %R
@@ -236,7 +243,7 @@ def calc_oscillator_indicators(
             willr_result = safe_ta_with_fallback(df, "willr", lbp=14)
             result["willr"] = _first_col_or_series(willr_result, "willr", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Williams %R: {type(e).__name__}: {e}")
+            logger.error(f"  Williams %R: {type(e).__name__}: {e}")
             result["willr"] = _nan_series(df.index, "willr")
 
     # Awesome Oscillator
@@ -245,7 +252,7 @@ def calc_oscillator_indicators(
             ao_result = safe_ta_with_fallback(df, "ao")
             result["ao"] = _first_col_or_series(ao_result, "ao", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Awesome Oscillator: {type(e).__name__}: {e}")
+            logger.error(f"  Awesome Oscillator: {type(e).__name__}: {e}")
             result["ao"] = _nan_series(df.index, "ao")
 
     # Absolute Price Oscillator
@@ -254,7 +261,7 @@ def calc_oscillator_indicators(
             apo_result = safe_ta_with_fallback(df, "apo", fast=12, slow=26)
             result["apo"] = _first_col_or_series(apo_result, "apo", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта APO: {type(e).__name__}: {e}")
+            logger.error(f"  APO: {type(e).__name__}: {e}")
             result["apo"] = _nan_series(df.index, "apo")
 
     # Bias
@@ -263,7 +270,7 @@ def calc_oscillator_indicators(
             bias_result = safe_ta_with_fallback(df, "bias")
             result["bias"] = _first_col_or_series(bias_result, "bias", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Bias: {type(e).__name__}: {e}")
+            logger.error(f"  Bias: {type(e).__name__}: {e}")
             result["bias"] = _nan_series(df.index, "bias")
 
     # Balance of Power
@@ -272,7 +279,7 @@ def calc_oscillator_indicators(
             bop_result = safe_ta_with_fallback(df, "bop")
             result["bop"] = _first_col_or_series(bop_result, "bop", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта BOP: {type(e).__name__}: {e}")
+            logger.error(f"  BOP: {type(e).__name__}: {e}")
             result["bop"] = _nan_series(df.index, "bop")
 
     # BRAR
@@ -281,7 +288,7 @@ def calc_oscillator_indicators(
             brar_result = safe_ta_with_fallback(df, "brar")
             result["brar"] = _first_col_or_series(brar_result, "brar", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта BRAR: {type(e).__name__}: {e}")
+            logger.error(f"  BRAR: {type(e).__name__}: {e}")
             result["brar"] = _nan_series(df.index, "brar")
 
     # Chande Forecast Oscillator
@@ -290,7 +297,7 @@ def calc_oscillator_indicators(
             cfo_result = safe_ta_with_fallback(df, "cfo")
             result["cfo"] = _first_col_or_series(cfo_result, "cfo", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта CFO: {type(e).__name__}: {e}")
+            logger.error(f"  CFO: {type(e).__name__}: {e}")
             result["cfo"] = _nan_series(df.index, "cfo")
 
     # Center of Gravity
@@ -299,7 +306,7 @@ def calc_oscillator_indicators(
             cg_result = safe_ta_with_fallback(df, "cg")
             result["cg"] = _first_col_or_series(cg_result, "cg", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта CG: {type(e).__name__}: {e}")
+            logger.error(f"  CG: {type(e).__name__}: {e}")
             result["cg"] = _nan_series(df.index, "cg")
 
     # Coppock Curve
@@ -310,7 +317,7 @@ def calc_oscillator_indicators(
                 coppock_result, "coppock", df.index
             )
         except Exception as e:
-            logger.error(f"Ошибка расчёта Coppock: {type(e).__name__}: {e}")
+            logger.error(f"  Coppock: {type(e).__name__}: {e}")
             result["coppock"] = _nan_series(df.index, "coppock")
 
     # Efficiency Ratio
@@ -319,7 +326,7 @@ def calc_oscillator_indicators(
             er_result = safe_ta_with_fallback(df, "er")
             result["er"] = _first_col_or_series(er_result, "er", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта ER: {type(e).__name__}: {e}")
+            logger.error(f"  ER: {type(e).__name__}: {e}")
             result["er"] = _nan_series(df.index, "er")
 
     # Elder Ray Index
@@ -328,7 +335,7 @@ def calc_oscillator_indicators(
             eri_result = safe_ta_with_fallback(df, "eri")
             result["eri"] = _first_col_or_series(eri_result, "eri", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта ERI: {type(e).__name__}: {e}")
+            logger.error(f"  ERI: {type(e).__name__}: {e}")
             result["eri"] = _nan_series(df.index, "eri")
 
     # Fisher Transform
@@ -337,7 +344,7 @@ def calc_oscillator_indicators(
             fisher_result = safe_ta_with_fallback(df, "fisher")
             result["fisher"] = _first_col_or_series(fisher_result, "fisher", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Fisher: {type(e).__name__}: {e}")
+            logger.error(f"  Fisher: {type(e).__name__}: {e}")
             result["fisher"] = _nan_series(df.index, "fisher")
 
     # Inertia
@@ -348,14 +355,14 @@ def calc_oscillator_indicators(
                 inertia_result, "inertia", df.index
             )
         except Exception as e:
-            logger.error(f"Ошибка расчёта Inertia: {type(e).__name__}: {e}")
+            logger.error(f"  Inertia: {type(e).__name__}: {e}")
             result["inertia"] = _nan_series(df.index, "inertia")
 
     # KDJ indicators
     if "kdj_k" in available:
         try:
             if not check_min_length(df, "kdj"):
-                logger.warning("KDJ: недостаточно данных (len<9), возвращаю NaN")
+                logger.warning("KDJ:   (len<9),  NaN")
                 result["kdj_k"] = _nan_series(df.index, "kdj_k")
             else:
                 kdj_k_result = safe_ta_with_fallback(df, "kdj", k=9, d=3)
@@ -373,13 +380,13 @@ def calc_oscillator_indicators(
                         kdj_k_result, "kdj_k", df.index
                     )
         except Exception as e:
-            logger.error(f"Ошибка расчёта KDJ K: {type(e).__name__}: {e}")
+            logger.error(f"  KDJ K: {type(e).__name__}: {e}")
             result["kdj_k"] = _nan_series(df.index, "kdj_k")
 
     if "kdj_d" in available:
         try:
             if not check_min_length(df, "kdj"):
-                logger.warning("KDJ: недостаточно данных (len<9), возвращаю NaN")
+                logger.warning("KDJ:   (len<9),  NaN")
                 result["kdj_d"] = _nan_series(df.index, "kdj_d")
             else:
                 kdj_d_result = safe_ta_with_fallback(df, "kdj", k=9, d=3)
@@ -397,7 +404,7 @@ def calc_oscillator_indicators(
                         kdj_d_result, "kdj_d", df.index
                     )
         except Exception as e:
-            logger.error(f"Ошибка расчёта KDJ D: {type(e).__name__}: {e}")
+            logger.error(f"  KDJ D: {type(e).__name__}: {e}")
             result["kdj_d"] = _nan_series(df.index, "kdj_d")
 
     # Pretty Good Oscillator
@@ -406,7 +413,7 @@ def calc_oscillator_indicators(
             pgo_result = safe_ta_with_fallback(df, "pgo")
             result["pgo"] = _first_col_or_series(pgo_result, "pgo", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта PGO: {type(e).__name__}: {e}")
+            logger.error(f"  PGO: {type(e).__name__}: {e}")
             result["pgo"] = _nan_series(df.index, "pgo")
 
     # Percentage Scale
@@ -415,7 +422,7 @@ def calc_oscillator_indicators(
             psl_result = safe_ta_with_fallback(df, "psl")
             result["psl"] = _first_col_or_series(psl_result, "psl", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта PSL: {type(e).__name__}: {e}")
+            logger.error(f"  PSL: {type(e).__name__}: {e}")
             result["psl"] = _nan_series(df.index, "psl")
 
     # Percentage Volume Oscillator
@@ -424,7 +431,7 @@ def calc_oscillator_indicators(
             pvo_result = safe_ta_with_fallback(df, "pvo")
             result["pvo"] = _first_col_or_series(pvo_result, "pvo", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта PVO: {type(e).__name__}: {e}")
+            logger.error(f"  PVO: {type(e).__name__}: {e}")
             result["pvo"] = _nan_series(df.index, "pvo")
 
     # Relative Strength X
@@ -433,7 +440,7 @@ def calc_oscillator_indicators(
             rsx_result = safe_ta_with_fallback(df, "rsx")
             result["rsx"] = _first_col_or_series(rsx_result, "rsx", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта RSX: {type(e).__name__}: {e}")
+            logger.error(f"  RSX: {type(e).__name__}: {e}")
             result["rsx"] = _nan_series(df.index, "rsx")
 
     # Jurik RSX
@@ -442,7 +449,7 @@ def calc_oscillator_indicators(
             rsx_14_result = safe_ta_with_fallback(df, "rsx", length=14)
             result["rsx_14"] = _first_col_or_series(rsx_14_result, "rsx_14", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта RSX_14: {type(e).__name__}: {e}")
+            logger.error(f"  RSX_14: {type(e).__name__}: {e}")
             result["rsx_14"] = _nan_series(df.index, "rsx_14")
 
     # Relative Vigor Index
@@ -451,7 +458,7 @@ def calc_oscillator_indicators(
             rvgi_result = safe_ta_with_fallback(df, "rvgi")
             result["rvgi"] = _first_col_or_series(rvgi_result, "rvgi", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта RVGI: {type(e).__name__}: {e}")
+            logger.error(f"  RVGI: {type(e).__name__}: {e}")
             result["rvgi"] = _nan_series(df.index, "rvgi")
 
     # Slope
@@ -462,7 +469,7 @@ def calc_oscillator_indicators(
                 slope_result, "slope_20", df.index
             )
         except Exception as e:
-            logger.error(f"Ошибка расчёта Slope: {type(e).__name__}: {e}")
+            logger.error(f"  Slope: {type(e).__name__}: {e}")
             result["slope_20"] = _nan_series(df.index, "slope_20")
 
     # Stochastic Momentum Index
@@ -471,7 +478,7 @@ def calc_oscillator_indicators(
             smi_result = safe_ta_with_fallback(df, "smi")
             result["smi"] = _first_col_or_series(smi_result, "smi", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта SMI: {type(e).__name__}: {e}")
+            logger.error(f"  SMI: {type(e).__name__}: {e}")
             result["smi"] = _nan_series(df.index, "smi")
 
     # True Strength Index
@@ -480,7 +487,7 @@ def calc_oscillator_indicators(
             tsi_result = safe_ta_with_fallback(df, "tsi")
             result["tsi"] = _first_col_or_series(tsi_result, "tsi", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта TSI: {type(e).__name__}: {e}")
+            logger.error(f"  TSI: {type(e).__name__}: {e}")
             result["tsi"] = _nan_series(df.index, "tsi")
 
     # Ultimate Oscillator
@@ -489,14 +496,14 @@ def calc_oscillator_indicators(
             uo_result = safe_ta_with_fallback(df, "uo")
             result["uo"] = _first_col_or_series(uo_result, "uo", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Ultimate Oscillator: {type(e).__name__}: {e}")
+            logger.error(f"  Ultimate Oscillator: {type(e).__name__}: {e}")
             result["uo"] = _nan_series(df.index, "uo")
 
     # Stochastic RSI
     if "stochrsi_k" in available or "stochrsi_d" in available:
         try:
             if not check_min_length(df, "stochrsi"):
-                logger.warning("STOCHRSI: недостаточно данных (len<14), возвращаю NaN")
+                logger.warning("STOCHRSI:   (len<14),  NaN")
                 for key in ["stochrsi_k", "stochrsi_d"]:
                     if key in available:
                         result[key] = _nan_series(df.index, key)
@@ -536,15 +543,13 @@ def calc_oscillator_indicators(
                         if key in available:
                             result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Stochastic RSI: {type(e).__name__}: {e}")
+            logger.error(f"  Stochastic RSI: {type(e).__name__}: {e}")
             for key in ["stochrsi_k", "stochrsi_d"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
 
-    # Гарантируем, что все значения - Series
-    assert all(
-        isinstance(v, pd.Series) for v in result.values()
-    ), "Все значения должны быть Series"
+    # ,    - Series
+    assert all(isinstance(v, pd.Series) for v in result.values()), "    Series"
 
     log_group_results("OSCILLATORS", result)
     return result

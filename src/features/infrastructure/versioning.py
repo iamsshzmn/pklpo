@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from ..observability.logging import get_features_logger
+from src.logging import get_features_logger
 
 logger = get_features_logger("features.versioning")
 
@@ -49,7 +49,7 @@ class FeaturesVersionManager:
             Schema version string
         """
         # Schema version is based on the structure of FEATURE_SPECS
-        from .specs import FEATURE_SPECS
+        from ..specs import FEATURE_SPECS
 
         # Create a hash of the feature specs structure
         specs_data = []
@@ -79,9 +79,9 @@ class FeaturesVersionManager:
             Algorithm version string
         """
         # Algorithm version is based on the core calculation logic
-        from .core import compute_features
-        from .name_mapping import normalize_indicator_name
-        from .utils import volatility_normalize_features
+        from ..core import compute_features
+        from ..schema.name_aliases import normalize_name
+        from ..utils import volatility_normalize_features
 
         # Create hash of key algorithm components
         volatility_func_name = (
@@ -92,7 +92,7 @@ class FeaturesVersionManager:
         algo_components = [
             compute_features.__name__,
             volatility_func_name,
-            normalize_indicator_name.__name__,
+            normalize_name.__name__,
             "pandas_ta_integration",
             "time_normalization",
             "feature_validation",
@@ -140,7 +140,7 @@ class FeaturesVersionManager:
             VersionInfo object
         """
         if self._version_cache is None:
-            from .specs import FEATURE_SPECS, PHASE_2_REQUIRED_FEATURES
+            from ..specs import FEATURE_SPECS, PHASE_2_REQUIRED_FEATURES
 
             # Count features
             features_count = len(FEATURE_SPECS)

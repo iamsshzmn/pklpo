@@ -14,6 +14,7 @@ application/
 ├── backfill.py          # Backfill менеджер для пересчёта исторических данных
 ├── batch_processor.py   # Обработка батчей symbol-timeframe
 ├── calc.py              # Streaming расчёт и Parquet экспорт
+├── save_dependencies.py # Composition-root helper для save use cases
 ├── save.py              # Сохранение в PostgreSQL (batch UPSERT)
 └── README.md
 ```
@@ -45,20 +46,29 @@ Streaming обработка больших датасетов с chunking.
 
 ```python
 from src.features.application.calc import process_chunks, compute_and_dump_parquet
+from src.features.application.feature_service import create_feature_service
+import pandas as pd
 
 # Streaming обработка
-result = process_chunks(
-    df_ohlcv,
-    chunk_size=200_000,
-    overlap=200,
-    specs=['ema_21', 'rsi_14']
-)
+df_ohlcv = pd.read_csv("ohlcv.csv")
+reader = iter([df_ohlcv])
+
+chunks = list(process_chunks(
+    reader,
+    symbol="BTC-USDT-SWAP",
+    timeframe="1D",
+    available_indicators={"ema_21", "rsi_14"},
+    calculator=create_feature_service(),
+))
 
 # Экспорт в Parquet
 compute_and_dump_parquet(
-    input_path="ohlcv.csv",
+    df_ohlcv=df_ohlcv,
+    symbol="BTC-USDT-SWAP",
+    timeframe="1D",
     output_path="features.parquet",
-    specs=['ema_21', 'rsi_14']
+    available_indicators={"ema_21", "rsi_14"},
+    calculator=create_feature_service(),
 )
 ```
 
@@ -70,23 +80,45 @@ compute_and_dump_parquet(
 
 ### `save.py`
 
-Batch сохранение в PostgreSQL с UPSERT.
+Thin orchestration facade для сохранения в PostgreSQL через repository boundary.
 
 ```python
 from src.features.application.save import save_parquet_to_pg, save_batch
+from src.features.application.save_dependencies import (
+    create_feature_save_dependencies,
+)
+
+# Composition root для save use cases
+save_deps = create_feature_save_dependencies(session)
 
 # Из Parquet файла
-count = await save_parquet_to_pg(session, "features.parquet", "BTC-USDT-SWAP", "1D")
+result = await save_parquet_to_pg(
+    session,
+    "features.parquet",
+    "BTC-USDT-SWAP",
+    "1D",
+    repository=save_deps.repository,
+    validator=save_deps.validator,
+    observer=save_deps.observer,
+)
 
 # Batch сохранение DataFrame
-count = await save_batch(session, df_features, "BTC-USDT-SWAP", "1D")
+result = await save_batch(
+    session,
+    df_features,
+    "BTC-USDT-SWAP",
+    "1D",
+    repository=save_deps.repository,
+    observer=save_deps.observer,
+)
 ```
 
 **Особенности:**
-- UPSERT: `ON CONFLICT (symbol, timeframe, timestamp) DO UPDATE`
-- Batch size: 50K rows
-- NaN/Inf → NULL автоматически
-- Schema validation перед записью
+- Application-слой не содержит прямых SQL/DB health-check вызовов
+- Default wiring для save-path вынесен в `create_feature_save_dependencies(session)`
+- Persistence вызывается через `IndicatorRepository`, а не через прямой DB helper
+- UPSERT и retry остаются в infrastructure adapter
+- NaN/Inf → NULL и schema-aware preparation выполняются в persistence layer
 
 ### `backfill.py`
 
@@ -117,7 +149,7 @@ result = await manager.run_backfill(config)
 
 1. **Оркестрация** - координирует слои, не содержит бизнес-логику
 2. **Транзакции** - управляет commit/rollback
-3. **Retry** - exponential backoff для transient ошибок
+3. **Retry** - общий retry слой через `src.utils.retry` для transient ошибок
 4. **Idempotency** - UPSERT гарантирует безопасность повторных запусков
 
 ## Зависимости
@@ -132,6 +164,6 @@ Application Layer
 ## Тестирование
 
 ```bash
-pytest src/features/tests/test_backfill.py -v
-pytest src/features/tests/test_comprehensive.py -v
+pytest tests/features/tests/test_backfill.py -v
+pytest tests/features/tests/test_comprehensive.py -v
 ```

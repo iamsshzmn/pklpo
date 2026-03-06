@@ -29,7 +29,6 @@ env/
 .env
 
 # Testing
-# tests/ - tracked in git, do not ignore
 .pytest_cache/
 .coverage
 .coverage.*
@@ -55,6 +54,9 @@ logs/
 # Database
 *.db
 *.sqlite3
+
+# Codex
+.codex-pre-commit-cache
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -120,19 +122,15 @@ $RECYCLE.BIN/
 airflow.cfg
 airflow.db
 airflow_login.py
-logs/
 ops/airflow/logs/
-dags/__pycache__/
-plugins/__pycache__/
 ops/airflow/dags/__pycache__/
 
 # Cursor / IDE
 .cursorrules
 .cursor/
 
-# Ruff / mypy cache
+# Ruff cache
 .ruff_cache/
-.mypy_cache/
 
 # Local configs / backups
 .env.backup
@@ -142,13 +140,10 @@ ops/airflow/dags/__pycache__/
 
 # Data directories
 data/
-datasets/
 tmp/
 backups/
 
 # Build artifacts
-dist/
-build/
 *.tar
 *.img
 
@@ -158,14 +153,12 @@ build/
 # Working docs / plans (не коммитить)
 plan/
 reports/
-Market Selection/
 
 # Debug / temp files
 debug_*.json
 cursor_*.session.sql
 *.session.sql
 scripts/migration_report*.json
-1
 
 # Old/deprecated code in src/
 **/*(old)/
@@ -180,7 +173,8 @@ src/features/README/
 src/**/*_REPORT.md
 src/**/*_SUMMARY.md
 
-# Tests in src/ (тесты хранятся в tests/)
+# Tests (не коммитить)
+tests/
 src/**/tests/
 src/**/test_*.py
 /benchmarks
@@ -193,11 +187,6 @@ backup-*.bundle
 input_docs/
 notebooks/
 
-# Local feature benchmarks/tests (do not commit)
-scripts/run_features_*_benchmark.py
-tests/features/benchmarks/
-tests/test_batch_builder_contracts.py
-tests/test_persistence_modules_coverage.py
-tests/test_ta_safe_lazy_init.py
-tests/test_talib_bridge_dispatch.py
-tests/
+# Local scratch scripts (do not commit unless part of CI)
+scripts/run_features_*.py
+scripts/run_*benchmark*.py

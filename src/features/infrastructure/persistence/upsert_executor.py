@@ -5,14 +5,15 @@ Wraps the build_and_execute_upsert function with exponential backoff retry
 for transient database errors.
 
 Extracted from inserter.py (Stage 2 refactoring).
+Retry delegated to src.utils.retry.RetryableOperation ( 6).
 """
 
-import asyncio
 from typing import Any
 
 from sqlalchemy.exc import DBAPIError, OperationalError
 
 from src.logging import get_logger
+from src.utils.retry import RetryableOperation, RetryConfig
 
 from ..upsert_builder import build_and_execute_upsert
 
@@ -66,36 +67,27 @@ async def execute_upsert_with_retry(
     if not records:
         return 0
 
-    last_exception = None
-    delay = base_delay
+    retry_cfg = RetryConfig(
+        max_attempts=max_retries + 1,
+        base_delay=base_delay,
+        max_delay=base_delay * (backoff_factor**max_retries),
+        exponential_base=backoff_factor,
+        jitter=False,
+        exceptions=RETRYABLE_EXCEPTIONS,
+    )
+    op = RetryableOperation(retry_cfg)
 
-    for attempt in range(max_retries + 1):
-        try:
-            return await build_and_execute_upsert(
-                session=session,
-                model_class=indicators_table,
-                records=records,
-                db_cols=db_columns,
-                pk=pk,
-                required_fields=required_fields,
-            )
+    async def _do_upsert():
+        return await build_and_execute_upsert(
+            session=session,
+            model_class=indicators_table,
+            records=records,
+            db_cols=db_columns,
+            pk=pk,
+            required_fields=required_fields,
+        )
 
-        except RETRYABLE_EXCEPTIONS as e:
-            last_exception = e
-
-            if attempt < max_retries:
-                logger.warning(
-                    f"UPSERT retry {attempt + 1}/{max_retries} after error: {e}. "
-                    f"Waiting {delay:.1f}s..."
-                )
-                await asyncio.sleep(delay)
-                delay *= backoff_factor
-            else:
-                logger.error(
-                    f"UPSERT failed after {max_retries} retries. Last error: {e}"
-                )
-
-    raise last_exception  # type: ignore[misc]
+    return await op.execute_async(_do_upsert)
 
 
 async def check_db_state_before_after(
@@ -120,8 +112,10 @@ async def check_db_state_before_after(
         result = await check_db_state_func(session, symbol, timeframe)
         # Explicitly unpack to satisfy type checker
         count, ts = result
-        return (int(count) if count is not None else None,
-                int(ts) if ts is not None else None)
+        return (
+            int(count) if count is not None else None,
+            int(ts) if ts is not None else None,
+        )
     except Exception as e:
         logger.warning(f"Failed to check DB state: {e}")
         return None, None

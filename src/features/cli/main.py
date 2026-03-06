@@ -16,9 +16,11 @@ import pandas as pd
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+from src.logging import get_features_logger
+
 from ..application.calc import compute_and_dump_parquet, validate_parquet_file
 from ..application.save import save_parquet_to_pg, validate_database_connection
-from ..observability.logging import get_features_logger
+from ..application.save_dependencies import create_feature_save_dependencies
 from ..validation.data_validator import check_data_consistency, validate_data_quality
 
 logger = get_features_logger("features.cli")
@@ -67,12 +69,15 @@ def cmd_calculate(args):
             }
         else:
             logger.info("Using streaming calculation method")
+            from ..application.feature_service import create_feature_service
+
             result = compute_and_dump_parquet(
                 df_ohlcv=df_ohlcv,
                 symbol=args.symbol,
                 timeframe=args.timeframe,
                 output_path=args.output,
                 volatility_normalize=args.volatility_normalize,
+                calculator=create_feature_service(),
             )
 
         print(
@@ -105,8 +110,13 @@ def cmd_save(args):
         from src.database import get_async_session
 
         async for session in get_async_session():
+            save_deps = create_feature_save_dependencies(session)
+
             # Validate connection
-            validation = await validate_database_connection(session)
+            validation = await validate_database_connection(
+                session,
+                repository=save_deps.repository,
+            )
             if not validation["valid"]:
                 print(f"❌ Database validation failed: {validation}")
                 return 1
@@ -119,6 +129,9 @@ def cmd_save(args):
                 timeframe=args.timeframe,
                 batch_size=args.batch_size,
                 validate_before_save=args.validate,
+                repository=save_deps.repository,
+                validator=save_deps.validator,
+                observer=save_deps.observer,
             )
 
             if result["success"]:
@@ -237,8 +250,13 @@ def cmd_test_database(args):
     async def _test():
         from src.database import get_async_session
 
+        from ..infrastructure.persistence import create_indicator_repository
+
         async for session in get_async_session():
-            validation = await validate_database_connection(session)
+            validation = await validate_database_connection(
+                session,
+                repository=create_indicator_repository(session),
+            )
 
             if validation["valid"]:
                 print("✅ Database connection successful")

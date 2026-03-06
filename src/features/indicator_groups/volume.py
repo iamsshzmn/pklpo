@@ -22,10 +22,17 @@ from src.logging import get_logger
 from ..ta_safe import safe_ta_with_fallback
 from ..utils import _first_col_or_series as _ensure_series
 from ..utils.indicator_utils import check_min_length
+from .registry import GroupRegistry
 
 logger = get_logger(__name__)
 
 
+@GroupRegistry.register(
+    "volume",
+    order=4,
+    dependencies=["overlap"],
+    description="Volume indicators (OBV, VWAP, etc.)",
+)
 def calc_volume_indicators(
     df: pd.DataFrame, available: set[str], **kwargs
 ) -> dict[str, pd.Series]:
@@ -71,7 +78,9 @@ def calc_volume_indicators(
     # Volume SMA
     if "volume_sma20" in available:
         volume_sma_series = safe_ta_with_fallback(df, "sma", length=20)
-        result["volume_sma20"] = _ensure_series(volume_sma_series, "volume_sma20", df.index)
+        result["volume_sma20"] = _ensure_series(
+            volume_sma_series, "volume_sma20", df.index
+        )
 
     # Money Flow Index
     if "mfi" in available:

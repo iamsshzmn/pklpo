@@ -43,6 +43,7 @@ DEFAULT_CONFIG = {
     "max_concurrent_symbols": 3,  # Parallel symbol workers
     "extra_data": False,  # Disable optional metrics by default (avoid 429)
     "use_ccxt": True,
+    "dynamic_batch_size": False,  # Enable DynamicBatchPolicy at runtime
 }
 
 
@@ -108,6 +109,21 @@ class SwapCandlesSync:
         else:
             self.extra_data_fetcher = None
 
+        # Dynamic batch-size policy (opt-in via config["dynamic_batch_size"]).
+        from src.candles.domain.batch_policy import DynamicBatchPolicy
+
+        if self.config.get("dynamic_batch_size", False):
+            self._batch_policy: DynamicBatchPolicy | None = DynamicBatchPolicy(
+                default_batch_size=int(self.config.get("batch_size", 300)),
+            )
+            logger.info(
+                "DynamicBatchPolicy enabled (default=%d)",
+                self.config.get("batch_size", 300),
+            )
+        else:
+            self._batch_policy = None
+        self._last_api_latency_ms: float = 0.0
+
         # Endpoint-level counters.
         self.endpoint_stats: dict[str, dict[str, float]] = {
             "candles": {"ok": 0, "retries": 0, "rate_limit": 0},
@@ -136,7 +152,9 @@ class SwapCandlesSync:
                 return build_market_data_adapter(
                     {
                         "adapter": "legacy",
-                        "legacy_adapter_factory": self.config.get("legacy_adapter_factory"),
+                        "legacy_adapter_factory": self.config.get(
+                            "legacy_adapter_factory"
+                        ),
                     }
                 )
             except Exception as fallback_exc:
@@ -154,6 +172,20 @@ class SwapCandlesSync:
         ordered = sorted(values)
         index = int(round((len(ordered) - 1) * pct))
         return ordered[index]
+
+    def _get_current_batch_size(self, timeframe: str) -> int:
+        """Return batch size for the next API request, using dynamic policy if enabled."""
+        if self._batch_policy is None:
+            return self.sync_policy.request_limit()
+        try:
+            import psutil
+
+            cpu_pct = psutil.cpu_percent(interval=None)
+        except Exception:
+            cpu_pct = 0.0
+        return self._batch_policy.get_batch_size(
+            timeframe, self._last_api_latency_ms, cpu_pct
+        )
 
     async def resolve_symbols(self, symbols: list[str] | None) -> list[str]:
         """
@@ -189,7 +221,9 @@ class SwapCandlesSync:
         # Fallback to repository read-model if file cache is unavailable.
         logger.info("Loading swap symbols from repository fallback")
         symbols_list = await self.repository.fetch_swap_usdt_symbols()
-        logger.info("Loaded %s swap symbols from repository fallback", len(symbols_list))
+        logger.info(
+            "Loaded %s swap symbols from repository fallback", len(symbols_list)
+        )
         return symbols_list
 
     async def sync_swap_bar(
@@ -207,19 +241,23 @@ class SwapCandlesSync:
             Tuple: (saved_count, last_timestamp).
         """
         try:
-            logger.debug("Fetching candles %s %s (before=%s)", symbol, timeframe, before)
+            logger.debug(
+                "Fetching candles %s %s (before=%s)", symbol, timeframe, before
+            )
             # Exponential backoff with jitter on 429/5xx errors.
             attempts = 0
             delay = self.sync_policy.initial_delay()
-            requested_limit = self.sync_policy.request_limit()
+            requested_limit = self._get_current_batch_size(timeframe)
             while True:
                 try:
+                    _t0 = time.perf_counter()
                     candles = await self.okx_client.get_candles(
                         inst_id=symbol,
                         bar=timeframe,
                         limit=requested_limit,
                         before=before,
                     )
+                    self._last_api_latency_ms = (time.perf_counter() - _t0) * 1000
                     self.endpoint_stats["candles"]["ok"] += 1
                     break
                 except Exception as fetch_err:
@@ -246,7 +284,9 @@ class SwapCandlesSync:
                 logger.debug("No candles returned for %s %s", symbol, timeframe)
                 return 0, None
 
-            logger.debug("Received %s candles for %s %s", len(candles), symbol, timeframe)
+            logger.debug(
+                "Received %s candles for %s %s", len(candles), symbol, timeframe
+            )
             # Optional extra data for swap instruments.
             additional_data = await self._get_swap_additional_data(symbol)
 
@@ -461,7 +501,9 @@ class SwapCandlesSync:
                     .timestamp()
                     * 1000
                 )
-                today_stats = await self.repository.fetch_today_fill_stats(start_of_day_ms)
+                today_stats = await self.repository.fetch_today_fill_stats(
+                    start_of_day_ms
+                )
             except Exception as e:
                 logger.warning("Failed to compute today's fill stats: %s", e)
 
@@ -470,7 +512,10 @@ class SwapCandlesSync:
                 "writes_count": len(self._db_write_latencies_sec),
                 "latency_avg_ms": (
                     round(
-                        (sum(self._db_write_latencies_sec) / len(self._db_write_latencies_sec))
+                        (
+                            sum(self._db_write_latencies_sec)
+                            / len(self._db_write_latencies_sec)
+                        )
                         * 1000.0,
                         3,
                     )
@@ -482,11 +527,17 @@ class SwapCandlesSync:
                     3,
                 ),
                 "batch_size_avg": (
-                    round(sum(self._db_write_batch_sizes) / len(self._db_write_batch_sizes), 2)
+                    round(
+                        sum(self._db_write_batch_sizes)
+                        / len(self._db_write_batch_sizes),
+                        2,
+                    )
                     if self._db_write_batch_sizes
                     else 0.0
                 ),
-                "batch_size_max": max(self._db_write_batch_sizes) if self._db_write_batch_sizes else 0,
+                "batch_size_max": (
+                    max(self._db_write_batch_sizes) if self._db_write_batch_sizes else 0
+                ),
             }
 
             total_stats = {

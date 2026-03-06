@@ -25,6 +25,7 @@ from ..ta_safe import safe_ta_with_fallback
 # Import from utils package (which re-exports from utils.py module)
 from ..utils import _first_col_or_series, _nan_series
 from .debug_utils import log_group_results, log_group_start
+from .registry import GroupRegistry
 
 logger = get_logger(__name__)
 
@@ -57,6 +58,12 @@ def _ensure_series(value: object, name: str, index: pd.Index) -> pd.Series:
     return _first_col_or_series(value, name, index)
 
 
+@GroupRegistry.register(
+    "ma",
+    order=1,
+    dependencies=["overlap"],
+    description="Moving averages (SMA, EMA, WMA, etc.)",
+)
 def calc_ma_indicators(
     df: pd.DataFrame, available: set[str], **kwargs
 ) -> dict[str, pd.Series]:
@@ -78,35 +85,35 @@ def calc_ma_indicators(
     log_group_start("MA", df, available)
     result: dict[str, pd.Series] = {}
 
-    # EMA индикаторы
+    # EMA
     for period in [8, 12, 13, 21, 26, 34, 50, 55, 89, 144, 200, 233]:
         key = f"ema_{period}"
         if key in available:
             ema_series = safe_ta_with_fallback(df, "ema", length=period)
             result[key] = _ensure_series(ema_series, key, df.index)
 
-    # SMA индикаторы
+    # SMA
     for period in [20, 34, 50, 200]:
         key = f"sma_{period}"
         if key in available:
             sma_series = safe_ta_with_fallback(df, "sma", length=period)
             result[key] = _ensure_series(sma_series, key, df.index)
 
-    # WMA индикаторы
+    # WMA
     for period in [20]:
         key = f"wma_{period}"
         if key in available:
             wma_series = safe_ta_with_fallback(df, "wma", length=period)
             result[key] = _ensure_series(wma_series, key, df.index)
 
-    # HMA индикаторы
+    # HMA
     for period in [20]:
         key = f"hma_{period}"
         if key in available:
             hma_series = safe_ta_with_fallback(df, "hma", length=period)
             result[key] = _ensure_series(hma_series, key, df.index)
 
-    # KAMA индикаторы
+    # KAMA
     for period in [20]:
         key = f"kama_{period}"
         if key in available:
@@ -115,42 +122,42 @@ def calc_ma_indicators(
             )
             result[key] = _ensure_series(kama_series, key, df.index)
 
-    # TEMA индикаторы
+    # TEMA
     for period in [20]:
         key = f"tema_{period}"
         if key in available:
             tema_series = safe_ta_with_fallback(df, "tema", length=period)
             result[key] = _ensure_series(tema_series, key, df.index)
 
-    # DEMA индикаторы
+    # DEMA
     for period in [20]:
         key = f"dema_{period}"
         if key in available:
             dema_series = safe_ta_with_fallback(df, "dema", length=period)
             result[key] = _ensure_series(dema_series, key, df.index)
 
-    # ALMA индикаторы
+    # ALMA
     for period in [20]:
         key = f"alma_{period}"
         if key in available:
             alma_series = safe_ta_with_fallback(df, "alma", length=period)
             result[key] = _ensure_series(alma_series, key, df.index)
 
-    # FWMA индикаторы
+    # FWMA
     for period in [20]:
         key = f"fwma_{period}"
         if key in available:
             fwma_series = safe_ta_with_fallback(df, "fwma", length=period)
             result[key] = _ensure_series(fwma_series, key, df.index)
 
-    # RMA индикаторы
+    # RMA
     for period in [20]:
         key = f"rma_{period}"
         if key in available:
             rma_series = safe_ta_with_fallback(df, "rma", length=period)
             result[key] = _ensure_series(rma_series, key, df.index)
 
-    # T3 индикаторы
+    # T3
     for period in [20]:
         key = f"t3_{period}"
         if key in available:
@@ -160,59 +167,59 @@ def calc_ma_indicators(
                 t3_series = _first_col_or_series(t3_result, key, df.index)
                 result[key] = t3_series
             except Exception as e:
-                logger.error(f"Ошибка расчёта T3_{period}: {type(e).__name__}: {e}")
+                logger.error(f"  T3_{period}: {type(e).__name__}: {e}")
                 result[key] = _nan_series(df.index, key)
 
-    # TRIMA индикаторы
+    # TRIMA
     for period in [20]:
         key = f"trima_{period}"
         if key in available:
             trima_series = safe_ta_with_fallback(df, "trima", length=period)
             result[key] = _ensure_series(trima_series, key, df.index)
 
-    # VIDYA индикаторы
+    # VIDYA
     for period in [20]:
         key = f"vidya_{period}"
         if key in available:
             vidya_series = safe_ta_with_fallback(df, "vidya", length=period)
             result[key] = _ensure_series(vidya_series, key, df.index)
 
-    # ZLMA индикаторы
+    # ZLMA
     for period in [20]:
         key = f"zlma_{period}"
         if key in available:
             zlma_series = safe_ta_with_fallback(df, "zlma", length=period)
             result[key] = _ensure_series(zlma_series, key, df.index)
 
-    # SINWMA индикаторы
+    # SINWMA
     for period in [20]:
         key = f"sinwma_{period}"
         if key in available:
             sinwma_series = safe_ta_with_fallback(df, "sinwma", length=period)
             result[key] = _ensure_series(sinwma_series, key, df.index)
 
-    # SWMA индикаторы
+    # SWMA
     for period in [20]:
         key = f"swma_{period}"
         if key in available:
             swma_series = safe_ta_with_fallback(df, "swma", length=period)
             result[key] = _ensure_series(swma_series, key, df.index)
 
-    # PWMA индикаторы
+    # PWMA
     for period in [20]:
         key = f"pwma_{period}"
         if key in available:
             pwma_series = safe_ta_with_fallback(df, "pwma", length=period)
             result[key] = _ensure_series(pwma_series, key, df.index)
 
-    # HWMA индикаторы
+    # HWMA
     for period in [20]:
         key = f"hwma_{period}"
         if key in available:
             hwma_series = safe_ta_with_fallback(df, "hwma", length=period)
             result[key] = _ensure_series(hwma_series, key, df.index)
 
-    # LINREG индикаторы
+    # LINREG
     for period in [20]:
         key = f"linreg_{period}"
         if key in available:

@@ -1,7 +1,6 @@
 """Observability module - logging, metrics, tracing, errors."""
 
-from .error_handling import CalculationError, FeaturesError
-from .logging import (
+from src.logging import (
     LogAggregator,
     LogCategory,
     RunSummary,
@@ -15,6 +14,8 @@ from .logging import (
     set_verbosity,
     should_log,
 )
+
+from .error_handling import CalculationError, FeaturesError
 from .metrics import MetricsCollector
 from .prometheus import PipelineMetrics, get_metrics
 

@@ -14,7 +14,7 @@ from typing import Any
 
 import pandas as pd
 
-from ..observability.logging import get_features_logger
+from src.logging import get_features_logger
 
 logger = get_features_logger("features.upsert_optimizer")
 
@@ -39,6 +39,10 @@ class UpsertConfig:
 
         # Logging settings
         self.log_top_cols = 5  # Number of top columns to log
+
+        # Test/simulation settings
+        self.simulate_failures = False
+        self.simulated_failure_rate = 0.05
 
 
 class UpsertOptimizer:
@@ -123,8 +127,11 @@ class UpsertOptimizer:
         processing_time = len(df) * 0.0001  # 0.1ms per row
         time.sleep(min(processing_time, 0.1))  # Cap at 100ms
 
-        # Simulate occasional failures (5% chance)
-        if random.random() < 0.05:
+        # Optional failure simulation for resilience testing.
+        if (
+            self.config.simulate_failures
+            and random.random() < self.config.simulated_failure_rate
+        ):
             self.logger.warning(f"Simulated database failure for group {group_name}")
             return False
 

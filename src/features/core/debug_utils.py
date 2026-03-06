@@ -8,7 +8,7 @@ import os
 
 import pandas as pd
 
-from ..observability.logging import get_features_logger
+from src.logging import get_features_logger
 
 logger = get_features_logger(__name__)
 

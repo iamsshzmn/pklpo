@@ -24,8 +24,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.logging import get_features_logger
+
 from ..specs import PHASE_2_REQUIRED_FEATURES
-from .logging import get_features_logger
 
 logger = get_features_logger("features.metrics")
 
@@ -456,7 +457,18 @@ class FeaturesMetricsCollector:
         return metrics
 
     def collect_phase2_compliance(self, df: pd.DataFrame) -> Phase2ComplianceMetrics:
-        required = list(PHASE_2_REQUIRED_FEATURES)
+        try:
+            from src.features import metrics as legacy_metrics
+
+            required = list(
+                getattr(
+                    legacy_metrics,
+                    "PHASE_2_REQUIRED_FEATURES",
+                    PHASE_2_REQUIRED_FEATURES,
+                )
+            )
+        except Exception:
+            required = list(PHASE_2_REQUIRED_FEATURES)
         present = [f for f in required if f in df.columns]
         missing = [f for f in required if f not in present]
         fill_rates = {f: self._fill_rate(df[f]) for f in present}

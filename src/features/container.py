@@ -11,10 +11,10 @@ in the features module. It supports:
 - Type-safe resolution
 
 Usage:
-    from src.features.container import Container, get_container
+    from src.features.container import Container, create_default_container
 
     # Register dependencies
-    container = get_container()
+    container = create_default_container()
     container.register_singleton("logger", get_features_logger)
     container.register_factory("calculator", FeatureCalculationService)
 
@@ -161,34 +161,17 @@ class Container:
         return self.has(name)
 
 
-# =============================================================================
-# GLOBAL CONTAINER
-# =============================================================================
-
-_container: Container | None = None
-
-
-def get_container() -> Container:
-    """Get the global container instance."""
-    global _container
-    if _container is None:
-        _container = Container()
-        _configure_default_dependencies(_container)
-    return _container
-
-
-def reset_container() -> None:
-    """Reset the global container (for testing)."""
-    global _container
-    if _container is not None:
-        _container.clear()
-    _container = None
+def create_default_container() -> Container:
+    """Create a freshly configured container with default dependencies."""
+    container = Container()
+    _configure_default_dependencies(container)
+    return container
 
 
 def _configure_default_dependencies(container: Container) -> None:
     """Configure default dependencies."""
     # Logger
-    from .observability.logging import get_features_logger
+    from src.logging import get_features_logger
 
     container.register_singleton("logger", lambda: get_features_logger("features"))
 

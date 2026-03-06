@@ -1,11 +1,19 @@
 import numpy as np
 import pandas as pd
 
+from .registry import GroupRegistry
+
 
 def _nan_series(df: pd.DataFrame) -> pd.Series:
     return pd.Series([np.nan] * len(df), index=df.index)
 
 
+@GroupRegistry.register(
+    "statistics",
+    order=8,
+    dependencies=["overlap", "ma"],
+    description="Statistical indicators",
+)
 def calc_statistics_indicators(
     df: pd.DataFrame, available: set[str], window: int = 20, **kwargs
 ) -> dict[str, pd.Series]:
@@ -66,7 +74,7 @@ def calc_statistics_indicators(
         std = close.rolling(window).std(ddof=0)
         result["zscore_20"] = (close - mean) / std.replace(0.0, np.nan)
 
-    # Дополнительные статистические индикаторы
+    #
     if "std_20" in available:
         result["std_20"] = close.rolling(window).std(ddof=0)
 

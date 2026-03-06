@@ -2,8 +2,8 @@
 Gate validation module for features calculation.
 
 This module implements strict quality gates before database operations
-as specified in the plan: "не писать, если len(df)<min_rows или
-nan_ratio(feature_group) > threshold или fill_rate<min_fill".
+as specified in the plan: " ,  len(df)<min_rows
+nan_ratio(feature_group) > threshold  fill_rate<min_fill".
 """
 
 from dataclasses import dataclass
@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ..observability.logging import get_features_logger
+from src.logging import get_features_logger
 
 logger = get_features_logger("features.gate_validation")
 

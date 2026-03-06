@@ -15,9 +15,8 @@ infrastructure/
 ├── database.py              # Базовые DB операции (entry point)
 ├── db_operations.py         # Чтение данных (fetch_ohlcv_df, fetch_latest_ts)
 ├── diagnostics.py           # Диагностика и отладка
-├── indicator_registry.py    # Реестр доступных индикаторов
+├── indicator_registry.py    # Legacy wrapper над registry/specs surfaces
 ├── insert_indicators.py     # Entry point для вставки
-├── retry.py                 # Retry механизмы с backoff
 ├── upsert_builder.py        # Построение UPSERT запросов
 ├── upsert_optimizer.py      # Оптимизация batch операций
 ├── versioning.py            # Версионирование схемы и алгоритмов
@@ -75,16 +74,21 @@ valid_cols = filter_columns_by_schema(df.columns, schema_columns)
 stmt = build_upsert_statement(table, columns, values)
 ```
 
-### `retry.py`
+### `src.utils.retry`
 
-Retry с exponential backoff.
+Локальный `src.features.infrastructure.retry` удалён. Для retry используется
+общий project-wide слой `src.utils.retry`.
 
 ```python
-from src.features.infrastructure.retry import retry_with_backoff
+from src.utils.retry import get_db_retry, retry_sync
 
-@retry_with_backoff(max_retries=3, base_delay=1.0)
+@get_db_retry()
 async def save_data(session, data):
     await session.execute(...)
+
+@retry_sync(max_attempts=3, base_delay=1.0)
+def load_local_cache():
+    ...
 ```
 
 ### `versioning.py`
@@ -104,27 +108,40 @@ version = get_current_version()
 
 ### `indicator_registry.py`
 
-Реестр доступных индикаторов.
+Узкий legacy wrapper для старых import sites. Для нового кода источник истины
+по списку индикаторов — `src.features.specs.FEATURE_SPECS`.
 
 ```python
-from src.features.infrastructure.indicator_registry import AVAILABLE_INDICATORS
+from src.features.specs import FEATURE_SPECS
 
-print(f"Available: {len(AVAILABLE_INDICATORS)} indicators")
-# ['rsi_14', 'macd', 'ema_21', ...]
+print(f"Available: {len(FEATURE_SPECS)} indicators")
+print("rsi_14" in FEATURE_SPECS)
 ```
 
 ### `alerts.py`
 
-Система алертов для мониторинга.
+Observer-based система алертов для Airflow/monitoring сценариев.
 
 ```python
-from src.features.infrastructure.alerts import AlertManager, AlertLevel
+from src.features.infrastructure.alerts import (
+    AlertContext,
+    AlertDispatcher,
+    AlertLevel,
+    LogAlertObserver,
+)
 
-manager = AlertManager()
-manager.send_alert(
-    level=AlertLevel.WARNING,
-    message="Low fill rate detected",
-    context={"symbol": "BTC-USDT-SWAP", "fill_rate": 0.45}
+dispatcher = AlertDispatcher()
+dispatcher.subscribe(LogAlertObserver())
+dispatcher.notify_all(
+    AlertContext(
+        dag_id="features_calc",
+        task_id="quality_gate",
+        execution_date="2026-03-06T00:00:00Z",
+        run_id="manual__2026-03-06",
+        try_number=1,
+        error_message="Low fill rate detected",
+        level=AlertLevel.WARNING,
+    )
 )
 ```
 
@@ -140,13 +157,19 @@ SET col1 = EXCLUDED.col1, col2 = EXCLUDED.col2, ...
 ## Принципы
 
 1. **Изоляция** - внешние системы инкапсулированы
-2. **Retry** - transient ошибки обрабатываются автоматически
+2. **Retry** - transient ошибки обрабатываются через `src.utils.retry`
 3. **Санитизация** - NaN/Inf → NULL перед записью
 4. **Idempotency** - UPSERT безопасен для повторных запусков
 
 ## Тестирование
 
 ```bash
-pytest src/features/tests/test_database_integration.py -v
-pytest src/features/tests/test_retry.py -v
+pytest tests/features/tests/test_database_integration.py -v
+pytest tests/features/tests/test_retry.py -v
 ```
+
+## Update 2026-03-06
+
+- Для retry внутри `features` используется общий `src.utils.retry`; локальный retry-модуль удалён.
+- Для application-layer сохранения добавлен adapter `src.features.infrastructure.persistence.repository.SqlAlchemyIndicatorRepository`.
+- Вызовы из `application/save.py` теперь идут через `IndicatorRepository`, а не через прямой вызов `insert_indicators()`.

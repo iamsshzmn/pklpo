@@ -8,7 +8,7 @@ into a unified result DataFrame with proper name normalization and critical fiel
 import numpy as np
 import pandas as pd
 
-from src.features.observability.logging import (
+from src.logging import (
     LogAggregator,
     LogCategory,
     Verbosity,
@@ -16,14 +16,14 @@ from src.features.observability.logging import (
     should_log,
 )
 
-from .name_mapping import normalize_indicator_name
+from ..schema.name_aliases import normalize_name
 
 logger = get_category_logger(LogCategory.MERGE)
 
-# Кэш для нормализации имён индикаторов (оптимизация производительности)
+#      ( )
 _normalize_cache: dict[str, str] = {}
 
-# Кэш для проверки типов полей (оптимизация производительности)
+#      ( )
 _CRITICAL_FIELDS = frozenset(["ics_26", "t3_20", "rma_20", "hlc3", "ohlc4", "hl2"])
 _OVERLAP_DIAGNOSTIC = frozenset(["hlc3", "hl2", "ohlc4", "wcp"])
 
@@ -56,7 +56,7 @@ def merge_indicator_results(
                     non_null = value.notna().sum()
                     logger.debug(f"  {key}: {non_null}/{len(value)} non-null")
 
-        # Собираем новые колонки в словарь для избежания фрагментации
+        # Collect new columns first to avoid frame fragmentation.
         new_columns: dict[str, pd.Series] = {}
 
         # Track metrics for aggregated logging
@@ -106,7 +106,7 @@ def merge_indicator_results(
                     logger.debug(f"Error processing {name}: {e}", exc_info=True)
                 continue
 
-        # Применяем все новые колонки одним concat для избежания фрагментации
+        #      concat
         if new_columns:
             result_df = _apply_new_columns(result_df, new_columns)
 
@@ -134,11 +134,11 @@ def _normalize_indicator_name_for_merge(name: str, available_names: set[str]) ->
     Returns:
         Normalized target name
     """
-    # Кэширование нормализации имён для оптимизации производительности
+    # Cache normalized names to avoid repeated work.
     if name not in _normalize_cache:
-        _normalize_cache[name] = normalize_indicator_name(name)
+        _normalize_cache[name] = normalize_name(name)
     target_name = _normalize_cache[name]
-    # Специальная обработка для ichimoku_chikou -> ics_26
+    # Special handling for ichimoku_chikou -> ics_26.
     if name == "ichimoku_chikou":
         if "ics_26" in available_names:
             target_name = "ics_26"
@@ -160,12 +160,12 @@ def _check_field_types(
 
     Args:
         target_name: Target indicator name
-        overlap_diagnostic: List of overlap indicator names (для совместимости, не используется)
+        overlap_diagnostic: Legacy overlap indicator names, kept for compatibility
 
     Returns:
         Tuple of (is_critical, is_overlap)
     """
-    # Оптимизация: используем frozenset для быстрой проверки
+    # Use frozenset membership for fast checks.
     is_critical = target_name in _CRITICAL_FIELDS
     is_overlap = target_name in _OVERLAP_DIAGNOSTIC
     return is_critical, is_overlap
@@ -191,7 +191,7 @@ def _should_process_indicator(
     Returns:
         True if indicator should be processed
     """
-    # Используем кэшированный frozenset вместо создания списка каждый раз
+    # Use the cached frozenset instead of rebuilding a list each time.
     should_process = (
         len(available_names) == 0
         or target_name in available_names
@@ -199,15 +199,15 @@ def _should_process_indicator(
         or (is_critical and isinstance(values, pd.Series) and values.notna().sum() > 0)
     )
 
-    # КРИТИЧНО: overlap индикаторы должны быть в result_df всегда, если рассчитаны
+    # Overlap indicators must always be kept when they contain data.
     if is_overlap and isinstance(values, pd.Series) and values.notna().sum() > 0:
         should_process = True
 
-    # КРИТИЧНО: критические поля должны быть в result_df всегда, если рассчитаны
+    # Critical indicators must always be kept when they are calculated.
     if is_critical and isinstance(values, pd.Series) and values.notna().sum() > 0:
         should_process = True
     elif is_critical:
-        # Даже если все значения NaN, всё равно обрабатываем критические поля
+        # Even all-NaN critical columns should still be preserved.
         should_process = True
 
     # Diagnostics only at DEBUG level
@@ -253,31 +253,31 @@ def _prepare_series_for_merge(
             values = values.iloc[:, 0]
 
     if isinstance(values, pd.Series):
-        # Оптимизация: проверяем совпадение индекса перед reindex
+        # Skip reindex when the index already matches.
         if values.index.equals(result_index):
-            # Индекс уже совпадает - используем копию без reindex
+            # The index already matches, so a copy is enough.
             new_series = values.copy()
         else:
-            # Нормализуем индекс через reindex для гарантии совпадения
+            # Reindex to guarantee alignment with the result frame.
             new_series = values.reindex(result_index, fill_value=np.nan)
         new_series.name = target_name
-        # Гарантируем float64 dtype
+        # Normalize object dtype to float64 where possible.
         if new_series.dtype == "object":
             new_series = pd.to_numeric(new_series, errors="coerce")
         new_series = new_series.astype("float64")
     else:
-        # Fallback для не-Series значений
+        # Fallback for non-Series values.
         new_series = pd.Series(
             values, index=result_index, name=target_name, dtype="float64"
         )
 
-    # Валидация: проверяем что new_series не пустой и имеет правильный индекс
+    # Validate output length and index alignment.
     if len(new_series) != len(result_index):
         if should_log(LogCategory.DIAG, Verbosity.VERBOSE):
             logger.warning(
                 f"Length mismatch {target_name}: {len(new_series)} != {len(result_index)}"
             )
-        # Принудительно выравниваем по индексу (только если действительно не совпадает)
+        # Force alignment only when the index truly differs.
         if not new_series.index.equals(result_index):
             new_series = new_series.reindex(result_index, fill_value=np.nan)
 
@@ -310,8 +310,7 @@ def _add_to_new_columns(
         result_df: Result DataFrame for comparison
         is_critical: Whether field is critical
     """
-    # Сохраняем в словарь вместо прямого присваивания
-    # Критические поля всегда добавляем, даже если все значения NaN
+    # Critical fields are always added, even when they contain only NaN.
     if is_critical:
         new_columns[target_name] = new_series
     elif target_name in result_df.columns:
@@ -345,20 +344,20 @@ def _apply_new_columns(
         if missing_critical:
             logger.debug(f"Critical fields not in new_columns: {missing_critical}")
 
-    # Приводим типы к Float64 для числовых колонок перед concat
-    # Это устраняет FutureWarning о несовместимых типах
-    # Векторизация: обрабатываем все числовые серии одновременно
+    #    Float64     concat
+    #   FutureWarning
+    # :
     numeric_columns = {
         col_name: series.astype("Float64")
         for col_name, series in new_columns.items()
         if pd.api.types.is_numeric_dtype(series)
     }
     new_columns.update(numeric_columns)
-    # Создаём DataFrame из новых колонок
+    #  DataFrame
     new_df = pd.DataFrame(new_columns, index=result_df.index)
-    # Объединяем с существующим DataFrame
+    #    DataFrame
     result_df = pd.concat([result_df, new_df], axis=1)
-    # Удаляем дубликаты колонок (если были обновления)
+    #    (  )
     result_df = result_df.loc[:, ~result_df.columns.duplicated(keep="last")]
 
     # DEBUG: verify critical fields after concat

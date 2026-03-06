@@ -164,6 +164,6 @@ if not is_valid:
 ## Тестирование
 
 ```bash
-pytest src/features/tests/test_core.py -v
-pytest src/features/tests/test_dependency_graph.py -v
+pytest tests/features/tests/test_core.py -v
+pytest tests/features/tests/test_dependency_graph.py -v
 ```

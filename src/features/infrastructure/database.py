@@ -1,16 +1,16 @@
 """
 Infrastructure: database helpers extracted from calc_indicators.py.
 
-Здесь минимальные функции-обертки без изменения поведения.
+  -   .
 """
 
 from __future__ import annotations
 
 # ============================================================================
-# КОНСТАНТЫ И КОНФИГУРАЦИЯ
+#
 # ============================================================================
 
-# Единый источник схемы для индикаторов
+#
 INDICATOR_COLUMNS = {
     "symbol",
     "timeframe",
@@ -37,21 +37,21 @@ INDICATOR_COLUMNS = {
     "vwap",
 }
 
-# Обязательные поля
+#
 REQUIRED_FIELDS = {"timestamp", "symbol", "timeframe"}
 
 # ============================================================================
-# ИМПОРТЫ ИЗ НОВЫХ МОДУЛЕЙ
+#
 # ============================================================================
 
-# Импортируем функции из новых модулей
+#
 
 
 # ============================================================================
-# ОБРАТНАЯ СОВМЕСТИМОСТЬ: реэкспорт функций
+#  :
 # ============================================================================
 
-from .db_operations import ensure_columns_exist, fetch_ohlcv_df
+from .db_operations import ensure_columns_exist, fetch_latest_ts, fetch_ohlcv_df
 from .persistence.inserter import insert_indicators
 from .persistence.schema_checker import reflect_indicators_table
 
@@ -59,6 +59,7 @@ __all__ = [
     "INDICATOR_COLUMNS",
     "REQUIRED_FIELDS",
     "ensure_columns_exist",
+    "fetch_latest_ts",
     "fetch_ohlcv_df",
     "insert_indicators",
     "reflect_indicators_table",

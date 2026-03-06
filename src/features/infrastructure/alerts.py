@@ -20,6 +20,11 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any
 
+try:
+    import requests  # type: ignore[import-untyped]
+except Exception:  # pragma: no cover - optional dependency
+    requests = None  # type: ignore[assignment]
+
 
 class AlertLevel(Enum):
     """Alert severity levels."""
@@ -200,8 +205,6 @@ class EmailAlertObserver(AlertObserver):
 
     def notify(self, alert_ctx: AlertContext) -> bool:
         try:
-            from airflow.utils.email import send_email
-
             html_content = format_failure_email(alert_ctx)
             subject = f"🚨 Airflow Alert: {alert_ctx.dag_id}.{alert_ctx.task_id}"
             send_email(to=self.recipients, subject=subject, html_content=html_content)
@@ -244,7 +247,9 @@ class TelegramAlertObserver(AlertObserver):
 
     def notify(self, alert_ctx: AlertContext) -> bool:
         if not self.bot_token or not self.chat_id:
-            print("TelegramAlertObserver: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set")
+            print(
+                "TelegramAlertObserver: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set"
+            )
             return False
         return send_telegram_alert(alert_ctx, self.bot_token, self.chat_id)
 
@@ -315,7 +320,12 @@ def extract_alert_context(context: dict[str, Any]) -> AlertContext:
 
     # Safely extract task_id
     task = context.get("task")
-    task_id = task.task_id if task and hasattr(task, "task_id") else "unknown"
+    if isinstance(task, dict):
+        task_id = task.get("task_id", "unknown")
+    elif task and hasattr(task, "task_id"):
+        task_id = task.task_id
+    else:
+        task_id = "unknown"
 
     # Safely extract try_number
     try_number = (
@@ -409,6 +419,13 @@ def format_failure_email(alert_ctx: AlertContext) -> str:
     """
 
 
+def send_email(*args, **kwargs) -> Any:
+    """Thin wrapper to keep email sending patchable in tests."""
+    from airflow.utils.email import send_email as airflow_send_email
+
+    return airflow_send_email(*args, **kwargs)
+
+
 def email_failure_callback(context: dict[str, Any]) -> None:
     """
     Email callback for task failures.
@@ -419,8 +436,6 @@ def email_failure_callback(context: dict[str, Any]) -> None:
     Args:
         context: Airflow context dictionary
     """
-    from airflow.utils.email import send_email
-
     alert_ctx = extract_alert_context(context)
 
     # Get email configuration
@@ -445,8 +460,6 @@ def email_sla_miss_callback(context: dict[str, Any]) -> None:
     Args:
         context: Airflow context dictionary
     """
-    from airflow.utils.email import send_email
-
     alert_ctx = extract_alert_context(context)
     alert_ctx.level = AlertLevel.WARNING
     alert_ctx.error_message = "Task exceeded SLA threshold"
@@ -573,14 +586,15 @@ def send_slack_alert(alert_ctx: AlertContext, webhook_url: str | None = None) ->
     Returns:
         True if successful, False otherwise
     """
-    import requests  # type: ignore[import-untyped]
-
     # Get webhook URL
     if webhook_url is None:
         webhook_url = os.getenv("SLACK_WEBHOOK_URL")
 
     if not webhook_url:
         print("⚠️ No Slack webhook URL configured (SLACK_WEBHOOK_URL)")
+        return False
+    if requests is None:
+        print("requests is not available")
         return False
 
     # Format message
@@ -641,9 +655,9 @@ def format_telegram_message(alert_ctx: AlertContext) -> str:
         Message text (HTML parse mode)
     """
     icon_map = {
-        AlertLevel.INFO: "\u2705",       # green check
+        AlertLevel.INFO: "\u2705",  # green check
         AlertLevel.WARNING: "\u26a0\ufe0f",  # warning
-        AlertLevel.ERROR: "\u274c",       # red cross
+        AlertLevel.ERROR: "\u274c",  # red cross
         AlertLevel.CRITICAL: "\U0001f6a8",  # siren
     }
     icon = icon_map.get(alert_ctx.level, "\u274c")
@@ -673,11 +687,7 @@ def format_telegram_message(alert_ctx: AlertContext) -> str:
 
 def _escape_html(text: str) -> str:
     """Escape HTML special characters for Telegram."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def send_telegram_alert(
@@ -695,13 +705,16 @@ def send_telegram_alert(
     Returns:
         True if sent successfully
     """
-    import requests
-
     token = bot_token or os.getenv("TELEGRAM_BOT_TOKEN", "")
     chat = chat_id or os.getenv("TELEGRAM_CHAT_ID", "")
 
     if not token or not chat:
-        print("No Telegram credentials configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)")
+        print(
+            "No Telegram credentials configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)"
+        )
+        return False
+    if requests is None:
+        print("requests is not available")
         return False
 
     text = format_telegram_message(alert_ctx)

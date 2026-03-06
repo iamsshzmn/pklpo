@@ -97,8 +97,8 @@ OPTIONAL_COLUMNS = ["timestamp"]  # Unix timestamp (секунды или ms) и
 ### 3.3 Полный список индикаторов
 
 ```python
-from src.features.infrastructure.indicator_registry import AVAILABLE_INDICATORS
-print(len(AVAILABLE_INDICATORS))  # 500+
+from src.features.specs import FEATURE_SPECS
+print(len(FEATURE_SPECS))  # 500+
 ```
 
 ---
@@ -142,7 +142,7 @@ OHLCV (БД/CSV) → Validation → Group Calculation (10 групп) → Normal
 │  │  9. statistics  → 10. performance                                      │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                                                                              │
-│  Каждая группа: pandas_ta → fallback при ошибке → NaN series               │
+│  Каждая группа: TA-Lib → pandas_ta → Python fallback                      │
 └─────────────────────────────────┬───────────────────────────────────────────┘
                                   ↓
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -182,6 +182,79 @@ OHLCV (БД/CSV) → Validation → Group Calculation (10 групп) → Normal
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### 4.3 Architecture
+
+#### Layers & Responsibilities
+
+| Слой | Ответственность | Ключевые модули |
+|------|-----------------|-----------------|
+| **Interface / Entry Points** | Запуск из CLI, DAG или Python API | `cli/main.py`, Airflow DAG `features_calc`, `__init__.py` |
+| **Application** | Оркестрация batch/streaming/backfill и сохранения | `application/calc.py`, `batch_processor.py`, `backfill.py`, `save.py` |
+| **Core (Calculation Engine)** | Валидация входа, граф зависимостей, расчёт групп, merge/normalize | `core/validation.py`, `dependency_graph.py`, `group_calculator.py`, `merging.py` |
+| **Domain** | Контракты, модели, протоколы — без внешних зависимостей | `domain/models.py`, `protocols.py`, `strategy.py` |
+| **Infrastructure** | Работа с БД, UPSERT, registry индикаторов | `infrastructure/database.py`, `upsert_builder.py`, `persistence/inserter.py` |
+| **Observability** | Quality gates, метрики, логи — пассивный слой | `validation/gate_validator.py`, `observability/metrics.py`, `observability/error_handling.py` |
+
+#### Dependency Direction Rules
+
+Зависимости направлены **строго внутрь** — внешние слои зависят от внутренних, не наоборот:
+
+```
+Interface
+    ↓
+Application
+    ↓
+Core  ←──────────────────────  Infrastructure
+    ↓                            (через domain/protocols — порты)
+Domain
+(нет зависимостей)
+
+Observability — подключается пассивно на любом слое, сам ни от чего не зависит
+```
+
+**Запрещённые зависимости:**
+
+| Нарушение | Почему запрещено |
+|-----------|-----------------|
+| `core/` → `infrastructure/` | Core не должен знать о БД или внешних системах |
+| `core/` → `application/` | Нет обратных зависимостей вверх по слоям |
+| `domain/` → любой слой | Domain — чистые модели и протоколы, ноль внешних зависимостей |
+| `infrastructure/` → `application/` | Infra — только адаптеры, не оркестратор |
+
+#### Runtime Path
+
+```
+CLI / DAG / Python API
+         ↓
+Application: читает OHLCV из БД или CSV
+         ↓
+Core: validate_ohlcv() — схема, типы, монотонность timestamps
+         ↓
+Core: dependency_graph → group_calculation (10 групп, строго по порядку)
+         ↓
+Core: merge + normalize — объединение групп, приведение типов
+         ↓
+Validation: quality_gate — fill_rate, nan_ratio, min_rows, consistency
+         ↓ fail → блокировка записи + детальный отчёт
+         ↓ pass ↓
+Infrastructure: batched UPSERT → indicators_p
+         ↓
+Observability: метрики + логи выполнения
+```
+
+#### Invariants
+
+Инварианты — правила, которые **никогда не нарушаются** независимо от конфигурации или режима запуска:
+
+| Инвариант | Описание |
+|-----------|----------|
+| **No look-ahead bias** | Расчёт только по закрытым барам; незакрытый бар в расчёт не включается |
+| **Idempotent writes** | Повторный запуск с теми же данными не меняет результат; UPSERT по `(symbol, timeframe, timestamp)` |
+| **Deterministic pipeline** | Одинаковый вход → одинаковый выход; нет случайности, нет скрытых side effects |
+| **Quality-first persistence** | Данные пишутся в БД только после прохождения quality gates; частичные или невалидные записи запрещены |
+| **Online/offline parity** | Инкрементальный (online) и batch (offline) расчёт дают идентичные значения для одного и того же набора баров |
+| **Graceful degradation** | TA-Lib → pandas_ta → Python fallback; сбой одного backend не останавливает пайплайн, деградация явная и залогированная |
+
 ---
 
 ## 5. Dependencies & Triggering
@@ -191,7 +264,8 @@ OHLCV (БД/CSV) → Validation → Group Calculation (10 групп) → Normal
 | Компонент | Назначение |
 |-----------|------------|
 | PostgreSQL 14+ | Хранение OHLCV и индикаторов |
-| pandas_ta | Библиотека технических индикаторов |
+| TA-Lib | Основной backend для базовых технических индикаторов |
+| pandas_ta | Compatibility layer для индикаторов вне покрытия TA-Lib |
 | pandas / numpy | Обработка данных |
 | SQLAlchemy 2.0+ | Async ORM |
 | asyncpg | PostgreSQL async driver |
@@ -289,7 +363,7 @@ DO UPDATE SET
 | Сбой | Поведение | Recovery |
 |------|-----------|----------|
 | **Недостаточно данных** | NaN series для индикатора | Автоматический, запись с NaN |
-| **pandas_ta ошибка** | Fallback на альтернативную реализацию | Автоматический |
+| **TA-Lib/pandas_ta ошибка** | Переход на следующий backend в цепочке | Автоматический |
 | **DB connection lost** | Retry 3 раза с exponential backoff | Автоматический |
 | **Type mismatch** | Автоматическая нормализация типов | Автоматический |
 | **Quality gate fail** | Запись блокируется, детальный отчёт | Требует вмешательства |
@@ -526,8 +600,8 @@ print(report)
 ```bash
 # 1. Проверить что индикатор в реестре
 python -c "
-from src.features.infrastructure.indicator_registry import AVAILABLE_INDICATORS
-print('rsi_14' in AVAILABLE_INDICATORS)
+from src.features.specs import FEATURE_SPECS
+print('rsi_14' in FEATURE_SPECS)
 "
 
 # 2. Проверить зависимости
@@ -545,8 +619,8 @@ print(f'Requires: {spec.requires if spec else \"NOT FOUND\"}')
 | Пересчитать все индикаторы для пары | `python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m 1H 4H 1D` |
 | Проверить доступные индикаторы | `python -m src.features list-indicators` |
 | Информация об индикаторе | `python -m src.features info rsi_14` |
-| Запустить тесты | `pytest src/features/tests/` |
-| Запустить с coverage | `pytest src/features/tests/ --cov=src/features` |
+| Запустить тесты | `pytest tests/features/tests/` |
+| Запустить с coverage | `pytest tests/features/tests/ --cov=src/features` |
 
 ### 10.5 Environment Variables
 
@@ -557,6 +631,7 @@ print(f'Requires: {spec.requires if spec else \"NOT FOUND\"}')
 | `POSTGRES_DB` | — | DB name |
 | `DB_HOST` | localhost | DB host |
 | `DB_PORT` | 5432 | DB port |
+| `FEATURES_TA_BACKEND` | `auto` | Backend policy: `auto = TA-Lib → pandas_ta → fallback` |
 | `DIAGNOSTIC_SINGLE_ROW` | 0 | Режим диагностики (1 = включён) |
 
 ---
@@ -589,7 +664,6 @@ src/features/
 │   ├── database.py             # DB entry point
 │   ├── db_operations.py        # Чтение данных
 │   ├── alerts.py               # Система алертов
-│   ├── retry.py                # Retry механизмы
 │   ├── upsert_builder.py       # Построение UPSERT
 │   ├── versioning.py           # Версионирование
 │   ├── indicator_registry.py   # Реестр индикаторов
@@ -643,5 +717,5 @@ src/features/
 ---
 
 **Версия:** 2.0.0
-**Последнее обновление:** 2026-01-30
+**Последнее обновление:** 2026-03-06
 **Статус:** Production Ready

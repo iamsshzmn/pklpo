@@ -278,12 +278,12 @@ from src.features.logging_config import get_features_logger, log_features_summar
 
 Но модуль был перемещён в:
 ```python
-src.features.observability.logging
+src.logging
 ```
 
 **Решение:** Обновлён импорт в `src/cli/commands/features.py`:
 ```python
-from src.features.observability.logging import get_features_logger, log_features_summary
+from src.logging import get_features_logger, log_features_summary
 ```
 
 ---

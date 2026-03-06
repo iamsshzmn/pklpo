@@ -21,12 +21,15 @@ from .data_transformer import (
     validate_service_fields,
 )
 from .inserter import insert_indicators
+from .repository import SqlAlchemyIndicatorRepository, create_indicator_repository
 from .schema_cache import SchemaCache, SchemaInfo, get_or_load_schema, get_schema_cache
 from .upsert_executor import execute_upsert_with_retry
 
 __all__ = [
     # Main entry point
     "insert_indicators",
+    "SqlAlchemyIndicatorRepository",
+    "create_indicator_repository",
     # Data transformation
     "convert_timestamps_to_int64",
     "normalize_numeric_values",

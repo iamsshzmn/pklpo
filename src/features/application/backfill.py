@@ -9,8 +9,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from src.logging import get_features_logger
+
 from ..infrastructure.versioning import get_current_version
-from ..observability.logging import get_features_logger
 
 logger = get_features_logger("features.backfill")
 
@@ -130,9 +131,9 @@ class FeaturesBackfillManager:
         }
 
         self.logger.info(
-            "Backfill scope estimated",
-            total_records=total_estimated,
-            estimated_duration_hours=estimation["estimated_duration_hours"],
+            "Backfill scope estimated: total_records=%s, estimated_duration_hours=%.2f",
+            total_estimated,
+            estimation["estimated_duration_hours"],
         )
 
         return estimation
@@ -152,12 +153,12 @@ class FeaturesBackfillManager:
         """
         start_time = datetime.now()
         self.logger.info(
-            "Starting backfill operation",
-            start_date=config.start_date.isoformat(),
-            end_date=config.end_date.isoformat(),
-            symbols=config.symbols,
-            timeframes=config.timeframes,
-            dry_run=config.dry_run,
+            "Starting backfill operation: start_date=%s, end_date=%s, symbols=%s, timeframes=%s, dry_run=%s",
+            config.start_date.isoformat(),
+            config.end_date.isoformat(),
+            config.symbols,
+            config.timeframes,
+            config.dry_run,
         )
 
         result = BackfillResult(
@@ -183,17 +184,17 @@ class FeaturesBackfillManager:
             # Get current version info
             version_info = get_current_version()
             self.logger.info(
-                "Using version info for backfill",
-                schema_version=version_info.schema_version,
-                algo_version=version_info.algo_version,
+                "Using version info for backfill: schema_version=%s, algo_version=%s",
+                version_info.schema_version,
+                version_info.algo_version,
             )
 
             # Estimate scope
             scope = self.estimate_backfill_scope(config)
             self.logger.info(
-                "Backfill scope",
-                total_records=scope["total_estimated_records"],
-                estimated_duration_hours=scope["estimated_duration_hours"],
+                "Backfill scope: total_records=%s, estimated_duration_hours=%.2f",
+                scope["total_estimated_records"],
+                scope["estimated_duration_hours"],
             )
 
             if config.dry_run:
@@ -210,11 +211,11 @@ class FeaturesBackfillManager:
             result.duration_seconds = (end_time - start_time).total_seconds()
 
             self.logger.info(
-                "Backfill operation completed",
-                total_processed=result.total_processed,
-                successful=result.successful,
-                failed=result.failed,
-                duration_seconds=result.duration_seconds,
+                "Backfill operation completed: total_processed=%s, successful=%s, failed=%s, duration_seconds=%.3f",
+                result.total_processed,
+                result.successful,
+                result.failed,
+                result.duration_seconds,
             )
 
             return result
@@ -252,9 +253,11 @@ class FeaturesBackfillManager:
                 total_batches += batches
 
                 self.logger.debug(
-                    f"Processing {symbol} {timeframe}",
-                    batches=batches,
-                    records_per_day=records_per_day,
+                    "Processing %s %s: batches=%s, records_per_day=%s",
+                    symbol,
+                    timeframe,
+                    batches,
+                    records_per_day,
                 )
 
         # Simulate batch processing
@@ -367,9 +370,9 @@ class FeaturesBackfillManager:
         }
 
         self.logger.info(
-            "Rollback plan created",
-            operation_id=rollback_plan["operation_id"],
-            steps_count=len(rollback_plan["rollback_steps"]),
+            "Rollback plan created: operation_id=%s, steps_count=%s",
+            rollback_plan["operation_id"],
+            len(rollback_plan["rollback_steps"]),
         )
 
         return rollback_plan
@@ -388,7 +391,8 @@ class FeaturesBackfillManager:
             Rollback result
         """
         self.logger.info(
-            "Starting rollback operation", operation_id=rollback_plan["operation_id"]
+            "Starting rollback operation: operation_id=%s",
+            rollback_plan["operation_id"],
         )
 
         rollback_result = {
@@ -418,9 +422,9 @@ class FeaturesBackfillManager:
                     rollback_result["errors"].append(f"Step {step['step']}: {e!s}")
 
             self.logger.info(
-                "Rollback operation completed",
-                completed_steps=len(rollback_result["steps_completed"]),
-                failed_steps=len(rollback_result["steps_failed"]),
+                "Rollback operation completed: completed_steps=%s, failed_steps=%s",
+                len(rollback_result["steps_completed"]),
+                len(rollback_result["steps_failed"]),
             )
 
             return rollback_result

@@ -196,7 +196,7 @@ def log_feature_quality(logger: Logger, df: Any, feature_name: str) -> None:
         int(non_null_raw.sum()) if hasattr(non_null_raw, "sum") else int(non_null_raw)
     )
     fill_rate = (non_null / total * 100) if total else 0
-    if fill_rate < 50:
+    if fill_rate <= 50:
         logger.warning(
             "Low fill rate for %s fill_rate=%.1f%% non_null=%d total=%d",
             feature_name,

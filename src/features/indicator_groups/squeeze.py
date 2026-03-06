@@ -5,10 +5,17 @@ from src.logging import get_logger
 
 from ..ta_safe import safe_ta_with_fallback
 from ..utils.indicator_utils import check_min_length
+from .registry import GroupRegistry
 
 logger = get_logger(__name__)
 
 
+@GroupRegistry.register(
+    "squeeze",
+    order=6,
+    dependencies=["volatility", "trend"],
+    description="TTM Squeeze indicators",
+)
 def calc_squeeze_indicators(
     df: pd.DataFrame, available: set[str], **kwargs
 ) -> dict[str, pd.Series]:
@@ -31,16 +38,14 @@ def calc_squeeze_indicators(
     ):
         try:
             if not check_min_length(df, "ttm_squeeze"):
-                logger.warning(
-                    "TTM SQUEEZE: недостаточно данных (len<20), возвращаю NaN"
-                )
+                logger.warning("TTM SQUEEZE:   (len<20),  NaN")
                 squeeze = None
             else:
                 squeeze = safe_ta_with_fallback(df, "squeeze_pro")
             if squeeze is not None and isinstance(squeeze, pd.DataFrame):
-                # Маппинг колонок pandas_ta на наши названия
+                #   pandas_ta
 
-                # Обрабатываем ttm_squeeze_on
+                #  ttm_squeeze_on
                 if "ttm_squeeze_on" in available:
                     if (
                         "SQZPRO_ON_WIDE" in squeeze.columns
@@ -64,7 +69,7 @@ def calc_squeeze_indicators(
                             [np.nan] * len(df), index=df.index
                         )
 
-                # Обрабатываем ttm_squeeze_value
+                #  ttm_squeeze_value
                 if "ttm_squeeze_value" in available:
                     # Find the SQZPRO value column (first column with SQZPRO_ pattern)
                     value_col = next(
@@ -85,7 +90,7 @@ def calc_squeeze_indicators(
                             [np.nan] * len(df), index=df.index
                         )
 
-                # Обрабатываем ttm_squeeze_hist (используем то же значение, что и value)
+                #  ttm_squeeze_hist (   ,   value)
                 if "ttm_squeeze_hist" in available:
                     # Find the SQZPRO value column (first column with SQZPRO_ pattern)
                     value_col = next(
@@ -119,7 +124,7 @@ def calc_squeeze_indicators(
                         [np.nan] * len(df), index=df.index
                     )
         except Exception as e:
-            print(f"Ошибка в calc_squeeze_indicators: {e}")
+            logger.error("calc_squeeze_indicators failed: %s", e)
             if "ttm_squeeze_on" in available:
                 result["ttm_squeeze_on"] = pd.Series([np.nan] * len(df), index=df.index)
             if "ttm_squeeze_hist" in available:

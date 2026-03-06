@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ..observability.logging import get_features_logger
+from src.logging import get_features_logger
 
 logger = get_features_logger("features.validation")
 
@@ -307,7 +307,7 @@ class DataValidator:
         except Exception:
             result["errors"].append(f"{col_name}: Cannot convert to numeric")
 
-        # Check for negative values in price columns - это критичная ошибка
+        # Check for negative values in price columns -
         if col_name in ["open", "high", "low", "close"]:
             negative_count = (series < 0).sum()
             if negative_count > 0:

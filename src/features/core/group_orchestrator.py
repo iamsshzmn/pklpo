@@ -14,14 +14,15 @@ import contextlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ..domain.models import FeatureError
-from ..observability.logging import (
+from src.logging import (
     LogAggregator,
     LogCategory,
     Verbosity,
     get_category_logger,
     should_log,
 )
+
+from ..domain.models import FeatureError
 from ..validation.code_validator import CodeValidator, ValidationConfig
 from .group_calculator import GroupFeatureCalculator
 from .group_metrics import GroupMetricsRecorder
@@ -46,6 +47,13 @@ __all__ = [
 ]
 
 
+def _default_group_order() -> list[str]:
+    """Derive default group order from the registry snapshot."""
+    from ..indicator_groups.registry import build_registry_snapshot
+
+    return [entry.name for entry in build_registry_snapshot().get_ordered()]
+
+
 @dataclass
 class GroupCalculationConfig:
     """
@@ -58,19 +66,9 @@ class GroupCalculationConfig:
     by updating the centralized FeaturesSettings.
     """
 
-    # Calculation order (defaults to standard order)
-    calculation_order: list[str] = field(default_factory=lambda: [
-        "overlap",
-        "ma",
-        "oscillators",
-        "volatility",
-        "volume",
-        "trend",
-        "candles",
-        "squeeze",
-        "statistics",
-        "performance",
-    ])
+    # Deprecated compatibility field: runtime execution order is resolved from
+    # registry metadata, not from a hardcoded config list.
+    calculation_order: list[str] = field(default_factory=_default_group_order)
 
     # Batch persistence settings
     batch_size: int = 5000
@@ -83,19 +81,23 @@ class GroupCalculationConfig:
     max_nan_ratio: float = 0.1
 
     # Feature validation periods (for warm-up validation)
-    feature_periods: dict[str, int] = field(default_factory=lambda: {
-        "sma_20": 20,
-        "sma_50": 50,
-        "sma_200": 200,
-        "ema_8": 8,
-        "ema_21": 21,
-        "ema_50": 50,
-        "atr_14": 14,
-        "atr_21": 21,
-    })
+    feature_periods: dict[str, int] = field(
+        default_factory=lambda: {
+            "sma_20": 20,
+            "sma_50": 50,
+            "sma_200": 200,
+            "ema_8": 8,
+            "ema_21": 21,
+            "ema_50": 50,
+            "atr_14": 14,
+            "atr_21": 21,
+        }
+    )
 
     @classmethod
-    def from_settings(cls, settings: FeaturesSettings | None = None) -> GroupCalculationConfig:
+    def from_settings(
+        cls, settings: FeaturesSettings | None = None
+    ) -> GroupCalculationConfig:
         """
         Create configuration from FeaturesSettings.
 
@@ -110,9 +112,11 @@ class GroupCalculationConfig:
         if settings is None:
             try:
                 from src.config import get_settings
+
                 settings = get_settings().features
             except ImportError:
                 import logging
+
                 logging.getLogger(__name__).warning(
                     "src.config not available, using default GroupCalculationConfig"
                 )
@@ -122,12 +126,13 @@ class GroupCalculationConfig:
         defaults = cls()
 
         return cls(
-            calculation_order=getattr(settings, "calculation_order", None) or defaults.calculation_order,
+            calculation_order=defaults.calculation_order,
             batch_size=getattr(settings, "batch_size", defaults.batch_size),
             max_retries=getattr(settings, "max_retries", defaults.max_retries),
             min_rows=getattr(settings, "min_rows", defaults.min_rows),
             min_fill_rate=getattr(settings, "min_fill_rate", defaults.min_fill_rate),
-            feature_periods=getattr(settings, "feature_periods", None) or defaults.feature_periods,
+            feature_periods=getattr(settings, "feature_periods", None)
+            or defaults.feature_periods,
         )
 
 
@@ -203,15 +208,23 @@ class GroupCalculationOrchestrator:
             feature_count=len(ordered_groups),
         )
 
-        with LogAggregator(LogCategory.CALC, "group_calculation") as agg, \
-             self._calc_timer(symbol, timeframe):
+        with (
+            LogAggregator(LogCategory.CALC, "group_calculation") as agg,
+            self._calc_timer(symbol, timeframe),
+        ):
             try:
                 result_df = run_pre_calculation(df_ohlcv, ctx, validate_specs=False)
                 run_kwargs = dict(kwargs)
                 available = set(run_kwargs.pop("available", set()))
 
                 result_df = self._run_groups(
-                    result_df, ordered_groups, available, persist, ctx, agg, **run_kwargs
+                    result_df,
+                    ordered_groups,
+                    available,
+                    persist,
+                    ctx,
+                    agg,
+                    **run_kwargs,
                 )
                 return self._finalize(result_df, ctx, agg)
 
@@ -326,6 +339,7 @@ def compute_features_grouped(
     try:
         from ..observability.metrics import record_fill_rate
         from ..observability.prometheus import get_metrics as get_prom_metrics
+
         calc_timer = get_prom_metrics().calc_timer
         fill_rate_recorder = record_fill_rate
     except ImportError:
@@ -334,6 +348,8 @@ def compute_features_grouped(
 
     metrics_recorder = GroupMetricsRecorder(fill_rate_recorder=fill_rate_recorder)
     orchestrator = GroupCalculationOrchestrator(
-        config, metrics_recorder=metrics_recorder, calc_timer=calc_timer,
+        config,
+        metrics_recorder=metrics_recorder,
+        calc_timer=calc_timer,
     )
     return orchestrator.calculate_all_groups(df_ohlcv, **kwargs)

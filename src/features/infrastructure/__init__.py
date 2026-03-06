@@ -10,6 +10,5 @@ __all__ = [
     "diagnostics",
     "indicator_registry",
     "insert_indicators",
-    "retry",
     "upsert_builder",
 ]

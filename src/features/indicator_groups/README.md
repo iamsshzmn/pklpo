@@ -4,7 +4,7 @@
 
 ## Обзор
 
-Indicator Groups содержит реализации расчёта технических индикаторов, организованные по категориям. Каждый модуль рассчитывает группу связанных индикаторов с использованием pandas_ta.
+Indicator Groups содержит реализации расчёта технических индикаторов, организованные по категориям. Каждый модуль рассчитывает группу связанных индикаторов с backend chain `TA-Lib -> pandas_ta -> Python fallback`.
 
 ## Структура
 
@@ -179,6 +179,6 @@ def _put_or_nan(name: str, series):
 ## Тестирование
 
 ```bash
-pytest src/features/tests/test_core.py -v
-pytest src/features/tests/test_comprehensive.py -v
+pytest tests/features/tests/test_core.py -v
+pytest tests/features/tests/test_comprehensive.py -v
 ```

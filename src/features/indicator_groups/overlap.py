@@ -16,9 +16,17 @@ import pandas as pd
 
 from src.logging import get_logger
 
+from .registry import GroupRegistry
+
 logger = get_logger(__name__)
 
 
+@GroupRegistry.register(
+    "overlap",
+    order=0,
+    dependencies=[],
+    description="Basic price transformations (hl2, hlc3, ohlc4, wcp)",
+)
 def calc_overlap_indicators(
     df: pd.DataFrame, available: set[str], **kwargs
 ) -> dict[str, pd.Series]:

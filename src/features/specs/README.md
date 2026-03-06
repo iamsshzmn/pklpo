@@ -118,6 +118,6 @@ def test_new_osc():
 ## Тестирование
 
 ```bash
-pytest src/features/tests/test_core.py -v
-pytest src/features/tests/test_schema.py -v
+pytest tests/features/tests/test_core.py -v
+pytest tests/features/tests/test_schema.py -v
 ```

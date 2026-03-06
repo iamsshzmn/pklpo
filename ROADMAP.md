@@ -16,7 +16,7 @@
 | Фаза | Название | Статус | Прогресс |
 |------|----------|--------|----------|
 | 0 | Platform Baseline | ✅ DONE | 100% |
-| 1 | Data & Ingest Hardening | 🟡 IN PROGRESS | ~75% |
+| 1 | Data & Ingest Hardening | ✅ DONE | 100% |
 | 2 | Features & Performance | ✅ DONE | 100% |
 | 3 | Quant Stack | ✅ DONE | 100% |
 | 4 | Unified Execution & CostModel | 🟡 IN PROGRESS | ~0% |
@@ -64,46 +64,46 @@
 - ✅ Все внешние клиенты используют стандартную retry policy.
 - ✅ CI зеленый по lint/type/test.
 
-### Фаза 1. Data & Ingest Hardening (2-3 недели) — 🟡 IN PROGRESS (~75%)
+### Фаза 1. Data & Ingest Hardening (2-3 недели) — ✅ DONE (100%)
 Цель: надежный и измеримый data pipeline.
 
 Задачи:
-- 🟡 **SLO/SLA freshness monitoring**
+- ✅ **SLO/SLA freshness monitoring**
   - ✅ Thresholds (`quality.py`: warn=5min, critical=15min) + `check_freshness()` реализованы
   - ✅ Persisting в `ops.data_quality_metrics` через `QualityMetricsRepository`
   - ✅ DAG gate в `okx_swap_ohlcv_sync_v2.py` (пропуск если lag < threshold)
-  - ❌ Dashboard для визуализации freshness метрик
-  - ❌ Автоматические alerts (Slack/email) при freshness violations
+  - ✅ Dashboard для визуализации freshness метрик (`ops/monitoring/grafana/dashboards/data_quality.json`)
+  - ✅ Автоматические alerts (Slack/email) при freshness violations (`quality_alerts.py` + Grafana alert rules)
 
-- 🟡 **Метрики качества данных (holes/fill-rate/coverage)**
+- ✅ **Метрики качества данных (holes/fill-rate/coverage)**
   - ✅ `check_fill_rate()` — funding_rate, open_interest, L2 (warn=95%, critical=80%)
   - ✅ `check_coverage_1m()` — покрытие market_data_ext vs OHLCV (warn=90%, critical=70%)
   - ✅ `check_smoke_10m()` — детектирование gaps (min 8 баров за 10 мин)
   - ✅ Smoke validation task в DAG после синхронизации
-  - ❌ Duplicate detection как явная метрика (только через ON CONFLICT на уровне БД)
-  - ❌ Dashboard и алерты на нарушения quality метрик
+  - ✅ `check_duplicates_1m()` — явная duplicate-rate метрика (warn=0.01%, critical=0.1%)
+  - ✅ `quality_pipeline` task в DAG: запускает все checks + dispatch_quality_alerts
 
 - ✅ **Idempotency и дедупликация** (`symbol, timeframe, timestamp`)
   - ✅ Бизнес-ключ + `INSERT ... ON CONFLICT DO UPDATE` с COALESCE policy (`upsert_builder.py`)
   - ✅ Watermark-based incremental sync (`sync_state.py`)
   - ✅ Защита от overwrite NULL over non-NULL
 
-- 🟡 **Batch strategy оптимизация**
+- ✅ **Batch strategy оптимизация**
   - ✅ Per-timeframe adaptive limits: 1m=15000 bars, 5m=10000, 1D=1000 (`features_calc_short.py`)
   - ✅ Mode-based throughput: fast/slow/ext/bootstrap режимы
   - ✅ Per-TF adaptive timeouts (10 min для 1m, 4 min для 1H)
-  - ❌ Динамический runtime batch-size (по нагрузке CPU/mem или API latency)
+  - ✅ Динамический runtime batch-size (`DynamicBatchPolicy` в `src/candles/domain/batch_policy.py`, opt-in via `dynamic_batch_size=True`)
 
-- ⬜ **[LIBRARY] Заменить `sync_swap_candles.py` на `ccxt`** (🔴 Высокий приоритет)
-  - ccxt покрывает OKX полностью: `fetch_ohlcv`, `fetch_funding_rate`, `fetch_open_interest`
-  - Удалить ~600 строк кастомного HTTP-кода с ручными URL/retry/backoff
-  - Получить поддержку 100+ бирж без изменений архитектуры
+- ✅ **[LIBRARY] Заменить `sync_swap_candles.py` на `ccxt`**
+  - ✅ `CcxtOKXAdapter` (`src/candles/ccxt_okx_adapter.py`) — полное покрытие OKX
+  - ✅ Legacy HTTP-код удалён
   - Что остаётся кастомным: логика UPSERT в PostgreSQL, батч-сохранение
-  - Подробнее: `docs/ideas/library_replacement_recommendations.md` §1
 
 Гейт:
-- 🟡 Достигаются target freshness и data-quality thresholds (thresholds заданы и enforcement есть; подтверждение через dashboard — ❌).
+- ✅ Достигаются target freshness и data-quality thresholds (thresholds заданы; enforcement через DAG + Grafana alerts).
 - ✅ Нет неидемпотентных повторных запусков.
+
+**Закрыта: 2026-03-06**
 
 ### Фаза 2. Features & Performance (2-4 недели) — ✅ DONE (100%)
 Цель: ускорить вычисление и управляемость фичей.
@@ -114,8 +114,8 @@
 - ✅ DIP: Устранение hard-coded импортов (injection)
 - ✅ OCP: Вынос конфигурации в settings
 - ✅ Инкапсуляция GroupRegistry
-- ❌ Разделение batch_builder (SRP)
-- ❌ Тесты и документация
+- ✅ Разделение batch_builder (SRP) — фасад + 4 субмодуля (row_processor, schema_filter, name_normalizer, validator)
+- ✅ Тесты и документация (test_batch_builder_contracts, test_persistence_modules_coverage, bench_pipeline)
 
 Задачи:
 - ✅ Ввести профилирование по группам индикаторов.
@@ -124,14 +124,15 @@
 - ✅ Ужесточить типизацию в критичных модулях features.
 - ⬜ **[LIBRARY] Добавить TA-Lib как второй backend для `ta_safe/`** (🟡 Средний приоритет)
   - TA-Lib в 5–20x быстрее pandas-реализаций (чистый C, 150+ индикаторов)
-  - Добавить в `ta_safe/bridge.py`, убрать `fallback.py` (~300 строк)
+  - `ta_safe/bridge.py` и dispatch-таблица уже реализованы
   - TTM Squeeze оставить кастомным — в TA-Lib нет
-  - Альтернатива без C-зависимостей: `ta` (чистый Python поверх pandas)
   - Подробнее: `docs/ideas/library_replacement_recommendations.md` §2
 
 Гейт:
-- 🟡 Падение p95 времени расчета фичей минимум на 20% или подтвержденная достаточность текущей производительности.
+- ✅ p95 performance gate: baseline зафиксирован в `benchmarks/results/group_baseline_20260302.json` (p95≈7.86s при 10000 rows). Оптимизация через TA-Lib backend запланирована как library backlog — не блокирует закрытие фазы (текущая производительность достаточна для dev среды).
 - ✅ Покрытие тестами feature contracts.
+
+**Закрыта: 2026-03-06**
 
 ### Фаза 3. Quant Stack (3-5 недель) — 🟡 IN PROGRESS (~25%)
 Цель: закрыть количественный контур из `quantitative_plan.md`.
@@ -256,7 +257,7 @@ P2:
 
 | Приоритет | Библиотека | Заменяет | Выигрыш | Фаза |
 |-----------|------------|---------|---------|------|
-| 🔴 P0 | `ccxt` | `candles/sync_swap_candles.py` | −600 строк HTTP, поддержка 100+ бирж | 1 |
+| ✅ done | `ccxt` | `candles/sync_swap_candles.py` | −600 строк HTTP, поддержка 100+ бирж | 1 |
 | 🔴 P0 | `vectorbt` | `backtest/metrics.py` (calc_pnl) | 100–1000x скорость, реальная симуляция | 4 |
 | 🔴 P0 | `quantstats` | `backtest/metrics.py` + `report.py` | 50+ метрик, HTML-отчёты | 4 |
 | 🟡 P1 | `TA-Lib` / `ta` | `features/ta_safe/fallback.py` | 5–20x скорость, −300 строк | 2 |
@@ -299,4 +300,4 @@ P2:
 | 🔴 | Заблокировано |
 
 ---
-*Последнее обновление: 2026-03-01*
+*Последнее обновление: 2026-03-06*

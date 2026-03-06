@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..observability.logging import LogCategory, get_category_logger
+from src.logging import LogCategory, get_category_logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -133,9 +133,7 @@ class GroupMetricsRecorder:
         if feature_cols:
             feature_df = df[feature_cols]
             metrics["overall_fill_rate"] = feature_df.notna().mean().mean()
-            metrics["features_with_data"] = (
-                (feature_df.notna().any()).sum()
-            )
+            metrics["features_with_data"] = (feature_df.notna().any()).sum()
         else:
             metrics["overall_fill_rate"] = 0.0
             metrics["features_with_data"] = 0

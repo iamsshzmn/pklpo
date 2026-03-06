@@ -26,16 +26,23 @@ from ..utils.indicator_utils import (
     _nan_series,
     check_min_length,
 )
+from .registry import GroupRegistry
 
 logger = get_logger(__name__)
 
 
+@GroupRegistry.register(
+    "trend",
+    order=5,
+    dependencies=["overlap", "ma"],
+    description="Trend indicators (ADX, Ichimoku, etc.)",
+)
 def calc_trend_indicators(
     df: pd.DataFrame, available: set[str], **kwargs
 ) -> dict[str, pd.Series]:
     """Calculate Trend indicators for directional analysis.
 
-    Гарантирует: все значения Series, индекс == df.index, float dtype где применимо.
+    :   Series,  == df.index, float dtype  .
 
     Args:
         df: DataFrame with OHLC data (must have 'open', 'high', 'low', 'close' columns)
@@ -51,7 +58,7 @@ def calc_trend_indicators(
     """
     result: dict[str, pd.Series] = {}
 
-    # Очистка данных один раз в начале
+    #
     df = df.copy()
     for col_name in ("open", "high", "low", "close"):
         if col_name in df.columns:
@@ -63,7 +70,7 @@ def calc_trend_indicators(
         logger.info(f"ICHIMOKU: Calculating for keys: {ichimoku_keys}")
     if any(key.startswith("ichimoku") for key in available):
         if not check_min_length(df, "ichimoku"):
-            logger.warning("ICHIMOKU: недостаточно данных (len<52), возвращаю NaN")
+            logger.warning("ICHIMOKU:   (len<52),  NaN")
             for k in [
                 "ichimoku_tenkan",
                 "ichimoku_kijun",
@@ -82,18 +89,18 @@ def calc_trend_indicators(
                     ik = ik[0]
 
                 if isinstance(ik, pd.Series):
-                    # Если pandas_ta вернул Series, преобразуем в DataFrame
+                    #  pandas_ta  Series,   DataFrame
                     ik = ik.to_frame()
 
                 if isinstance(ik, pd.DataFrame):
                     logger.debug(f"ICHIMOKU result columns: {list(ik.columns)}")
-                    # Если только одна колонка 'ichimoku', используем fallback расчёт
+                    #     'ichimoku',  fallback
                     if len(ik.columns) == 1 and "ichimoku" in ik.columns:
                         logger.warning(
-                            f"ICHIMOKU: pandas_ta вернул только одну колонку 'ichimoku', "
-                            f"используем fallback расчёт. Доступные: {list(ik.columns)}"
+                            f"ICHIMOKU: pandas_ta     'ichimoku', "
+                            f" fallback . : {list(ik.columns)}"
                         )
-                        # Используем fallback для расчёта всех компонентов
+                        #  fallback
                         try:
                             ik_fallback = safe_ta_with_fallback(
                                 df, "ichimoku", tenkan=9, kijun=26, senkou=52
@@ -154,7 +161,7 @@ def calc_trend_indicators(
                                         else:
                                             result[k] = _nan_series(df.index, k)
                             else:
-                                # Если fallback тоже не сработал, возвращаем NaN
+                                #  fallback   ,  NaN
                                 for k in [
                                     "ichimoku_tenkan",
                                     "ichimoku_kijun",
@@ -176,7 +183,7 @@ def calc_trend_indicators(
                                 if k in available:
                                     result[k] = _nan_series(df.index, k)
                     else:
-                        # Сначала проверяем канонические имена, потом префиксы
+                        #    ,
                         colmap = {
                             "ichimoku_tenkan": ("ITS_", "TENKAN", "TENKAN_"),
                             "ichimoku_kijun": ("IKS_", "KIJUN", "KIJUN_"),
@@ -187,12 +194,12 @@ def calc_trend_indicators(
 
                         for k, prefixes in colmap.items():
                             if k in available:
-                                # Сначала проверяем каноническое имя
+                                #
                                 found_col: str | None = None
                                 if k in ik.columns:
                                     found_col = k
                                 else:
-                                    # Потом ищем по префиксам
+                                    #
                                     for c in ik.columns:
                                         for p in prefixes:
                                             if c.startswith(p):
@@ -204,7 +211,7 @@ def calc_trend_indicators(
                                     s = _first_col_or_series(ik[found_col], k, df.index)
                                 else:
                                     logger.warning(
-                                        f"ICHIMOKU: не найдена колонка {k}, доступные: {list(ik.columns)}"
+                                        f"ICHIMOKU:    {k}, : {list(ik.columns)}"
                                     )
                                     s = _nan_series(df.index, k)
                                 if k == "ichimoku_chikou":
@@ -221,7 +228,7 @@ def calc_trend_indicators(
                         if k in available:
                             result[k] = _nan_series(df.index, k)
             except Exception as e:
-                logger.error(f"Ошибка расчёта Ichimoku: {type(e).__name__}: {e}")
+                logger.error(f"  Ichimoku: {type(e).__name__}: {e}")
                 for k in [
                     "ichimoku_tenkan",
                     "ichimoku_kijun",
@@ -272,7 +279,7 @@ def calc_trend_indicators(
                     if key in available:
                         result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта ADX: {type(e).__name__}: {e}")
+            logger.error(f"  ADX: {type(e).__name__}: {e}")
             for key in ["adx_14", "adx_pos_di", "adx_neg_di"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -286,7 +293,7 @@ def calc_trend_indicators(
             )
             if isinstance(st, pd.DataFrame):
                 if "supertrend" in available:
-                    # Сначала проверяем каноническое имя, потом префикс
+                    #    ,
                     if "supertrend" in st.columns:
                         result["supertrend"] = _first_col_or_series(
                             st["supertrend"], "supertrend", df.index
@@ -299,7 +306,7 @@ def calc_trend_indicators(
                             )
                         else:
                             logger.warning(
-                                f"SUPERTREND: не найдена колонка supertrend, доступные: {list(st.columns)}"
+                                f"SUPERTREND:    supertrend, : {list(st.columns)}"
                             )
                             result["supertrend"] = _nan_series(df.index, "supertrend")
                 if "supertrend_direction" in available:
@@ -315,7 +322,7 @@ def calc_trend_indicators(
                             )
                         else:
                             logger.warning(
-                                f"SUPERTREND: не найдена колонка supertrend_direction, доступные: {list(st.columns)}"
+                                f"SUPERTREND:    supertrend_direction, : {list(st.columns)}"
                             )
                             result["supertrend_direction"] = _nan_series(
                                 df.index, "supertrend_direction"
@@ -333,7 +340,7 @@ def calc_trend_indicators(
                             )
                         else:
                             logger.warning(
-                                f"SUPERTREND: не найдена колонка supertrend_long, доступные: {list(st.columns)}"
+                                f"SUPERTREND:    supertrend_long, : {list(st.columns)}"
                             )
                             result["supertrend_long"] = _nan_series(
                                 df.index, "supertrend_long"
@@ -351,7 +358,7 @@ def calc_trend_indicators(
                             )
                         else:
                             logger.warning(
-                                f"SUPERTREND: не найдена колонка supertrend_short, доступные: {list(st.columns)}"
+                                f"SUPERTREND:    supertrend_short, : {list(st.columns)}"
                             )
                             result["supertrend_short"] = _nan_series(
                                 df.index, "supertrend_short"
@@ -366,7 +373,7 @@ def calc_trend_indicators(
                     if k in available:
                         result[k] = _nan_series(df.index, k)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Supertrend: {type(e).__name__}: {e}")
+            logger.error(f"  Supertrend: {type(e).__name__}: {e}")
             for k in [
                 "supertrend",
                 "supertrend_direction",
@@ -396,7 +403,7 @@ def calc_trend_indicators(
                     if key in available:
                         result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта CKSP: {type(e).__name__}: {e}")
+            logger.error(f"  CKSP: {type(e).__name__}: {e}")
             for key in ["cksp_upper", "cksp_lower"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -405,7 +412,7 @@ def calc_trend_indicators(
     if any(key.startswith("psar") for key in available):
         try:
             if not check_min_length(df, "psar"):
-                logger.warning("PSAR: недостаточно данных (len<5), возвращаю NaN")
+                logger.warning("PSAR:   (len<5),  NaN")
                 ps = pd.DataFrame(index=df.index)
             else:
                 ps = safe_ta_with_fallback(df, "psar", af=0.02, max_af=0.2)
@@ -414,7 +421,7 @@ def calc_trend_indicators(
                 )
 
             if isinstance(ps, pd.DataFrame):
-                # Сначала проверяем канонические имена, потом префиксы
+                #    ,
                 long_c = (
                     "psar_long"
                     if "psar_long" in ps.columns
@@ -427,7 +434,7 @@ def calc_trend_indicators(
                 )
 
                 if "psar" in available:
-                    # Пробуем найти основную колонку PSAR
+                    #     PSAR
                     if "psar" in ps.columns:
                         result["psar"] = _first_col_or_series(
                             ps["psar"], "psar", df.index
@@ -464,9 +471,7 @@ def calc_trend_indicators(
                             ps[[long_c]], "psar_long", df.index
                         )
                     else:
-                        logger.warning(
-                            f"PSAR: не найдена колонка psar_long, доступные: {list(ps.columns)}"
-                        )
+                        logger.warning(f"PSAR:    psar_long, : {list(ps.columns)}")
                         result["psar_long"] = _nan_series(df.index, "psar_long")
 
                 if "psar_short" in available:
@@ -475,16 +480,14 @@ def calc_trend_indicators(
                             ps[[short_c]], "psar_short", df.index
                         )
                     else:
-                        logger.warning(
-                            f"PSAR: не найдена колонка psar_short, доступные: {list(ps.columns)}"
-                        )
+                        logger.warning(f"PSAR:    psar_short, : {list(ps.columns)}")
                         result["psar_short"] = _nan_series(df.index, "psar_short")
             else:
                 for k in ["psar", "psar_direction", "psar_long", "psar_short"]:
                     if k in available:
                         result[k] = _nan_series(df.index, k)
         except Exception as e:
-            logger.error(f"Ошибка расчёта PSAR: {type(e).__name__}: {e}")
+            logger.error(f"  PSAR: {type(e).__name__}: {e}")
             for k in ["psar", "psar_direction", "psar_long", "psar_short"]:
                 if k in available:
                     result[k] = _nan_series(df.index, k)
@@ -517,7 +520,7 @@ def calc_trend_indicators(
                     if key in available:
                         result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Aroon: {type(e).__name__}: {e}")
+            logger.error(f"  Aroon: {type(e).__name__}: {e}")
             for key in ["aroon_up", "aroon_down", "aroon_osc"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -531,7 +534,7 @@ def calc_trend_indicators(
             else:
                 result["amat"] = _nan_series(df.index, "amat")
         except Exception as e:
-            logger.error(f"Ошибка расчёта AMAT: {type(e).__name__}: {e}")
+            logger.error(f"  AMAT: {type(e).__name__}: {e}")
             result["amat"] = _nan_series(df.index, "amat")
 
     if "chop" in available:
@@ -542,7 +545,7 @@ def calc_trend_indicators(
             else:
                 result["chop"] = _nan_series(df.index, "chop")
         except Exception as e:
-            logger.error(f"Ошибка расчёта CHOP: {type(e).__name__}: {e}")
+            logger.error(f"  CHOP: {type(e).__name__}: {e}")
             result["chop"] = _nan_series(df.index, "chop")
 
     if "decay" in available:
@@ -553,7 +556,7 @@ def calc_trend_indicators(
             else:
                 result["decay"] = _nan_series(df.index, "decay")
         except Exception as e:
-            logger.error(f"Ошибка расчёта DECAY: {type(e).__name__}: {e}")
+            logger.error(f"  DECAY: {type(e).__name__}: {e}")
             result["decay"] = _nan_series(df.index, "decay")
 
     if "decreasing" in available:
@@ -566,7 +569,7 @@ def calc_trend_indicators(
             else:
                 result["decreasing"] = _nan_series(df.index, "decreasing")
         except Exception as e:
-            logger.error(f"Ошибка расчёта DECREASING: {type(e).__name__}: {e}")
+            logger.error(f"  DECREASING: {type(e).__name__}: {e}")
             result["decreasing"] = _nan_series(df.index, "decreasing")
 
     if "dpo" in available:
@@ -577,7 +580,7 @@ def calc_trend_indicators(
             else:
                 result["dpo"] = _nan_series(df.index, "dpo")
         except Exception as e:
-            logger.error(f"Ошибка расчёта DPO: {type(e).__name__}: {e}")
+            logger.error(f"  DPO: {type(e).__name__}: {e}")
             result["dpo"] = _nan_series(df.index, "dpo")
 
     if "increasing" in available:
@@ -590,7 +593,7 @@ def calc_trend_indicators(
             else:
                 result["increasing"] = _nan_series(df.index, "increasing")
         except Exception as e:
-            logger.error(f"Ошибка расчёта INCREASING: {type(e).__name__}: {e}")
+            logger.error(f"  INCREASING: {type(e).__name__}: {e}")
             result["increasing"] = _nan_series(df.index, "increasing")
 
     if "long_run" in available:
@@ -603,7 +606,7 @@ def calc_trend_indicators(
             else:
                 result["long_run"] = _nan_series(df.index, "long_run")
         except Exception as e:
-            logger.error(f"Ошибка расчёта LONG_RUN: {type(e).__name__}: {e}")
+            logger.error(f"  LONG_RUN: {type(e).__name__}: {e}")
             result["long_run"] = _nan_series(df.index, "long_run")
 
     if "qstick" in available:
@@ -616,7 +619,7 @@ def calc_trend_indicators(
             else:
                 result["qstick"] = _nan_series(df.index, "qstick")
         except Exception as e:
-            logger.error(f"Ошибка расчёта QSTICK: {type(e).__name__}: {e}")
+            logger.error(f"  QSTICK: {type(e).__name__}: {e}")
             result["qstick"] = _nan_series(df.index, "qstick")
 
     if "short_run" in available:
@@ -629,7 +632,7 @@ def calc_trend_indicators(
             else:
                 result["short_run"] = _nan_series(df.index, "short_run")
         except Exception as e:
-            logger.error(f"Ошибка расчёта SHORT_RUN: {type(e).__name__}: {e}")
+            logger.error(f"  SHORT_RUN: {type(e).__name__}: {e}")
             result["short_run"] = _nan_series(df.index, "short_run")
 
     if "ttm_trend" in available:
@@ -642,7 +645,7 @@ def calc_trend_indicators(
             else:
                 result["ttm_trend"] = _nan_series(df.index, "ttm_trend")
         except Exception as e:
-            logger.error(f"Ошибка расчёта TTM_TREND: {type(e).__name__}: {e}")
+            logger.error(f"  TTM_TREND: {type(e).__name__}: {e}")
             result["ttm_trend"] = _nan_series(df.index, "ttm_trend")
 
     # === Vortex Indicator ===
@@ -652,7 +655,7 @@ def calc_trend_indicators(
             if check_min_length(df, "vortex"):
                 vortex_result = safe_ta_with_fallback(df, "vortex", length=14)
                 if isinstance(vortex_result, pd.DataFrame):
-                    # Проверяем наличие всех компонентов
+                    #
                     if (
                         "vortex_pos" in vortex_result.columns
                         and "vortex_pos" in available
@@ -671,12 +674,12 @@ def calc_trend_indicators(
                         result["vortex"] = _first_col_or_series(
                             vortex_result["vortex"], "vortex", df.index
                         )
-                    # Если есть только одна колонка "vortex", используем fallback
+                    #      "vortex",  fallback
                     elif (
                         len(vortex_result.columns) == 1
                         and "vortex" in vortex_result.columns
                     ):
-                        # Fallback уже должен вернуть все компоненты
+                        # Fallback
                         vortex_fallback = safe_ta_with_fallback(df, "vortex", length=14)
                         if isinstance(vortex_fallback, pd.DataFrame):
                             if (
@@ -705,7 +708,7 @@ def calc_trend_indicators(
                                     vortex_fallback["vortex"], "vortex", df.index
                                 )
                 else:
-                    # Если не DataFrame, возвращаем NaN для всех компонентов
+                    #   DataFrame,  NaN
                     for key in vortex_keys:
                         if key in available:
                             result[key] = _nan_series(df.index, key)
@@ -714,7 +717,7 @@ def calc_trend_indicators(
                     if key in available:
                         result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта VORTEX: {type(e).__name__}: {e}")
+            logger.error(f"  VORTEX: {type(e).__name__}: {e}")
             for key in vortex_keys:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -754,7 +757,7 @@ def calc_trend_indicators(
                     if key in available:
                         result[key] = _nan_series(df.index, key)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Stochastic: {type(e).__name__}: {e}")
+            logger.error(f"  Stochastic: {type(e).__name__}: {e}")
             for key in ["stoch_k", "stoch_d"]:
                 if key in available:
                     result[key] = _nan_series(df.index, key)
@@ -765,12 +768,10 @@ def calc_trend_indicators(
             ultosc_result = safe_ta_with_fallback(df, "uo", short=7, medium=14, long=28)
             result["ultosc"] = _first_col_or_series(ultosc_result, "ultosc", df.index)
         except Exception as e:
-            logger.error(f"Ошибка расчёта Ultimate Oscillator: {type(e).__name__}: {e}")
+            logger.error(f"  Ultimate Oscillator: {type(e).__name__}: {e}")
             result["ultosc"] = _nan_series(df.index, "ultosc")
 
-    # Гарантируем, что все значения - Series
-    assert all(
-        isinstance(v, pd.Series) for v in result.values()
-    ), "Все значения должны быть Series"
+    # ,    - Series
+    assert all(isinstance(v, pd.Series) for v in result.values()), "    Series"
 
     return result

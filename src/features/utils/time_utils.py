@@ -69,8 +69,7 @@ def timeframe_to_ms(timeframe: str) -> int:
         return TIMEFRAME_MS[timeframe]
 
     raise ValueError(
-        f"Unknown timeframe: {timeframe}. "
-        f"Supported: {list(TIMEFRAME_MS.keys())}"
+        f"Unknown timeframe: {timeframe}. " f"Supported: {list(TIMEFRAME_MS.keys())}"
     )
 
 
@@ -189,23 +188,25 @@ def ensure_ts_column(
     result_df = df.copy()
 
     if "ts" in result_df.columns:
-        # Already has ts column, ensure it's in seconds
-        result_df["ts"] = normalize_timestamp_to_seconds(result_df["ts"])
+        # Already has ts column, ensure it's in milliseconds
+        result_df["ts"] = normalize_timestamp_to_milliseconds(result_df["ts"])
         return result_df
 
     if timestamp_col in result_df.columns:
-        # Normalize the timestamp column to ts in seconds
-        result_df["ts"] = normalize_timestamp_to_seconds(result_df[timestamp_col])
+        # Normalize the timestamp column to ts in milliseconds
+        result_df["ts"] = normalize_timestamp_to_milliseconds(result_df[timestamp_col])
         return result_df
 
     if isinstance(result_df.index, pd.DatetimeIndex):
         # Use index as timestamp source - convert DatetimeIndex to Series first
-        result_df["ts"] = normalize_timestamp_to_seconds(pd.Series(result_df.index))
+        result_df["ts"] = normalize_timestamp_to_milliseconds(
+            pd.Series(result_df.index)
+        )
         return result_df
 
     # Fallback: create sequential ts based on index
     logger.warning("No timestamp column found, creating sequential ts from index")
-    result_df["ts"] = result_df.index.astype("int64")
+    result_df["ts"] = result_df.index.astype("int64") * 1000
 
     return result_df
 
@@ -239,7 +240,7 @@ def validate_timestamp_consistency(df: pd.DataFrame, ts_col: str = "ts") -> bool
         logger.warning(f"Timestamps in '{ts_col}' are not monotonic increasing")
         return False
 
-    # Check for reasonable range (UTC seconds should be > 0 and < year 2100)
+    # Check for reasonable range (UTC milliseconds should be > 0 and < year 2100)
     min_ts = ts_series.min()
     max_ts = ts_series.max()
 
@@ -247,8 +248,8 @@ def validate_timestamp_consistency(df: pd.DataFrame, ts_col: str = "ts") -> bool
         logger.warning(f"Timestamp values <= 0 found: min={min_ts}")
         return False
 
-    # Year 2100 in UTC seconds
-    year_2100_ts = 4102444800
+    # Year 2100 in UTC milliseconds
+    year_2100_ts = 4102444800000
     if max_ts > year_2100_ts:
         logger.warning(f"Timestamp values > year 2100 found: max={max_ts}")
         return False
@@ -296,7 +297,7 @@ def strict_timestamp_validation(df: pd.DataFrame, ts_col: str = "ts") -> dict[st
         result["valid"] = False
         result["errors"].append(f"Found {duplicate_count} duplicate timestamps")
 
-    # Check timestamp range (UTC seconds)
+    # Check timestamp range (UTC milliseconds)
     min_ts = ts_series.min()
     max_ts = ts_series.max()
 
@@ -304,8 +305,8 @@ def strict_timestamp_validation(df: pd.DataFrame, ts_col: str = "ts") -> dict[st
         result["valid"] = False
         result["errors"].append(f"Non-positive timestamps found: min={min_ts}")
 
-    # Year 2100 check
-    year_2100_ts = 4102444800
+    # Year 2100 check in milliseconds
+    year_2100_ts = 4102444800000
     if max_ts > year_2100_ts:
         result["warnings"].append(f"Timestamps beyond year 2100: max={max_ts}")
 

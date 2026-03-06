@@ -1,6 +1,4 @@
-"""
-Утилиты для очистки данных перед расчётом индикаторов
-"""
+"""Utility helpers for cleaning indicator input data."""
 
 import numpy as np
 import pandas as pd
@@ -11,7 +9,7 @@ logger = get_logger(__name__)
 
 
 def _clean_series(series: pd.Series) -> pd.Series:
-    """Универсальная очистка серии от проблемных значений"""
+    """Normalize a series by dropping None, NaN, and infinite values."""
     return series.replace([None, np.nan, float("inf"), float("-inf")], np.nan).dropna()
 
 
@@ -22,7 +20,7 @@ def _log_insufficient_data(
     actual_length: int,
     original_length: int,
 ):
-    """Универсальное логирование недостатка данных"""
+    """Log that the cleaned input does not meet the minimum length."""
     logger.warning(
         f"Insufficient data after cleaning for {symbol_name} {timeframe_name}: need {min_length}+, got {actual_length} (original: {original_length})"
     )
@@ -32,11 +30,11 @@ def clean_ohlcv_data(
     df: pd.DataFrame, min_length: int = 14
 ) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series, bool]:
     """
-    Очищает OHLCV данные от None и NaN значений
+    Clean OHLCV columns by removing None and NaN values.
 
     Args:
-        df: DataFrame с OHLCV данными
-        min_length: минимальная длина данных для расчёта индикаторов
+        df: DataFrame with OHLCV columns
+        min_length: Minimum required series length
 
     Returns:
         tuple: (open_clean, high_clean, low_clean, close_clean, has_sufficient_data)
@@ -47,7 +45,7 @@ def clean_ohlcv_data(
         low_clean = _clean_series(df["low"])
         close_clean = _clean_series(df["close"])
 
-        # Проверяем минимальную длину
+        # Check the shortest cleaned OHLCV column.
         min_available_length = min(
             len(open_clean), len(high_clean), len(low_clean), len(close_clean)
         )
@@ -73,11 +71,11 @@ def clean_ohlcv_data(
 
 def clean_close_data(df: pd.DataFrame, min_length: int = 14) -> tuple[pd.Series, bool]:
     """
-    Очищает только close данные для простых индикаторов (RSI, MACD)
+    Clean only the close column for indicators such as RSI and MACD.
 
     Args:
-        df: DataFrame с OHLCV данными
-        min_length: минимальная длина данных для расчёта индикаторов
+        df: DataFrame with OHLCV columns
+        min_length: Minimum required series length
 
     Returns:
         tuple: (close_clean, has_sufficient_data)
@@ -85,9 +83,8 @@ def clean_close_data(df: pd.DataFrame, min_length: int = 14) -> tuple[pd.Series,
     try:
         close_clean = _clean_series(df["close"])
 
-        # Дополнительная проверка индексации
-        valid_indices = df.index[df["close"].notna() & (df["close"] is not None)]
-        close_clean = close_clean.reindex(valid_indices)
+        # Keep only valid close values.
+        close_clean = close_clean.loc[close_clean.notna()]
 
         has_sufficient_data = len(close_clean) >= min_length
 
@@ -111,14 +108,14 @@ def clean_close_data(df: pd.DataFrame, min_length: int = 14) -> tuple[pd.Series,
 
 def create_nan_series(df: pd.DataFrame, length: int | None = None) -> pd.Series:
     """
-    Создаёт серию с NaN значениями той же длины что и исходный DataFrame
+    Create a NaN series aligned with the input DataFrame.
 
     Args:
-        df: исходный DataFrame
-        length: длина серии (если не указана, берётся длина df)
+        df: Source DataFrame
+        length: Optional series length, defaults to len(df)
 
     Returns:
-        pd.Series с NaN значениями
+        pd.Series filled with NaN values
     """
     if length is None:
         length = len(df)

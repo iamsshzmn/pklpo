@@ -52,7 +52,7 @@ def _prepare_feature_specs(specs: list[str | FeatureSpec] | None) -> list[Featur
         validate_feature_specs_integrity(feature_specs)
     except Exception as e:
         # Log as warning to allow ad-hoc runs with partial specs
-        from ..observability.logging import get_features_logger
+        from src.logging import get_features_logger
 
         logger = get_features_logger(__name__)
         logger.warning(f"Phase requirements check warning: {e}")

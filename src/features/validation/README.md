@@ -148,6 +148,6 @@ await insert_indicators(session, df_features, symbol, timeframe)
 ## Тестирование
 
 ```bash
-pytest src/features/tests/test_validators.py -v
-pytest src/features/tests/test_edge_cases.py -v
+pytest tests/features/tests/test_validators.py -v
+pytest tests/features/tests/test_edge_cases.py -v
 ```

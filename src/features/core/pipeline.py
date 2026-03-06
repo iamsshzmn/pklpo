@@ -4,7 +4,7 @@ Unified pipeline logic for feature calculation.
 This module extracts common code from compute_features() and GroupCalculator
 to eliminate duplication and ensure consistent behavior.
 
-Stage 3 of refactoring plan: Унификация compute_features.
+Stage 3 of refactoring plan:  compute_features.
 """
 
 from __future__ import annotations
@@ -16,8 +16,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from src.logging import get_features_logger
+
 from ..domain.models import FeatureError
-from ..observability.logging import get_features_logger
 from ..observability.metrics import (
     calculate_fill_rates,
     calculate_quality_score,
@@ -170,9 +171,13 @@ def run_pre_calculation(
         if col in result_df.columns
     ]
     if ohlcv_cols:
-        numeric_ohlcv = result_df[ohlcv_cols].apply(pd.to_numeric, errors="coerce", axis=0)
+        numeric_ohlcv = result_df[ohlcv_cols].apply(
+            pd.to_numeric, errors="coerce", axis=0
+        )
         # Force numpy float64 + np.nan (not nullable Float64/pd.NA) to keep pandas_ta stable.
-        numeric_ohlcv = numeric_ohlcv.replace([np.inf, -np.inf], np.nan).astype("float64")
+        numeric_ohlcv = numeric_ohlcv.replace([np.inf, -np.inf], np.nan).astype(
+            "float64"
+        )
         result_df[ohlcv_cols] = numeric_ohlcv
         # Fail-fast check for data quality
         quality_check = result_df[ohlcv_cols].notna().mean()

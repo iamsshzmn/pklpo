@@ -1,13 +1,13 @@
 services:
   app:
     build:
-      context: .
+      context: ..
       dockerfile: docker/Dockerfile.app
     container_name: pklpo_app
     volumes:
       - ./src:/app
     env_file:
-      - .env
+      - ../.env
     depends_on:
       - db
     networks:

@@ -15,14 +15,43 @@ from datetime import datetime
 
 import pandas as pd
 from sqlalchemy import text
-from tqdm import tqdm
+
+try:
+    from tqdm import tqdm
+except Exception:  # pragma: no cover - optional progress dependency
+
+    class tqdm:  # type: ignore[no-redef]
+        def __init__(self, iterable=None, total=None, **kwargs):
+            self.iterable = iterable
+            self.total = total
+
+        def __iter__(self):
+            if self.iterable is None:
+                return iter(())
+            return iter(self.iterable)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def update(self, n=1):
+            return None
+
+        def set_description(self, desc=None):
+            return None
+
+        def set_postfix(self, ordered_dict=None, refresh=True, **kwargs):
+            return None
+
 
 from src.features import compute_features
 from src.features.infrastructure.database import (
     insert_indicators as infra_insert_indicators,
 )
-from src.features.observability.logging import get_features_logger, log_features_summary
 from src.features.specs import FEATURE_SPECS
+from src.logging import get_features_logger, log_features_summary
 from src.utils.session_utils import get_db_session
 
 logger = get_features_logger()
@@ -30,98 +59,95 @@ logger = get_features_logger()
 
 def register(subparsers):
     """Register features command with CLI parser."""
-    p = subparsers.add_parser("features", help="Расчёт технических индикаторов")
-    p.add_argument("--symbols", nargs="+", help="Символы для обработки")
+    p = subparsers.add_parser("features", help="Calculate technical indicators")
+    p.add_argument("--symbols", nargs="+", help="Symbols to process")
     p.add_argument(
         "--timeframes",
         nargs="+",
         default=["1m", "5m", "15m", "1H", "4H", "1D"],
-        help="Таймфреймы для обработки",
+        help="Timeframes to process",
     )
     p.add_argument(
         "--specs",
         nargs="+",
         default=None,
-        help="Список индикаторов для расчёта (None = все доступные)",
+        help="Indicator list to calculate (None = all available)",
     )
+    p.add_argument("--normalize", action="store_true", help="Enable normalization")
     p.add_argument(
-        "--normalize", action="store_true", help="Включить волатильностную нормировку"
-    )
-    p.add_argument(
-        "--normalize-window", type=int, default=20, help="Окно для нормировки"
+        "--normalize-window", type=int, default=20, help="Normalization window"
     )
     p.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Количество баров для обработки (None = все данные)",
+        help="Number of bars to process (None = all data)",
     )
     p.add_argument(
         "--refill-incomplete",
         action="store_true",
-        help="Пересчитать только строки с data_status='inc'",
+        help="Recalculate only rows with data_status='inc'",
     )
     p.add_argument(
         "--refill-null",
         nargs="+",
         default=None,
-        help="Пересчитать записи с NULL для указанных индикаторов (например: --refill-null willr ultosc)",
+        help="Refill NULL values for selected indicators (for example: --refill-null willr ultosc)",
     )
     p.add_argument(
         "--features-debug",
         action="store_true",
-        help="Подробные DEBUG-логи расчёта индикаторов",
+        help="Enable verbose debug logging for indicator calculation",
     )
     p.add_argument(
         "--debug",
         action="store_true",
-        help="Включить режим отладки с подробными логами (alias для --features-debug)",
+        help="Alias for --features-debug",
     )
     p.add_argument(
         "--backend",
         choices=["auto", "pandas_ta", "talib", "fallback"],
         default="auto",
-        help="Бэкенд для расчёта индикаторов (auto=pandas_ta->talib->fallback)",
+        help="Indicator backend (auto=pandas_ta->talib->fallback)",
     )
     p.add_argument(
-        "--dry-run", action="store_true", help="Показать план без выполнения"
+        "--dry-run", action="store_true", help="Show the execution plan without running"
     )
     p.add_argument(
         "--repair",
         action="store_true",
-        help="Режим восстановления: загрузить последние 24 часа вместо инкрементного режима",
+        help="Repair mode: load the last 24 hours instead of incremental data",
     )
     p.add_argument(
         "--parallel-workers",
         type=int,
         default=1,
-        help="Количество параллельных воркеров (1 = последовательно, 2-6 рекомендуется)",
+        help="Parallel worker count (1 = sequential, 2-6 recommended)",
     )
     p.add_argument(
         "--order",
         choices=["symbol-first", "timeframe-first"],
         default="symbol-first",
-        help="Порядок обработки: symbol-first (по символам) или timeframe-first (по таймфреймам)",
+        help="Processing order: symbol-first or timeframe-first",
     )
     p.set_defaults(_handler=handle)
 
 
 async def handle(args):
     """Handle features command execution."""
-    # Устанавливаем бэкенд для расчёта индикаторов
     import os
 
     backend = getattr(args, "backend", "auto")
     os.environ["FEATURES_TA_BACKEND"] = backend
-    logger.info(f"🚀 ЗАПУСК ЭТАПА FEATURES (backend: {backend})")
+    logger.info(f"Starting FEATURES stage (backend: {backend})")
 
-    # Включаем подробные логи по флагу --features-debug или --debug
+    # Enable detailed logs through --features-debug or --debug.
     debug_mode = getattr(args, "features_debug", False) or getattr(args, "debug", False)
     if debug_mode:
         os.environ["FEATURES_VERBOSE"] = "true"
         os.environ["FEATURES_DEBUG"] = "true"
         # Note: Level is controlled by FEATURES_DEBUG env var in logging_config
-        logger.info("🔧 DEBUG MODE ENABLED: Detailed logging activated")
+        logger.info("DEBUG MODE ENABLED: Detailed logging activated")
         logger.info("Debug logging test: Verbose mode is active")
 
     if args.dry_run:
@@ -129,88 +155,87 @@ async def handle(args):
         return
 
     start_time = datetime.now()
-    start_time_ts = time.time()  # Для расчёта ETA
-    logger.info(f"⏰ Начало: {start_time.strftime('%H:%M:%S')}")
+    start_time_ts = time.time()  # Used for ETA reporting.
+    logger.info(f"Start time: {start_time.strftime('%H:%M:%S')}")
 
     try:
-        # Получаем список символов для обработки
         symbols = await _get_symbols_to_process(args.symbols)
         if not symbols:
-            logger.warning("⚠️ Нет символов для обработки")
+            logger.warning("No symbols selected for processing")
             return
 
-        # Определяем спецификации индикаторов
         feature_specs = _get_feature_specs(args.specs)
 
-        # Обрабатываем каждый символ и таймфрейм с прогресс-баром
+        # Process each symbol/timeframe pair with progress reporting.
         total_processed = 0
         total_features = 0
         stats = []
         total_saved = 0
 
-        # Подсчитываем общее количество задач
         total_tasks = len(symbols) * len(args.timeframes)
 
         logger.info(
-            f"📊 План работы: {len(symbols)} символов × {len(args.timeframes)} таймфреймов = {total_tasks} задач"
+            "Execution plan: %d symbols x %d timeframes = %d tasks",
+            len(symbols),
+            len(args.timeframes),
+            total_tasks,
         )
         if len(symbols) > 0:
             logger.info(
-                f"📈 Символы: {', '.join(symbols[:5])}{'...' if len(symbols) > 5 else ''}"
+                f"Symbols: {', '.join(symbols[:5])}{'...' if len(symbols) > 5 else ''}"
             )
-        logger.info(f"⏰ Таймфреймы: {', '.join(args.timeframes)}")
-        logger.info(f"🎯 Индикаторов для расчёта: {len(feature_specs)}")
+        logger.info(f"Timeframes: {', '.join(args.timeframes)}")
+        logger.info(f"Indicators to calculate: {len(feature_specs)}")
 
-        # Параллелизм
         parallel_workers = getattr(args, "parallel_workers", 1)
-        # Ограничиваем количество воркеров (DB pool_size=5, max_overflow=10)
+        # Keep worker count aligned with the DB pool limits.
         parallel_workers = min(max(1, parallel_workers), 6)
-        logger.info(
-            f"🚀 Начинаем обработку (воркеров: {parallel_workers})..."
-        )
+        logger.info(f"Starting processing with {parallel_workers} worker(s)")
 
         if parallel_workers > 1:
-            # Параллельная обработка с Semaphore
-            stats, total_processed, total_features, total_saved = await _process_parallel(
-                symbols=symbols,
-                timeframes=args.timeframes,
-                feature_specs=feature_specs,
-                args=args,
-                parallel_workers=parallel_workers,
-                total_tasks=total_tasks,
-                start_time_ts=start_time_ts,
+            # Parallel processing with a semaphore limit.
+            stats, total_processed, total_features, total_saved = (
+                await _process_parallel(
+                    symbols=symbols,
+                    timeframes=args.timeframes,
+                    feature_specs=feature_specs,
+                    args=args,
+                    parallel_workers=parallel_workers,
+                    total_tasks=total_tasks,
+                    start_time_ts=start_time_ts,
+                )
             )
         else:
-            # Последовательная обработка (legacy)
-            stats, total_processed, total_features, total_saved = await _process_sequential(
-                symbols=symbols,
-                timeframes=args.timeframes,
-                feature_specs=feature_specs,
-                args=args,
-                total_tasks=total_tasks,
-                start_time_ts=start_time_ts,
+            # Sequential processing path.
+            stats, total_processed, total_features, total_saved = (
+                await _process_sequential(
+                    symbols=symbols,
+                    timeframes=args.timeframes,
+                    feature_specs=feature_specs,
+                    args=args,
+                    total_tasks=total_tasks,
+                    start_time_ts=start_time_ts,
+                )
             )
 
-        # Итоговая статистика
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
-        logger.info("\n📊 ИТОГИ ЭТАПА FEATURES:")
-        logger.info(f"⏰ Время выполнения: {duration:.1f} сек")
-        logger.info(f"📈 Обработано символов: {len(symbols)}")
-        logger.info(f"📊 Обработано баров: {total_processed:,}")
-        logger.info(f"🎯 Рассчитано индикаторов: {total_features:,}")
-        logger.info(f"💾 Сохранено записей: {total_saved:,}")
-        logger.info(f"⚡ Скорость: {total_processed/duration:.1f} баров/сек")
+        logger.info("\nFEATURES stage summary:")
+        logger.info(f"Duration: {duration:.1f}s")
+        logger.info(f"Symbols processed: {len(symbols)}")
+        logger.info(f"Bars processed: {total_processed:,}")
+        logger.info(f"Indicators calculated: {total_features:,}")
+        logger.info(f"Rows saved: {total_saved:,}")
+        logger.info(f"Throughput: {total_processed/duration:.1f} bars/s")
 
         if total_processed > 0:
             logger.info(
-                f"📈 Среднее индикаторов на бар: {total_features/total_processed:.1f}"
+                f"Average indicators per bar: {total_features/total_processed:.1f}"
             )
 
-        # Сводка по каждому символу и таймфрейму
         if stats:
-            # Группируем по символам для использования log_features_summary
+            # Build per-symbol summaries for log_features_summary().
             summary_by_symbol: dict[str, dict[str, dict[str, int]]] = {}
             for entry in stats:
                 symbol = entry["symbol"]
@@ -223,7 +248,7 @@ async def handle(args):
                     "saved": entry["saved"],
                 }
 
-            # Добавляем нулевые записи для таймфреймов без данных
+            # Fill in zero-value entries for missing timeframes.
             for symbol in symbols:
                 if symbol not in summary_by_symbol:
                     summary_by_symbol[symbol] = {}
@@ -235,21 +260,33 @@ async def handle(args):
                             "saved": 0,
                         }
 
-            # Выводим сводку для каждого символа
+            # Emit one summary block per symbol.
             for symbol, summary in summary_by_symbol.items():
                 log_features_summary(logger, summary, symbol=symbol)
 
-        # Реальная статистика уже показана в _log_feature_groups_progress
-
-        logger.info("✅ ЭТАП FEATURES ЗАВЕРШЕН УСПЕШНО")
+        logger.info("FEATURES stage completed successfully")
 
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка в этапе features: {e}")
+        logger.error(f"Fatal error in FEATURES stage: {e}")
         raise
 
 
-# Приоритетный порядок таймфреймов (младшие первыми)
-PRIORITY_TIMEFRAMES = ["1m", "5m", "15m", "30m", "1H", "2H", "4H", "6H", "8H", "12H", "1D", "3D", "1W"]
+# Lower timeframes first.
+PRIORITY_TIMEFRAMES = [
+    "1m",
+    "5m",
+    "15m",
+    "30m",
+    "1H",
+    "2H",
+    "4H",
+    "6H",
+    "8H",
+    "12H",
+    "1D",
+    "3D",
+    "1W",
+]
 
 
 def _generate_task_pairs(
@@ -257,25 +294,17 @@ def _generate_task_pairs(
     timeframes: list[str],
     order: str,
 ) -> list[tuple[str, str]]:
-    """
-    Генерирует список пар (symbol, timeframe) в нужном порядке.
-
-    Args:
-        symbols: Список символов
-        timeframes: Список таймфреймов
-        order: "symbol-first" или "timeframe-first"
-
-    Returns:
-        Список пар (symbol, timeframe)
-    """
+    """Build a list of (symbol, timeframe) tasks in the requested order."""
     if order == "timeframe-first":
-        # Сортируем таймфреймы по приоритету
+        # Sort timeframes by explicit priority.
         sorted_tfs = sorted(
             timeframes,
-            key=lambda tf: PRIORITY_TIMEFRAMES.index(tf) if tf in PRIORITY_TIMEFRAMES else 999
+            key=lambda tf: (
+                PRIORITY_TIMEFRAMES.index(tf) if tf in PRIORITY_TIMEFRAMES else 999
+            ),
         )
         return [(s, tf) for tf in sorted_tfs for s in symbols]
-    # symbol-first (по умолчанию)
+    # symbol-first is the default order.
     return [(s, tf) for s in symbols for tf in timeframes]
 
 
@@ -287,7 +316,7 @@ async def _process_sequential(
     total_tasks: int,
     start_time_ts: float,
 ) -> tuple[list[dict], int, int, int]:
-    """Последовательная обработка (legacy режим)."""
+    """Process tasks sequentially."""
     stats = []
     total_processed = 0
     total_features = 0
@@ -296,22 +325,22 @@ async def _process_sequential(
     last_heartbeat_time = time.time()
     heartbeat_interval = 30
 
-    # Генерируем пары в нужном порядке
+    # Generate task pairs in the chosen order.
     order = getattr(args, "order", "symbol-first")
     task_pairs = _generate_task_pairs(symbols, timeframes, order)
-    logger.debug(f"Порядок обработки: {order}")
+    logger.debug(f"Processing order: {order}")
 
     with tqdm(
         total=total_tasks,
-        desc="🎯 Обработка features",
-        unit="задача",
+        desc="Processing features",
+        unit="task",
         ncols=100,
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
         disable=os.getenv("TQDM_DISABLE") == "1",
     ) as pbar:
         for symbol, timeframe in task_pairs:
             try:
-                pbar.set_description(f"🎯 {symbol} {timeframe}")
+                pbar.set_description(f"{symbol} {timeframe}")
 
                 tf_result = await _process_symbol_timeframe(
                     symbol, timeframe, feature_specs, args
@@ -324,9 +353,9 @@ async def _process_sequential(
 
                 pbar.set_postfix(
                     {
-                        "баров": tf_result["bars_in"],
-                        "индикаторов": tf_result["features_out"],
-                        "всего баров": total_processed,
+                        "bars": tf_result["bars_in"],
+                        "features": tf_result["features_out"],
+                        "total_bars": total_processed,
                     }
                 )
 
@@ -334,27 +363,30 @@ async def _process_sequential(
                 current_time = time.time()
                 if current_time - last_heartbeat_time >= heartbeat_interval:
                     elapsed = current_time - start_time_ts
-                    progress_pct = (tasks_completed / total_tasks * 100) if total_tasks > 0 else 0
+                    progress_pct = (
+                        (tasks_completed / total_tasks * 100) if total_tasks > 0 else 0
+                    )
                     rate = tasks_completed / elapsed if elapsed > 0 else 0
                     remaining_tasks = total_tasks - tasks_completed
                     eta_seconds = remaining_tasks / rate if rate > 0 else 0
 
                     logger.info(
-                        f"💓 ПРОГРЕСС: {tasks_completed}/{total_tasks} задач "
+                        f"Progress: {tasks_completed}/{total_tasks} tasks "
                         f"({progress_pct:.1f}%) | "
-                        f"Баров: {total_processed:,} | "
-                        f"Индикаторов: {total_features:,} | "
-                        f"Сохранено: {total_saved:,} | "
-                        f"Скорость: {rate:.2f} задач/сек | "
-                        f"Осталось: ~{eta_seconds/60:.1f} мин"
+                        f"bars={total_processed:,} | "
+                        f"features={total_features:,} | "
+                        f"saved={total_saved:,} | "
+                        f"rate={rate:.2f} tasks/s | "
+                        f"eta=~{eta_seconds/60:.1f} min"
                     )
                     last_heartbeat_time = current_time
 
             except Exception as e:
                 import traceback
-                logger.error(f"❌ Ошибка при обработке {symbol} {timeframe}: {e}")
+
+                logger.error(f"Error while processing {symbol} {timeframe}: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
-                pbar.set_postfix({"ошибка": "да"})
+                pbar.set_postfix({"error": "yes"})
             finally:
                 pbar.update(1)
 
@@ -370,7 +402,7 @@ async def _process_parallel(
     total_tasks: int,
     start_time_ts: float,
 ) -> tuple[list[dict], int, int, int]:
-    """Параллельная обработка с Semaphore."""
+    """Process tasks in parallel with a semaphore limit."""
     import traceback
 
     stats = []
@@ -379,16 +411,16 @@ async def _process_parallel(
     total_saved = 0
     errors_count = 0
 
-    # Semaphore для ограничения параллельных задач
+    # Use a semaphore to cap concurrent tasks.
     semaphore = asyncio.Semaphore(parallel_workers)
 
     async def process_with_limit(symbol: str, tf: str) -> dict:
-        """Обработка одной пары с ограничением через Semaphore."""
+        """Process one pair under the semaphore limit."""
         async with semaphore:
             try:
                 return await _process_symbol_timeframe(symbol, tf, feature_specs, args)
             except Exception as e:
-                logger.error(f"❌ Ошибка {symbol} {tf}: {e}")
+                logger.error(f"Error while processing {symbol} {tf}: {e}")
                 logger.debug(f"Traceback: {traceback.format_exc()}")
                 return {
                     "symbol": symbol,
@@ -399,26 +431,26 @@ async def _process_parallel(
                     "error": str(e),
                 }
 
-    # Генерируем пары в нужном порядке
+    # Generate tasks in the requested order.
     order = getattr(args, "order", "symbol-first")
     task_pairs = _generate_task_pairs(symbols, timeframes, order)
-    logger.debug(f"Порядок обработки: {order}")
+    logger.debug(f"Processing order: {order}")
 
-    # Создаём все задачи
+    # Create all coroutine tasks.
     tasks = [process_with_limit(s, tf) for s, tf in task_pairs]
 
-    logger.info(f"🔄 Запуск {len(tasks)} задач с параллелизмом {parallel_workers}")
+    logger.info(f"Launching {len(tasks)} tasks with parallelism={parallel_workers}")
 
-    # Прогресс-бар для параллельной обработки
+    # Progress bar for parallel execution.
     with tqdm(
         total=total_tasks,
-        desc=f"🎯 Обработка features (×{parallel_workers})",
-        unit="задача",
+        desc=f"Processing features (x{parallel_workers})",
+        unit="task",
         ncols=100,
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
         disable=os.getenv("TQDM_DISABLE") == "1",
     ) as pbar:
-        # Используем as_completed для обновления прогресса по мере завершения
+        # Update progress as tasks complete.
         for coro in asyncio.as_completed(tasks):
             result = await coro
 
@@ -433,67 +465,66 @@ async def _process_parallel(
             pbar.update(1)
             pbar.set_postfix(
                 {
-                    "баров": total_processed,
-                    "ошибок": errors_count,
+                    "bars": total_processed,
+                    "errors": errors_count,
                 }
             )
 
     if errors_count > 0:
-        logger.warning(f"⚠️ Завершено с {errors_count} ошибками")
+        logger.warning(f"Completed with {errors_count} error(s)")
 
     return stats, total_processed, total_features, total_saved
 
 
 async def _show_plan(args):
-    """Показать план выполнения без выполнения."""
+    """Show the execution plan without running calculations."""
     symbols = await _get_symbols_to_process(args.symbols)
     feature_specs = _get_feature_specs(args.specs)
 
-    logger.info("🔍 ПЛАН ЭТАПА FEATURES (dry-run):")
-    logger.info(f"📈 Символы: {len(symbols)}")
-    logger.info(f"⏰ Таймфреймы: {args.timeframes}")
-    logger.info(f"🎯 Индикаторы: {len(feature_specs)}")
-    logger.info(f"📊 Лимит баров: {args.limit}")
-    logger.info(f"🔧 Нормировка: {'Включена' if args.normalize else 'Отключена'}")
+    logger.info("FEATURES stage plan (dry-run):")
+    logger.info(f"Symbols: {len(symbols)}")
+    logger.info(f"Timeframes: {args.timeframes}")
+    logger.info(f"Indicators: {len(feature_specs)}")
+    logger.info(f"Bar limit: {args.limit}")
+    logger.info(f"Normalization: {'enabled' if args.normalize else 'disabled'}")
 
     if symbols:
         logger.info(
-            f"📋 Символы: {', '.join(symbols[:5])}{'...' if len(symbols) > 5 else ''}"
+            f"Symbol sample: {', '.join(symbols[:5])}{'...' if len(symbols) > 5 else ''}"
         )
     if feature_specs:
         spec_names = [spec.name for spec in feature_specs[:5]]
         logger.info(
-            f"🎯 Индикаторы: {', '.join(spec_names)}{'...' if len(feature_specs) > 5 else ''}"
+            f"Indicator sample: {', '.join(spec_names)}{'...' if len(feature_specs) > 5 else ''}"
         )
 
 
 async def _get_symbols_to_process(requested_symbols: list[str] | None) -> list[str]:
-    """Получить список символов для обработки."""
+    """Resolve the symbol list to process."""
     logger.debug(
-        f"🔍 _get_symbols_to_process вызвана с: {requested_symbols} (тип: {type(requested_symbols)})"
+        f"_get_symbols_to_process called with: {requested_symbols} (type: {type(requested_symbols)})"
     )
 
-    # Фильтруем None, "None", "null", пустые строки
+    # Filter out None, "None", "null", and empty values.
     if requested_symbols:
-        logger.debug(f"🔍 Фильтрация {len(requested_symbols)} символов...")
+        logger.debug(f"Filtering {len(requested_symbols)} requested symbols")
         filtered = [
             s
             for s in requested_symbols
             if s and s.strip().lower() not in ("none", "null", "")
         ]
-        logger.debug(f"🔍 После фильтрации осталось {len(filtered)} символов")
+        logger.debug(f"Remaining symbols after filtering: {len(filtered)}")
         if filtered:
-            logger.info(f"📈 Используются указанные символы: {filtered}")
+            logger.info(f"Using explicitly requested symbols: {filtered}")
             return filtered
-        # Если все символы были отфильтрованы, обрабатываем все
         logger.info(
-            "📈 Все указанные символы были None/null/пустые, обрабатываем все символы из БД"
+            "All requested symbols were empty or null-like, falling back to the database list"
         )
     else:
-        logger.debug("🔍 requested_symbols пустой или None, обрабатываем все символы")
+        logger.debug("requested_symbols is empty or None, loading all symbols")
 
-    # Получаем все символы из базы данных (таблица swap_ohlcv_p)
-    logger.debug("🔍 Запрос всех символов из swap_ohlcv_p...")
+    # Load all symbols from swap_ohlcv_p.
+    logger.debug("Loading all symbols from swap_ohlcv_p")
     async with get_db_session() as session:
         query = text(
             """
@@ -506,55 +537,54 @@ async def _get_symbols_to_process(requested_symbols: list[str] | None) -> list[s
         result = await session.execute(query)
         symbols = [row[0] for row in result.fetchall()]
 
-        logger.info(f"📈 Найдено {len(symbols)} символов в таблице swap_ohlcv_p")
+        logger.info(f"Found {len(symbols)} symbols in swap_ohlcv_p")
         if symbols:
-            logger.debug(f"📈 Примеры символов: {symbols[:5]}...")
+            logger.debug(f"Symbol sample: {symbols[:5]}...")
         return symbols
 
 
 def _get_feature_specs(requested_specs: list[str] | None) -> list:
-    """Получить спецификации индикаторов для расчёта."""
+    """Resolve feature specs for the current run."""
     if requested_specs:
-        # Фильтруем только запрошенные индикаторы
+        # Filter down to the requested indicators only.
         specs = []
         for spec_name in requested_specs:
             if spec_name in FEATURE_SPECS:
                 specs.append(FEATURE_SPECS[spec_name])
             else:
-                logger.warning(f"⚠️ Неизвестный индикатор: {spec_name}")
+                logger.warning(f"Unknown indicator requested: {spec_name}")
         return specs
 
-    # Возвращаем все доступные индикаторы
+    # Return the full indicator set by default.
     return list(FEATURE_SPECS.values())
 
 
 async def _refill_null_indicators(
     symbol: str, timeframe: str, null_indicators: list[str]
 ) -> None:
-    """Пересчитать записи с NULL для указанных индикаторов."""
+    """Recalculate records with NULL values for the selected indicators."""
     logger.info(
-        f"🔄 Пересчёт NULL значений для {symbol} {timeframe}: {null_indicators}"
+        f"Refilling NULL indicators for {symbol} {timeframe}: {null_indicators}"
     )
 
-    # Валидация имён индикаторов (защита от SQL injection)
+    # Validate indicator names to avoid SQL injection.
     from src.models import Indicator
 
     valid_columns = {col.name for col in Indicator.__table__.columns}
     invalid_inds = [ind for ind in null_indicators if ind not in valid_columns]
     if invalid_inds:
-        logger.error(f"❌ Некорректные индикаторы (не в схеме): {invalid_inds}")
+        logger.error(f"Invalid indicators not present in schema: {invalid_inds}")
         return
 
     async with get_db_session() as session:
-        # Находим записи с NULL для указанных индикаторов
-        # Используем параметризованный запрос с безопасной конкатенацией условий
+        # Find rows with NULL values for the requested indicators.
         conditions_parts = []
         for ind in null_indicators:
             if ind in valid_columns:
                 conditions_parts.append(f"i.{ind} IS NULL")
 
         if not conditions_parts:
-            logger.warning("⚠️ Нет валидных условий для поиска NULL")
+            logger.warning("No valid conditions were generated for NULL lookup")
             return
 
         null_conditions = " OR ".join(conditions_parts)
@@ -578,14 +608,14 @@ async def _refill_null_indicators(
         null_timestamps = [row[0] for row in result.fetchall()]
 
         if not null_timestamps:
-            logger.info(f"✅ Нет записей с NULL для {null_indicators}")
+            logger.info(f"No rows with NULL values found for {null_indicators}")
             return
 
-        logger.info(f"📊 Найдено {len(null_timestamps)} записей с NULL")
+        logger.info(f"Found {len(null_timestamps)} rows with NULL values")
 
-        # Получаем OHLCV данные для этих timestamp'ов с окном для расчёта индикаторов
-        max_window = 100  # Максимальное окно для индикаторов
-        min_ts = min(null_timestamps) - max_window * 60 * 1000  # Миллисекунды
+        # Load OHLCV data around the affected timestamps with a calculation window.
+        max_window = 100  # Maximum indicator window.
+        min_ts = min(null_timestamps) - max_window * 60 * 1000  # Milliseconds.
         max_ts = max(null_timestamps) + 60 * 1000
 
         ohlcv_query = text(
@@ -618,19 +648,19 @@ async def _refill_null_indicators(
         ohlcv_rows = ohlcv_result.fetchall()
 
         if not ohlcv_rows:
-            logger.warning("⚠️ Нет OHLCV данных для пересчёта")
+            logger.warning("No OHLCV data found for refill")
             return
 
-        # Преобразуем в DataFrame
+        # Convert to DataFrame.
         df_ohlcv = pd.DataFrame(
             ohlcv_rows,
             columns=["timestamp", "open", "high", "low", "close", "volume", "ts"],
         )
         df_ohlcv["ts"] = df_ohlcv["timestamp"] / 1000
 
-        logger.info(f"📊 Загружено {len(df_ohlcv)} OHLCV записей")
+        logger.info(f"Loaded {len(df_ohlcv)} OHLCV rows for refill")
 
-        # Рассчитываем только указанные индикаторы
+        # Calculate only the requested indicators.
         from src.features.specs import FEATURE_SPECS
 
         refill_specs = [
@@ -638,7 +668,7 @@ async def _refill_null_indicators(
         ]
 
         if not refill_specs:
-            logger.warning(f"⚠️ Некорректные индикаторы: {null_indicators}")
+            logger.warning(f"Requested indicators are not available: {null_indicators}")
             return
 
         from src.features import compute_features
@@ -647,20 +677,19 @@ async def _refill_null_indicators(
             df_ohlcv, specs=refill_specs, volatility_normalize=False
         )
 
-        # Обновляем только записи с NULL
+        # Update only rows that currently contain NULL values.
         updated_count = 0
         for ind in null_indicators:
             if ind not in valid_columns:
                 continue
             if ind not in features_df.columns:
-                logger.warning(f"⚠️ Индикатор {ind} не рассчитан")
+                logger.warning(f"Indicator {ind} was not calculated")
                 continue
 
-            # Формируем UPDATE для записей с NULL (используем безопасный способ)
-            # Создаём словарь для batch update
+            # Build UPDATE statements for rows with NULL values.
             updates_dict = {}
             for ts in null_timestamps:
-                # Находим индекс в features_df через совпадение timestamp
+                # Find the features row by timestamp match.
                 matching_rows = df_ohlcv[df_ohlcv["timestamp"] == ts]
                 if len(matching_rows) == 0:
                     continue
@@ -675,10 +704,10 @@ async def _refill_null_indicators(
 
                 updates_dict[ts] = float(value)
 
-            # Batch update через execute_values или по одному
+            # Execute updates one row at a time.
             if updates_dict:
                 for ts, val in updates_dict.items():
-                    # Используем безопасное имя колонки (уже валидировано)
+                    # Column name is safe because it was validated above.
                     update_query = text(
                         f"""
                         UPDATE indicators
@@ -701,16 +730,16 @@ async def _refill_null_indicators(
                     updated_count += 1
 
         await session.commit()
-        logger.info(f"✅ Обновлено {updated_count} записей")
+        logger.info(f"Updated {updated_count} records")
 
 
 async def _process_symbol_timeframe(
     symbol: str, timeframe: str, feature_specs: list, args
 ) -> dict:
-    """Обработать один символ и таймфрейм."""
-    logger.info(f"🔄 Обработка {symbol} {timeframe}")
+    """Process one symbol/timeframe pair."""
+    logger.info(f"Processing {symbol} {timeframe}")
 
-    # Обработка --refill-null: пересчёт записей с NULL для указанных индикаторов
+    # Handle --refill-null by recalculating records with NULL values.
     if args.refill_null:
         await _refill_null_indicators(symbol, timeframe, args.refill_null)
         return {
@@ -721,12 +750,14 @@ async def _process_symbol_timeframe(
             "saved": 0,
         }
 
-    # Получаем OHLCV данные
+    # Load OHLCV data.
     repair_mode = getattr(args, "repair", False)
-    logger.debug(f"Запрос данных для {symbol} {timeframe} (repair={repair_mode})")
-    df_ohlcv = await _get_ohlcv_data(symbol, timeframe, args.limit, repair_mode=repair_mode)
+    logger.debug(f"Requesting data for {symbol} {timeframe} (repair={repair_mode})")
+    df_ohlcv = await _get_ohlcv_data(
+        symbol, timeframe, args.limit, repair_mode=repair_mode
+    )
     if df_ohlcv is None:
-        logger.warning(f"⚠️ _get_ohlcv_data вернул None для {symbol} {timeframe}")
+        logger.warning(f"_get_ohlcv_data returned None for {symbol} {timeframe}")
         return {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -735,7 +766,7 @@ async def _process_symbol_timeframe(
             "saved": 0,
         }
     if len(df_ohlcv) == 0:
-        logger.warning(f"⚠️ DataFrame пустой для {symbol} {timeframe}")
+        logger.warning(f"OHLCV DataFrame is empty for {symbol} {timeframe}")
         return {
             "symbol": symbol,
             "timeframe": timeframe,
@@ -743,9 +774,9 @@ async def _process_symbol_timeframe(
             "features_out": 0,
             "saved": 0,
         }
-    logger.info(f"✅ Получено {len(df_ohlcv)} баров для {symbol} {timeframe}")
+    logger.info(f"Loaded {len(df_ohlcv)} bars for {symbol} {timeframe}")
 
-    # Диагностика входных данных: проверим заполненность OHLCV перед расчётом
+    # Input diagnostics: inspect OHLCV completeness before calculation.
     try:
         ohlcv_cols = [
             c
@@ -753,15 +784,15 @@ async def _process_symbol_timeframe(
             if c in df_ohlcv.columns
         ]
         non_nulls = df_ohlcv[ohlcv_cols].notna().sum().to_dict()
-        logger.info(f"🔍 OHLCV non-null before compute: {non_nulls}")
+        logger.info(f"DEBUG OHLCV non-null before compute: {non_nulls}")
         head_preview = df_ohlcv[ohlcv_cols].head(3).to_dict(orient="records")
         tail_preview = df_ohlcv[ohlcv_cols].tail(3).to_dict(orient="records")
-        logger.info(f"🔍 OHLCV head(3): {head_preview}")
-        logger.info(f"🔍 OHLCV tail(3): {tail_preview}")
+        logger.info(f"DEBUG OHLCV head(3): {head_preview}")
+        logger.info(f"DEBUG OHLCV tail(3): {tail_preview}")
     except Exception:
         pass
 
-    # Рассчитываем индикаторы
+    # Calculate indicators.
     features_df = compute_features(
         df_ohlcv,
         specs=feature_specs,
@@ -769,16 +800,16 @@ async def _process_symbol_timeframe(
         normalize_window=args.normalize_window,
     )
 
-    # Диагностика результата расчёта по ключевым фичам
+    # Diagnostic checks for the calculated result.
     try:
-        # dtypes входного df
+        # Input DataFrame dtypes.
         try:
             dtypes_str = {c: str(t) for c, t in df_ohlcv.dtypes.items()}
-            logger.info(f"🔍 OHLCV dtypes: {dtypes_str}")
+            logger.info(f"DEBUG OHLCV dtypes: {dtypes_str}")
         except Exception:
             pass
 
-        # ручной hlc3 для сравнения
+        # Manual hlc3 for comparison.
         try:
             manual_hlc3 = (
                 df_ohlcv["high"].astype(float)
@@ -786,33 +817,33 @@ async def _process_symbol_timeframe(
                 + df_ohlcv["close"].astype(float)
             ) / 3.0
             logger.info(
-                f"🔍 manual hlc3 non-null: {int(manual_hlc3.notna().sum())}/{len(manual_hlc3)}"
+                f"DEBUG manual hlc3 non-null: {int(manual_hlc3.notna().sum())}/{len(manual_hlc3)}"
             )
-            logger.info(f"🔍 manual hlc3 head(2): {manual_hlc3.head(2).tolist()}")
+            logger.info(f"DEBUG manual hlc3 head(2): {manual_hlc3.head(2).tolist()}")
         except Exception as e:
-            logger.info(f"🔍 manual hlc3 calc error: {e}")
+            logger.info(f"DEBUG manual hlc3 calc error: {e}")
 
-        # Список колонок и их заполненность
+        # Column list and fill-rate overview.
         all_cols = [
             c
             for c in features_df.columns
             if c not in ["open", "high", "low", "close", "volume", "timestamp", "ts"]
         ]
-        logger.info(f"🔍 FEATURES columns: {len(all_cols)} cols")
+        logger.info(f"DEBUG FEATURES columns: {len(all_cols)} cols")
         if all_cols:
             non_null_pct = features_df[all_cols].notna().mean().sort_values()
             worst = non_null_pct.head(min(10, len(non_null_pct)))
             best = non_null_pct.tail(min(10, len(non_null_pct)))
             logger.info(
-                "🔍 FEATURES worst fill: "
+                "DEBUG FEATURES worst fill: "
                 + ", ".join([f"{k}:{v*100:.0f}%" for k, v in worst.items()])
             )
             logger.info(
-                "🔍 FEATURES best fill:  "
+                "DEBUG FEATURES best fill: "
                 + ", ".join([f"{k}:{v*100:.0f}%" for k, v in best.items()])
             )
 
-        # Пробы по ключевым
+        # Probe key indicators.
         probe_cols = [
             c
             for c in [
@@ -830,37 +861,36 @@ async def _process_symbol_timeframe(
         ]
         if probe_cols:
             counts = features_df[probe_cols].notna().sum().to_dict()
-            logger.info(f"🔍 FEATURES non-null after compute: {counts}")
+            logger.info(f"DEBUG FEATURES non-null after compute: {counts}")
             logger.info(
-                f"🔍 FEATURES head(2) {probe_cols}: "
+                f"DEBUG FEATURES head(2) {probe_cols}: "
                 f"{features_df[probe_cols].head(2).to_dict(orient='records')}"
             )
 
-        # Какие спеки отсутствуют в колонках
+        # Identify missing expected specs.
         try:
             from src.features.specs import FEATURE_SPECS
 
             expected = set(FEATURE_SPECS.keys())
             present = set(all_cols)
             missing = sorted(expected - present)[:20]
-            logger.info(f"🔍 FEATURES missing first20: {missing}")
+            logger.info(f"DEBUG FEATURES missing first20: {missing}")
         except Exception:
             pass
     except Exception:
         pass
 
-    # Детальная статистика по группам индикаторов
+    # Detailed statistics by indicator group.
     _log_feature_groups_progress(symbol, timeframe, features_df, feature_specs)
 
-    # Сохраняем результаты в базу данных
-    # Сохраняем результаты батч-UPSERT-ом через инфраструктуру
+    # Save results through the batch UPSERT path.
     try:
         async with get_db_session() as session:
-            # Формируем компактный DataFrame для вставки: ts + индикаторы (исключая OHLCV/временные колонки)
+            # Keep only ts and indicator columns, excluding OHLCV/time columns.
             cols_exclude = {"open", "high", "low", "close", "volume", "timestamp"}
             keep_cols = [c for c in features_df.columns if c not in cols_exclude]
             ind_df = features_df[keep_cols].copy()
-            # Гарантируем наличие ts в секундах
+            # Ensure ts exists in seconds.
             if "ts" not in ind_df.columns and "timestamp" in features_df.columns:
                 ind_df["ts"] = (
                     features_df["timestamp"].astype("int64") // 1000
@@ -869,15 +899,15 @@ async def _process_symbol_timeframe(
                 session, ind_df, symbol, timeframe
             )
     except Exception as e:
-        logger.error(f"❌ Ошибка при сохранении батч-UPSERT: {e}")
-        # FIXED: Пробрасываем ошибку, чтобы DAG падал при сбое вставки
-        # Не маскируем проблему под saved_count = 0
+        logger.error(f"Batch UPSERT failed: {e}")
+        # Propagate the error so the DAG fails instead of hiding the insert problem.
         raise RuntimeError(
             f"Failed to save indicators for {symbol} {timeframe}: {e}"
         ) from e
 
     logger.info(
-        f"✅ {symbol} {timeframe}: {len(df_ohlcv)} баров, {len(feature_specs)} индикаторов, {saved_count} сохранено"
+        f"{symbol} {timeframe}: {len(df_ohlcv)} bars, "
+        f"{len(feature_specs)} indicators, {saved_count} rows saved"
     )
 
     return {
@@ -892,9 +922,9 @@ async def _process_symbol_timeframe(
 def _log_feature_groups_progress(
     symbol: str, timeframe: str, features_df, feature_specs: list
 ):
-    """Логирует прогресс расчета по группам индикаторов."""
+    """Log calculation progress by indicator group."""
 
-    # Группируем индикаторы по типам
+    # Group indicators by type.
     feature_groups = {}
     for spec in feature_specs:
         group_type = spec.type
@@ -902,7 +932,7 @@ def _log_feature_groups_progress(
             feature_groups[group_type] = []
         feature_groups[group_type].append(spec.name)
 
-    # Проверяем заполненность по группам
+    # Check fill rates within each group.
     for group_type, feature_names in feature_groups.items():
         group_name = group_type.upper()
         total_features = len(feature_names)
@@ -916,7 +946,7 @@ def _log_feature_groups_progress(
                 if non_null_count > 0:
                     non_null_features += 1
 
-        # Вычисляем проценты
+        # Compute calculation and fill percentages.
         calc_pct = (
             (calculated_features / total_features * 100) if total_features > 0 else 0
         )
@@ -924,12 +954,14 @@ def _log_feature_groups_progress(
             (non_null_features / total_features * 100) if total_features > 0 else 0
         )
 
-        # Логируем результат группы
+        # Log one summary line per group.
         logger.info(
-            f"📊 {symbol} {timeframe} {group_name}: {calc_pct:.0f}% рассчитано ({calculated_features}/{total_features}), {fill_pct:.0f}% заполнено ({non_null_features}/{total_features})"
+            f"{symbol} {timeframe} {group_name}: "
+            f"{calc_pct:.0f}% calculated ({calculated_features}/{total_features}), "
+            f"{fill_pct:.0f}% filled ({non_null_features}/{total_features})"
         )
 
-        # Детальная информация для ключевых групп
+        # Emit detailed feature-level stats for key groups in verbose mode.
         if (
             group_type in ["oscillator", "trend", "volatility"]
             and os.getenv("FEATURES_VERBOSE", "false").lower() == "true"
@@ -942,43 +974,42 @@ def _log_feature_groups_progress(
                         (non_null_count / total_rows * 100) if total_rows > 0 else 0
                     )
                     logger.info(
-                        f"  🔍 {feature_name}: {non_null_count}/{total_rows} ({fill_pct:.1f}%)"
+                        f"  {feature_name}: {non_null_count}/{total_rows} ({fill_pct:.1f}%)"
                     )
 
 
 async def _get_ohlcv_data(
     symbol: str, timeframe: str, limit: int | None, *, repair_mode: bool = False
 ) -> pd.DataFrame | None:
-    """Получить OHLCV данные из базы данных.
+    """Load OHLCV data for feature calculation.
 
-    Режимы работы:
-    - Инкрементный (по умолчанию): загружает данные с max_ts - warmup_offset
-    - Repair (--repair): загружает последние 24 часа для восстановления
+    Modes:
+    - Incremental mode (default): loads data from max_ts - warmup_offset
+    - Repair mode (--repair): loads the last 24 hours
 
     Args:
-        symbol: Торговая пара
-        timeframe: Таймфрейм
-        limit: Лимит записей (None = без лимита)
-        repair_mode: Если True, загружает последние 24 часа
+        symbol: Trading symbol
+        timeframe: Requested timeframe
+        limit: Row limit (None = no limit)
+        repair_mode: If True, load the last 24 hours
 
     Returns:
-        DataFrame с OHLCV данными или None
+        OHLCV DataFrame or None if no data is available
     """
     from src.features.domain.strategy import get_max_lookback_for_strategies
     from src.features.specs import FEATURE_SPECS
     from src.features.utils.time_utils import timeframe_to_ms
 
     async with get_db_session() as session:
-        # Определяем фильтр по времени в зависимости от режима
+        # Build the time filter according to the selected mode.
         if repair_mode:
-            # Repair режим: последние 24 часа
+            # Repair mode: last 24 hours.
             time_filter = """
                 AND timestamp >= EXTRACT(EPOCH FROM NOW() - INTERVAL '1 day') * 1000
             """
-            mode_desc = "repair (24 часа)"
+            mode_desc = "repair (24h)"
         else:
-            # Инкрементный режим: с max_ts - warmup_offset
-            # Получаем max_ts из таблицы indicators
+            # Incremental mode: start from max_ts - warmup_offset.
             max_ts_query = text(
                 """
                 SELECT MAX(timestamp) as max_ts
@@ -992,27 +1023,29 @@ async def _get_ohlcv_data(
             max_ts_ms = max_ts_result.scalar() or 0
 
             if max_ts_ms == 0:
-                # Первый запуск: загружаем последние 24 часа
+                # First run: load the last 24 hours.
                 time_filter = """
                     AND timestamp >= EXTRACT(EPOCH FROM NOW() - INTERVAL '1 day') * 1000
                 """
-                mode_desc = "первый запуск (24 часа)"
+                mode_desc = "first run (24h)"
             else:
-                # Рассчитываем warmup offset
+                # Calculate the warmup offset from max lookback.
                 available_specs = list(FEATURE_SPECS.keys())
                 max_lookback = get_max_lookback_for_strategies(available_specs)
-                warmup_bars = int(max_lookback * 1.2)  # 20% буфер
+                warmup_bars = int(max_lookback * 1.2)  # 20% safety buffer
                 warmup_offset_ms = warmup_bars * timeframe_to_ms(timeframe)
                 since_ts_ms = max(0, max_ts_ms - warmup_offset_ms)
 
                 time_filter = f"""
                     AND timestamp >= {since_ts_ms}
                 """
-                mode_desc = f"инкремент (с {since_ts_ms}, warmup={warmup_bars} баров)"
+                mode_desc = (
+                    f"incremental (since={since_ts_ms}, warmup={warmup_bars} bars)"
+                )
 
-        logger.debug(f"Режим загрузки для {symbol} {timeframe}: {mode_desc}")
+        logger.debug(f"Load mode for {symbol} {timeframe}: {mode_desc}")
 
-        # Проверяем наличие данных
+        # Check data availability first.
         check_query = text(
             f"""
             SELECT COUNT(*) as cnt
@@ -1038,14 +1071,14 @@ async def _get_ohlcv_data(
             similar_result = await session.execute(similar_query, {"symbol": symbol})
             available_tfs = [row[0] for row in similar_result.fetchall()]
             logger.warning(
-                f"Нет данных для {symbol} {timeframe} ({mode_desc}). "
-                f"Доступные ТФ: {', '.join(available_tfs)}"
+                f"No data found for {symbol} {timeframe} ({mode_desc}). "
+                f"Available timeframes: {', '.join(available_tfs)}"
             )
             return None
 
-        logger.debug(f"Найдено {count} записей для {symbol} {timeframe} ({mode_desc})")
+        logger.debug(f"Found {count} rows for {symbol} {timeframe} ({mode_desc})")
 
-        # Загружаем данные
+        # Load OHLCV rows.
         if limit is not None:
             query = text(
                 f"""
@@ -1075,12 +1108,11 @@ async def _get_ohlcv_data(
 
         if not rows:
             logger.warning(
-                f"Запрос вернул 0 строк для {symbol} {timeframe}, "
-                f"хотя COUNT показал {count}"
+                f"Query returned 0 rows for {symbol} {timeframe}, although COUNT returned {count}"
             )
             return None
 
-        # Преобразуем в DataFrame
+        # Convert rows to DataFrame in chronological order.
         return pd.DataFrame(
             [
                 {
@@ -1091,7 +1123,7 @@ async def _get_ohlcv_data(
                     "volume": float(row.volume),
                     "timestamp": row.timestamp,
                 }
-                for row in reversed(rows)  # Восстанавливаем хронологический порядок
+                for row in reversed(rows)
             ]
         )
 
@@ -1104,25 +1136,25 @@ async def _save_features_to_db(
     feature_specs: list,
     args,
 ) -> int:
-    """Сохранить результаты features в базу данных."""
+    """Save calculated features to the database."""
     try:
-        # Генерируем run_id и params_hash
+        # Generate run_id and params_hash.
         run_id = str(uuid.uuid4())
         params_hash = _generate_params_hash(feature_specs, args)
 
-        # Подготавливаем данные для сохранения
+        # Prepare rows for persistence.
         saved_count = 0
         logger.info(
-            f"💾 Начинаем сохранение в таблицу indicators: {symbol} {timeframe}, баров: {len(df_ohlcv)}"
+            f"Starting save to indicators for {symbol} {timeframe}, bars={len(df_ohlcv)}"
         )
 
-        # 🔍 DEBUG: Детальная диагностика features_df
-        logger.info(f"🔍 DEBUG features_df shape: {features_df.shape}")
+        # DEBUG: detailed features_df diagnostics.
+        logger.info(f"DEBUG features_df shape: {features_df.shape}")
         logger.info(
-            f"🔍 DEBUG features_df columns (first 20): {list(features_df.columns[:20])}"
+            f"DEBUG features_df columns (first 20): {list(features_df.columns[:20])}"
         )
 
-        # Проверяем ключевые индикаторы
+        # Check key indicators before saving.
         key_indicators = [
             "ema_8",
             "ema_12",
@@ -1137,38 +1169,38 @@ async def _save_features_to_db(
             if indicator in features_df.columns:
                 non_null_count = features_df[indicator].notna().sum()
                 logger.info(
-                    f"🔍 DEBUG {indicator}: {non_null_count}/{len(features_df)} non-null values"
+                    f"DEBUG {indicator}: {non_null_count}/{len(features_df)} non-null values"
                 )
                 if non_null_count > 0:
                     sample_values = features_df[indicator].dropna().head(3).tolist()
-                    logger.info(f"🔍 DEBUG {indicator} sample values: {sample_values}")
+                    logger.info(f"DEBUG {indicator} sample values: {sample_values}")
             else:
-                logger.warning(f"🔍 DEBUG {indicator} NOT FOUND in features_df columns")
+                logger.warning(f"DEBUG {indicator} not found in features_df columns")
 
-        # Проверяем первые несколько строк features_df
+        # Inspect the first row of features_df when available.
         if len(features_df) > 0:
             logger.info(
-                f"🔍 DEBUG features_df first row (first 10 columns): {features_df.iloc[0].head(10).to_dict()}"
+                f"DEBUG features_df first row (first 10 columns): {features_df.iloc[0].head(10).to_dict()}"
             )
 
         async with get_db_session() as session:
-            # Создаем прогресс-бар для сохранения данных
+            # Create a progress bar for row-by-row saving.
             with tqdm(
                 total=len(df_ohlcv),
-                desc=f"💾 Сохранение {symbol} {timeframe}",
-                unit="бар",
+                desc=f"Saving {symbol} {timeframe}",
+                unit="row",
                 leave=False,
                 ncols=80,
             ) as save_pbar:
                 for i, (_, ohlcv_row) in enumerate(df_ohlcv.iterrows()):
-                    # Получаем соответствующие features
+                    # Get the matching features row.
                     if i < len(features_df):
                         features_row = features_df.iloc[i]
                         features_dict = features_row.to_dict()
                     else:
                         features_dict = {}
 
-                    # Очищаем NaN значения из features и исключаем OHLCV данные
+                    # Remove OHLCV columns and normalize NaN values.
                     cleaned_features = {}
                     ohlcv_columns = {
                         "open",
@@ -1181,21 +1213,21 @@ async def _save_features_to_db(
                     }
 
                     for k, v in features_dict.items():
-                        # Пропускаем OHLCV колонки - они есть в swap_ohlcv_p
+                        # Skip OHLCV columns because they already exist in swap_ohlcv_p.
                         if k in ohlcv_columns:
                             continue
 
-                        # Сохраняем все значения, включая NaN
+                        # Preserve all values, including NaN -> None.
                         try:
                             if pd.notna(v):
                                 cleaned_features[k] = float(v)
                             else:
-                                # NaN значения сохраняем как None (станут NULL в базе)
+                                # NaN values are stored as None and become NULL in the DB.
                                 cleaned_features[k] = None
                         except (ValueError, TypeError):
                             cleaned_features[k] = None
 
-                    # Анализируем качество данных
+                    # Derive simple data quality metadata.
                     nan_count = sum(1 for v in cleaned_features.values() if v is None)
                     valid_rate = (
                         1.0 - (nan_count / len(cleaned_features))
@@ -1204,8 +1236,7 @@ async def _save_features_to_db(
                     )
                     data_quality_status = "good" if valid_rate >= 0.8 else "poor"
 
-                    # Подготавливаем данные для вставки в единую таблицу indicators
-                    # OHLCV данные больше не сохраняем - они есть в swap_ohlcv_p
+                    # Build the row for the indicators table.
                     insert_data = {
                         "run_id": run_id,
                         "symbol": symbol,
@@ -1219,9 +1250,9 @@ async def _save_features_to_db(
                         "algo_version": "2.0.0",
                     }
 
-                    # DEBUG: Проверяем cleaned_features
+                    # DEBUG: inspect cleaned feature keys.
                     logger.debug(
-                        f"🔍 DEBUG: cleaned_features keys: {list(cleaned_features.keys())}"
+                        f"DEBUG cleaned_features keys: {list(cleaned_features.keys())}"
                     )
                     stage_a_in_cleaned = [
                         f
@@ -1243,16 +1274,15 @@ async def _save_features_to_db(
                     ]
                     if stage_a_in_cleaned:
                         logger.info(
-                            f"🔍 DEBUG: Stage A in cleaned_features: {stage_a_in_cleaned}"
+                            f"DEBUG Stage A in cleaned_features: {stage_a_in_cleaned}"
                         )
 
-                    # Добавляем все индикаторы из cleaned_features с правильными именами колонок
+                    # Add all calculated indicators to the insert payload.
                     for indicator_name, value in cleaned_features.items():
-                        # Пропускаем служебные колонки, которые не должны попадать в таблицу
+                        # Skip service columns.
                         if indicator_name in ["ts", "timestamp"]:
                             continue
-                        # Сохраняем все индикаторы (включая None значения, которые станут NULL в базе)
-                        # Полный маппинг имен индикаторов на имена колонок в таблице
+                        # Full mapping from feature names to DB column names.
                         column_mapping = {
                             "aberration": "aberration",
                             "accbands_lower": "accbands_lower",
@@ -1442,7 +1472,7 @@ async def _save_features_to_db(
                         }
 
                         column_name = column_mapping.get(indicator_name, indicator_name)
-                        # DEBUG: Логируем Stage A фичи
+                        # DEBUG: log Stage A features explicitly.
                         if indicator_name in [
                             "stochrsi_k",
                             "stochrsi_d",
@@ -1458,16 +1488,16 @@ async def _save_features_to_db(
                             "drawdown",
                         ]:
                             logger.info(
-                                f"🔍 DEBUG: Saving Stage A feature {indicator_name} -> {column_name} = {value}"
+                                f"DEBUG saving Stage A feature {indicator_name} -> {column_name} = {value}"
                             )
-                        # Сохраняем все индикаторы, которые есть в features_df
+                        # Save every feature present in features_df.
                         insert_data[column_name] = value
 
-                    # Строим динамический INSERT запрос (имена колонок без пробелов)
+                    # Build the dynamic INSERT statement.
                     columns = list(insert_data.keys())
                     values = [f":{col}" for col in columns]
 
-                    # Строим динамический UPDATE для всех колонок кроме базовых
+                    # Build the dynamic UPDATE clause.
                     update_columns = []
                     for col in columns:
                         if col not in ["symbol", "timeframe", "timestamp"]:
@@ -1487,37 +1517,35 @@ async def _save_features_to_db(
                     """
                     )
 
-                    # DEBUG: Логируем SQL запрос и параметры
-                    if i < 3:  # Логируем только первые 3 записи
-                        logger.info(f"🔍 DEBUG SQL: {insert_query}")
+                    # DEBUG: log only the first few statements.
+                    if i < 3:
+                        logger.info(f"DEBUG SQL: {insert_query}")
+                        logger.info(f"DEBUG PARAMS: {list(insert_data.keys())[:10]}...")
                         logger.info(
-                            f"🔍 DEBUG PARAMS: {list(insert_data.keys())[:10]}..."
-                        )  # Первые 10 параметров
-                        logger.info(
-                            f"🔍 DEBUG VALUES: {list(insert_data.values())[:5]}..."
-                        )  # Первые 5 значений
+                            f"DEBUG VALUES: {list(insert_data.values())[:5]}..."
+                        )
 
                     await session.execute(insert_query, insert_data)
                     saved_count += 1
 
-                    # Обновляем прогресс-бар сохранения
+                    # Update save progress.
                     save_pbar.update(1)
-                    save_pbar.set_postfix({"сохранено": saved_count})
+                    save_pbar.set_postfix({"saved": saved_count})
 
                 await session.commit()
 
             logger.info(
-                f"📥 ДАННЫЕ ЗАГРУЖЕНЫ В ТАБЛИЦУ indicators: {symbol} {timeframe} | сохранено строк: {saved_count}"
+                f"Indicators saved for {symbol} {timeframe}: rows_saved={saved_count}"
             )
             return saved_count
 
     except Exception as e:
-        logger.error(f"❌ Ошибка при сохранении features для {symbol} {timeframe}: {e}")
+        logger.error(f"Failed to save features for {symbol} {timeframe}: {e}")
         return 0
 
 
 def _generate_params_hash(feature_specs: list, args) -> str:
-    """Генерировать хеш параметров для версионирования."""
+    """Generate a parameter hash for versioning."""
     params_str = json.dumps(
         [
             {"name": spec.name, "type": spec.type, "params": spec.params}
@@ -1532,7 +1560,7 @@ def _generate_params_hash(feature_specs: list, args) -> str:
 
 
 if __name__ == "__main__":
-    # Тестирование модуля
+    # Module smoke test.
     async def test():
         from argparse import Namespace
 

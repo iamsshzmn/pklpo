@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import MetaData, Table, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.features.observability.logging import (
+from src.logging import (
     LogCategory,
     Verbosity,
     get_category_logger,
@@ -41,7 +41,7 @@ async def check_unique_index(session: AsyncSession) -> None:
         result = await session.execute(index_query)
         indexes = [row[0] for row in result.all()]
 
-        # Проверяем наличие правильного индекса
+        #
         has_correct_index = any(
             "symbol" in idx and "timeframe" in idx and "timestamp" in idx
             for idx in indexes
@@ -123,26 +123,26 @@ async def reflect_indicators_table(session: AsyncSession) -> Table:
     """
     metadata = MetaData()
 
-    # Используем run_sync для выполнения синхронного reflection в async контексте
+    #  run_sync    reflection  async
     from sqlalchemy import inspect
 
     if session.bind is None:
         raise ValueError("Session bind is None, cannot reflect table")
 
-    # Получаем sync_engine через connection.run_sync
+    #  sync_engine  connection.run_sync
     def _reflect_table(sync_conn):
-        """Выполняет reflection синхронно в async контексте."""
+        """reflection   async ."""
         insp = inspect(sync_conn)
         columns = insp.get_columns("indicators", schema="public")
 
-        # Создаём таблицу с колонками
+        #
         table = Table(
             "indicators",
             metadata,
             schema="public",
         )
 
-        # Добавляем колонки вручную
+        #
         for col_info in columns:
             from sqlalchemy import Column
             from sqlalchemy.types import (
@@ -152,7 +152,7 @@ async def reflect_indicators_table(session: AsyncSession) -> Table:
                 String,
             )
 
-            # Определяем тип колонки
+            #
             col_type_str = str(col_info["type"]).upper()
             if "VARCHAR" in col_type_str:
                 col_type = String(col_info.get("length"))
@@ -194,7 +194,7 @@ async def reflect_indicators_table(session: AsyncSession) -> Table:
 
         return table
 
-    # Получаем connection и выполняем reflection через run_sync
+    #  connection   reflection  run_sync
     conn = await session.connection()
     indicators_table = await conn.run_sync(_reflect_table)
 

@@ -43,13 +43,10 @@ tests/
 
 ```python
 import pytest
-from src.features.container import Container, get_container, reset_container
+from src.features.container import Container, create_default_container
 
 class TestContainer:
     """Task 10: DIP-compliant DI Container."""
-
-    def setup_method(self):
-        reset_container()
 
     def test_register_singleton_callable(self):
         """Singleton с callable factory."""
@@ -128,16 +125,16 @@ class TestContainer:
         assert container.resolve("a") == 1
         assert container.resolve("b") == 2
 
-    def test_get_container_singleton(self):
-        """Глобальный контейнер - singleton."""
-        c1 = get_container()
-        c2 = get_container()
+    def test_create_default_container_returns_fresh_container(self):
+        """Фабрика возвращает новый контейнер."""
+        c1 = create_default_container()
+        c2 = create_default_container()
 
-        assert c1 is c2
+        assert c1 is not c2
 
     def test_default_dependencies_configured(self):
         """Дефолтные зависимости настроены."""
-        container = get_container()
+        container = create_default_container()
 
         assert container.has("logger")
         assert container.has("calculator")
@@ -677,7 +674,6 @@ from src.features.application.feature_service import (
     DefaultOHLCVValidator,
     DefaultFeatureNormalizer,
     create_feature_service,
-    get_default_service,
 )
 
 class TestDefaultOHLCVValidator:
@@ -813,11 +809,11 @@ class TestFactoryFunctions:
 
         assert service.validator is custom_validator
 
-    def test_get_default_service_singleton(self):
-        s1 = get_default_service()
-        s2 = get_default_service()
+    def test_create_feature_service_returns_fresh_instance(self):
+        s1 = create_feature_service()
+        s2 = create_feature_service()
 
-        assert s1 is s2
+        assert s1 is not s2
 ```
 
 **Команда запуска:**
@@ -1166,9 +1162,9 @@ class TestCalculationPipeline:
 
     def test_feature_service_integration(self, ohlcv_100_bars):
         """FeatureCalculationService end-to-end."""
-        from src.features.application.feature_service import get_default_service
+        from src.features.application.feature_service import create_feature_service
 
-        service = get_default_service()
+        service = create_feature_service()
         result = service.calculate(ohlcv_100_bars, specs=["rsi_14", "ema_21"])
 
         assert len(result) > 0
@@ -1201,18 +1197,15 @@ pytest tests/integration/test_calculation_pipeline.py -v -m integration
 
 ```python
 import pytest
-from src.features.container import get_container, reset_container
+from src.features.container import create_default_container
 
 @pytest.mark.integration
 class TestDIIntegration:
     """Интеграция DI контейнера с модулями."""
 
-    def setup_method(self):
-        reset_container()
-
     def test_resolve_calculator(self):
         """Resolve FeatureCalculationService."""
-        container = get_container()
+        container = create_default_container()
 
         calculator = container.resolve("calculator")
 
@@ -1221,7 +1214,7 @@ class TestDIIntegration:
 
     def test_resolve_validation_chain(self):
         """Resolve ValidationChain."""
-        container = get_container()
+        container = create_default_container()
 
         chain = container.resolve("validation_chain")
 
@@ -1230,7 +1223,7 @@ class TestDIIntegration:
 
     def test_resolve_alert_dispatcher(self):
         """Resolve AlertDispatcher."""
-        container = get_container()
+        container = create_default_container()
 
         dispatcher = container.resolve("alert_dispatcher")
 
@@ -1239,7 +1232,7 @@ class TestDIIntegration:
 
     def test_calculator_uses_injected_components(self):
         """Calculator использует компоненты из DI."""
-        container = get_container()
+        container = create_default_container()
         calculator = container.resolve("calculator")
 
         # Calculator должен работать
@@ -1284,7 +1277,7 @@ class TestImports:
     """Smoke тесты импорта модулей."""
 
     def test_import_container(self):
-        from src.features.container import Container, get_container
+        from src.features.container import Container, create_default_container
 
     def test_import_validation_chain(self):
         from src.features.validation.chain import (
@@ -1311,7 +1304,6 @@ class TestImports:
         from src.features.application.feature_service import (
             FeatureCalculationService,
             create_feature_service,
-            get_default_service,
         )
 
     def test_import_pipeline(self):

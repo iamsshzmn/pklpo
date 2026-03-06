@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from functools import wraps
 from typing import Any
 
-from .logging import get_features_logger
+from src.logging import get_features_logger
 
 logger = get_features_logger("features.error_handling")
 

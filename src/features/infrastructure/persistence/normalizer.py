@@ -45,16 +45,13 @@ def normalize_numeric_columns(ind_df: pd.DataFrame) -> pd.DataFrame:
             ind_df[numeric_cols].replace([np.inf, -np.inf], np.nan).astype("float64")
         )
 
-    # Обработка inf/NaN перед дальнейшей обработкой
     if len(ind_df) > 0:
         ind_df = ind_df.replace([np.inf, -np.inf], np.nan)
 
-    # Векторизованная обработка для больших батчей
     if len(ind_df) > 1000:
         logger.info(
             f"Large batch detected ({len(ind_df)} rows), using vectorized processing"
         )
-        # Заменяем inf на NaN для всех числовых колонок
         for col in numeric_cols:
             ind_df[col] = ind_df[col].replace([np.inf, -np.inf], np.nan)
 
@@ -74,29 +71,24 @@ def normalize_timestamp_column(ind_df: pd.DataFrame) -> pd.DataFrame:
     Raises:
         ValueError: If timestamp column is missing
     """
-    # 1) Нормализуем timestamp в миллисекундах на уровне DataFrame
-    if "timestamp" not in ind_df.columns:
-        if "ts" in ind_df.columns:
-            ts_s = ind_df["ts"]
-            ind_df["timestamp"] = np.where(
-                (ts_s.astype("int64") > 10**12),
-                ts_s.astype("int64"),
-                (ts_s.astype("int64") * 1000),
-            ).astype("int64")
-            logger.info("Created 'timestamp' column from 'ts' column")
-        else:
-            raise ValueError(
-                "Missing required 'ts' or 'timestamp' column before filtering"
-            )
-    else:
-        # Убеждаемся, что timestamp в миллисекундах
-        ts_s = ind_df["timestamp"]
-        ind_df["timestamp"] = np.where(
-            (ts_s.astype("int64") > 10**12),
-            ts_s.astype("int64"),
-            (ts_s.astype("int64") * 1000),
-        ).astype("int64")
+
+    def _normalize_epoch_series(ts_s: pd.Series) -> pd.Series:
+        ts_int = ts_s.astype("int64")
+        return pd.Series(
+            np.where(ts_int > 10**12, ts_int, ts_int * 1000).astype("int64"),
+            index=ts_s.index,
+        )
+
+    # `ts` is the canonical pipeline timestamp. If both columns are present,
+    # prefer it over a computed `timestamp` feature column.
+    if "ts" in ind_df.columns:
+        ind_df["timestamp"] = _normalize_epoch_series(ind_df["ts"])
+        logger.info("Created 'timestamp' column from canonical 'ts' column")
+    elif "timestamp" in ind_df.columns:
+        ind_df["timestamp"] = _normalize_epoch_series(ind_df["timestamp"])
         logger.info("Normalized existing 'timestamp' column to milliseconds")
+    else:
+        raise ValueError("Missing required 'ts' or 'timestamp' column before filtering")
 
     return ind_df
 
@@ -115,7 +107,6 @@ def add_service_fields(
     Returns:
         DataFrame with added service fields
     """
-    # Гарантируем служебные поля ДО фильтрации
     ind_df["symbol"] = symbol
     ind_df["timeframe"] = timeframe
     return ind_df
@@ -132,7 +123,6 @@ def filter_columns_by_schema(ind_df: pd.DataFrame, db_cols: set[str]) -> pd.Data
     Returns:
         Filtered DataFrame
     """
-    # Пересечение с актуальной схемой БД
     common_cols = [
         c
         for c in ind_df.columns

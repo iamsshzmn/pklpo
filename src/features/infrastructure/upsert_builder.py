@@ -1,8 +1,8 @@
 """
 UPSERT Builder Module
 
-Отвечает за построение SQLAlchemy UPSERT выражений с полной валидацией и диагностикой.
-Чистые функции без побочных эффектов для тестируемости и надёжности.
+   SQLAlchemy UPSERT      .
+        .
 """
 
 import math
@@ -16,24 +16,24 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.features.observability.logging import (
+from src.features.observability.prometheus import get_metrics as get_prom_metrics
+from src.logging import (
     LogAggregator,
     LogCategory,
     Verbosity,
     get_category_logger,
     should_log,
 )
-from src.features.observability.prometheus import get_metrics as get_prom_metrics
 
 logger = get_category_logger(LogCategory.INSERT)
 
-# Константа для размера батча
+#
 DEFAULT_MIN_BATCH_SIZE = 5
 DEFAULT_MAX_BATCH_SIZE = int(os.getenv("FEATURES_UPSERT_MAX_BATCH_SIZE", "200"))
 TARGET_SQL_PARAMS = int(os.getenv("FEATURES_UPSERT_TARGET_SQL_PARAMS", "15000"))
 
-# Режим диагностики: одна строка - один запрос (пункт 6 плана)
-# Устанавливается через переменную окружения DIAGNOSTIC_SINGLE_ROW=1
+#  :   -   ( 6 )
+#     DIAGNOSTIC_SINGLE_ROW=1
 DIAGNOSTIC_SINGLE_ROW = os.getenv("DIAGNOSTIC_SINGLE_ROW", "0").lower() in (
     "1",
     "true",
@@ -59,27 +59,27 @@ def _get_dynamic_batch_size(num_fields: int, total_records: int) -> int:
 
 def get_numeric_columns(model_class: Any) -> set[str]:
     """
-    Определяет числовые колонки из модели или таблицы.
+          .
 
     Args:
-        model_class: SQLAlchemy модель или Table
+        model_class: SQLAlchemy   Table
 
     Returns:
-        Множество имён числовых колонок
+
     """
     numeric_column_names = set()
 
-    # Определяем числовые колонки из модели или таблицы
+    #
     if hasattr(model_class, "columns"):
-        # Для SQLAlchemy Table или модели
+        #  SQLAlchemy Table
         for col_name, col in model_class.columns.items():
             from sqlalchemy.types import REAL, BigInteger, Float, Integer, Numeric
 
             col_type = col.type
-            # Проверяем по типу SQLAlchemy
+            #    SQLAlchemy
             if isinstance(col_type, Numeric | Float | Integer | BigInteger | REAL):
                 numeric_column_names.add(col_name)
-            # Проверяем по строковому представлению типа (для отражённых таблиц)
+            #      (  )
             elif hasattr(col_type, "__class__"):
                 type_str = str(col_type).upper()
                 if any(
@@ -97,7 +97,7 @@ def get_numeric_columns(model_class: Any) -> set[str]:
                 ):
                     numeric_column_names.add(col_name)
     elif hasattr(model_class, "__table__"):
-        # Для ORM модели
+        #  ORM
         for col_name, col in model_class.__table__.columns.items():
             from sqlalchemy.types import REAL, BigInteger, Float, Integer, Numeric
 
@@ -130,19 +130,19 @@ def validate_numeric_types(
     row_offset: int = 0,
 ) -> None:
     """
-    Валидация типов числовых колонок перед UPSERT.
+         UPSERT.
 
-    Проверяет, что все числовые значения имеют правильный тип (int, float, Decimal)
-    и не содержат NaN/inf для float.
+    ,        (int, float, Decimal)
+       NaN/inf  float.
 
     Args:
-        records: Список записей для валидации
-        numeric_columns: Множество имён числовых колонок
-        row_offset: Смещение для нумерации строк в ошибках
+        records:
+        numeric_columns:
+        row_offset:
 
     Raises:
-        TypeError: Если найдены строки в числовых колонках
-        ValueError: Если найдены NaN/inf в числовых колонках
+        TypeError:
+        ValueError:   NaN/inf
     """
     if not records:
         return
@@ -158,39 +158,39 @@ def validate_numeric_types(
 
             val = row[col]
 
-            # None допустим - превратится в NULL
+            # None  -   NULL
             if val is None:
                 continue
 
-            # Строки недопустимы в числовых колонках
+            #
             if isinstance(val, str):
                 errors.append(
                     f"Row {actual_idx}: column '{col}' is str: {val!r} (type: {type(val).__name__})"
                 )
                 continue
 
-            # Проверяем числовые типы
+            #
             if isinstance(val, int | float | Decimal | np.number):
-                # Для float проверяем NaN/inf
+                #  float  NaN/inf
                 if isinstance(val, float | np.floating):
                     if not math.isfinite(val):
                         errors.append(
                             f"Row {actual_idx}: column '{col}' not finite: {val!r}"
                         )
                 elif isinstance(val, np.integer):
-                    # numpy integer типы допустимы
+                    # numpy integer
                     pass
-                # int, Decimal допустимы
+                # int, Decimal
                 continue
 
-            # Неизвестный тип
+            #
             errors.append(
                 f"Row {actual_idx}: column '{col}' has invalid type {type(val).__name__}: {val!r}"
             )
 
     if errors:
         error_msg = f"Type validation failed for {len(errors)} values:\n" + "\n".join(
-            errors[:20]  # Показываем первые 20 ошибок
+            errors[:20]  #   20
         )
         if len(errors) > 20:
             error_msg += f"\n... and {len(errors) - 20} more errors"
@@ -200,14 +200,14 @@ def validate_numeric_types(
 
 async def load_db_columns(session: AsyncSession, table_name: str) -> set[str]:
     """
-    Загружает список колонок из схемы БД.
+         .
 
     Args:
-        session: SQLAlchemy сессия
-        table_name: Имя таблицы
+        session: SQLAlchemy
+        table_name:
 
     Returns:
-        Множество имён колонок
+
     """
     query = text(
         """
@@ -230,14 +230,14 @@ async def load_db_columns(session: AsyncSession, table_name: str) -> set[str]:
 
 def assert_required_fields(records: list[dict[str, Any]], required: set[str]) -> None:
     """
-    Проверяет наличие обязательных полей в записях.
+         .
 
     Args:
-        records: Список записей для проверки
-        required: Множество обязательных полей
+        records:
+        required:
 
     Raises:
-        ValueError: Если отсутствуют обязательные поля
+        ValueError:
     """
     if not records:
         raise ValueError("No records provided")
@@ -248,7 +248,7 @@ def assert_required_fields(records: list[dict[str, Any]], required: set[str]) ->
     if missing_fields:
         raise ValueError(f"Missing required fields: {missing_fields}")
 
-    # Проверяем все записи
+    #
     for i, record in enumerate(records):
         missing_in_record = required - set(record.keys())
         if missing_in_record:
@@ -261,20 +261,20 @@ def filter_problematic_fields(
     records: list[dict[str, Any]], problematic_fields: list[str] | None = None
 ) -> list[dict[str, Any]]:
     """
-    Фильтрует проблемные поля из записей для избежания ошибок UPSERT.
+            UPSERT.
 
     Args:
-        records: Исходные записи
-        problematic_fields: Список проблемных полей
+        records:
+        problematic_fields:
 
     Returns:
-        Отфильтрованные записи
+
     """
     if problematic_fields is None:
-        problematic_fields = []  # Убрали все фильтры — колонки теперь в модели
+        problematic_fields = []  #    —
 
     if not problematic_fields:
-        # Нет проблемных полей — возвращаем как есть
+        #    —
         return records
 
     filtered_records = []
@@ -291,16 +291,16 @@ def filter_problematic_fields(
 
 def sanitize_numeric_value(value: Any) -> float | None:
     """
-    Очищает числовое значение от NaN/inf и приводит к float.
+        NaN/inf    float.
 
     Args:
-        value: Значение для очистки
+        value:
 
     Returns:
-        Очищенное float значение или None если значение невалидно
+         float   None
 
     Raises:
-        ValueError: Если значение не может быть очищено
+        ValueError:
     """
     if value is None:
         return None
@@ -323,14 +323,14 @@ def sanitize_records(
     records: list[dict[str, Any]], db_cols: set[str]
 ) -> list[dict[str, Any]]:
     """
-    Нормализует и фильтрует записи по схеме БД.
+          .
 
     Args:
-        records: Исходные записи
-        db_cols: Множество колонок БД
+        records:
+        db_cols:
 
     Returns:
-        Очищенные записи
+
     """
     if not records:
         raise ValueError("No records to sanitize")
@@ -348,10 +348,10 @@ def sanitize_records(
                 filtered_fields += 1
                 continue
 
-            # Обрабатываем None явно
+            #  None
             if value is None:
                 sanitized_record[key] = None
-            # Обрабатываем pandas Series/DataFrame — берём первое значение
+            #  pandas Series/DataFrame —
             elif isinstance(value, pd.Series | pd.DataFrame):
                 if len(value) > 0:
                     scalar_value = (
@@ -359,7 +359,7 @@ def sanitize_records(
                         if isinstance(value, pd.Series)
                         else value.iloc[0, 0]
                     )
-                    # Рекурсивно обрабатываем scalar значение
+                    #   scalar
                     if isinstance(scalar_value, int | float | np.number):
                         clean_value = sanitize_numeric_value(scalar_value)
                         sanitized_record[key] = clean_value
@@ -369,24 +369,24 @@ def sanitize_records(
                         )
                 else:
                     sanitized_record[key] = None
-            # Обрабатываем числовые значения
+            #
             elif isinstance(value, int | float | np.number):
                 clean_value = sanitize_numeric_value(value)
-                # ВАЖНО: добавляем даже None, чтобы поле участвовало в UPSERT
-                # Postgres заменит NULL при ON CONFLICT DO UPDATE
+                # :   None,     UPSERT
+                # Postgres  NULL  ON CONFLICT DO UPDATE
                 sanitized_record[key] = clean_value
-            # Обрабатываем строки и другие типы
+            #
             else:
-                # КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Пытаемся преобразовать строки в числа
-                # для числовых колонок, чтобы избежать ошибок типов
+                #  :
+                #   ,
                 if isinstance(value, str):
-                    # Пытаемся преобразовать строку в число
+                    #
                     try:
-                        # Пробуем float (включает int)
+                        #  float ( int)
                         num_value = float(value)
                         sanitized_record[key] = num_value
                     except (ValueError, TypeError):
-                        # Если не число, оставляем как строку
+                        #   ,
                         sanitized_record[key] = value
                 else:
                     sanitized_record[key] = value
@@ -401,19 +401,19 @@ def sanitize_records(
 
 def _clip_numeric_value(value: float, precision: int, scale: int) -> float:
     """
-    Обрезает значение до допустимого диапазона для NUMERIC(precision, scale).
+          NUMERIC(precision, scale).
 
     Args:
-        value: Числовое значение
-        precision: Общая точность (количество цифр)
-        scale: Количество цифр после запятой
+        value:
+        precision:   ( )
+        scale:
 
     Returns:
-        Обрезанное значение
+
     """
-    # Максимальное значение для NUMERIC(precision, scale):
+    #    NUMERIC(precision, scale):
     # 10^(precision-scale) - 10^(-scale)
-    # Например, для NUMERIC(10,4): 10^6 - 10^-4 = 999999.9999
+    # ,  NUMERIC(10,4): 10^6 - 10^-4 = 999999.9999
     max_value = 10 ** (precision - scale) - 10 ** (-scale)
     min_value = -max_value
 
@@ -428,31 +428,31 @@ def _clip_numeric_value(value: float, precision: int, scale: int) -> float:
 
 def _normalize_value(value: Any, col_type: Any = None) -> Any:
     """
-    Нормализует значение в базовый Python тип для SQLAlchemy.
+        Python   SQLAlchemy.
 
     Args:
-        value: Значение для нормализации
-        col_type: Тип колонки SQLAlchemy (опционально, для проверки NUMERIC)
+        value:
+        col_type:   SQLAlchemy (,   NUMERIC)
 
     Returns:
-        Нормализованное значение (int, float, None, str, datetime и т.д.)
+          (int, float, None, str, datetime  ..)
     """
     if value is None:
         return None
 
-    # Проверяем pandas NaN
+    #  pandas NaN
     try:
         if pd.isna(value):
             return None
     except (TypeError, ValueError):
         pass
 
-    # Пытаемся преобразовать numpy/pandas типы в базовые Python типы
+    #   numpy/pandas    Python
     try:
-        # Проверяем numpy integer типы
+        #  numpy integer
         if isinstance(value, np.integer | np.int64 | np.int32 | np.int16 | np.int8):
             result = int(value)
-            # Проверяем переполнение NUMERIC, если указан тип колонки
+            #   NUMERIC,
             if (
                 col_type
                 and hasattr(col_type, "precision")
@@ -467,12 +467,12 @@ def _normalize_value(value: Any, col_type: Any = None) -> Any:
                 )
             return result
 
-        # Проверяем numpy floating типы
+        #  numpy floating
         if isinstance(value, np.floating | np.float64 | np.float32 | np.float16):
             float_val = float(value)
             if np.isnan(float_val) or np.isinf(float_val):
                 return None
-            # Проверяем переполнение NUMERIC, если указан тип колонки
+            #   NUMERIC,
             if (
                 col_type
                 and hasattr(col_type, "precision")
@@ -485,20 +485,20 @@ def _normalize_value(value: Any, col_type: Any = None) -> Any:
                 )
             return float_val
 
-        # Проверяем pandas scalar типы (например, pd.Scalar)
+        #  pandas scalar  (, pd.Scalar)
         if hasattr(pd, "Scalar") and isinstance(value, pd.Scalar):
             try:
                 scalar_val = value.item()
-                return _normalize_value(scalar_val, col_type)  # Рекурсивно нормализуем
+                return _normalize_value(scalar_val, col_type)  #
             except (AttributeError, ValueError):
                 pass
 
-        # Пытаемся преобразовать в float, если это число
+        #    float,
         if isinstance(value, int | float):
             if isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
                 return None
             result = value
-            # Проверяем переполнение NUMERIC, если указан тип колонки
+            #   NUMERIC,
             if (
                 col_type
                 and hasattr(col_type, "precision")
@@ -511,22 +511,22 @@ def _normalize_value(value: Any, col_type: Any = None) -> Any:
                 )
             return result
 
-        # Пытаемся преобразовать другие числовые типы через item()
+        #       item()
         if hasattr(value, "item"):
             try:
                 item_val = value.item()
-                return _normalize_value(item_val, col_type)  # Рекурсивно нормализуем
+                return _normalize_value(item_val, col_type)  #
             except (AttributeError, ValueError):
                 pass
 
-        # Пытаемся преобразовать в float/int напрямую
-        # Это обработает строки, которые содержат числа
+        #    float/int
+        #   ,
         try:
-            # Сначала пробуем float
+            #   float
             float_val = float(value)
             if np.isnan(float_val) or np.isinf(float_val):
                 return None
-            # Проверяем переполнение NUMERIC, если указан тип колонки
+            #   NUMERIC,
             if (
                 col_type
                 and hasattr(col_type, "precision")
@@ -537,19 +537,19 @@ def _normalize_value(value: Any, col_type: Any = None) -> Any:
                 float_val = _clip_numeric_value(
                     float_val, col_type.precision, col_type.scale
                 )
-            # Если это целое число, возвращаем int
+            #    ,  int
             if float_val.is_integer():
                 return int(float_val)
             return float_val
         except (ValueError, TypeError, OverflowError):
             pass
 
-        # Если это строка, которая не преобразовалась в число, оставляем как есть
-        # (но для числовых колонок это будет обработано позже в build_upsert_statement)
+        #   ,     ,
+        # (         build_upsert_statement)
         return value
     except Exception as e:
         logger.debug(f"Failed to normalize value {value} ({type(value)}): {e}")
-        # В случае ошибки возвращаем None для безопасности
+        #     None
         return None
 
 
@@ -560,16 +560,16 @@ def build_upsert_statement(
     db_cols: set[str] | None = None,
 ) -> Any:
     """
-    Строит SQLAlchemy UPSERT statement.
+     SQLAlchemy UPSERT statement.
 
     Args:
-        model_class: SQLAlchemy модель или Table
-        records: Записи для вставки
-        pk: Первичные ключи
-        db_cols: Колонки БД (если None, используется model_class.columns.keys())
+        model_class: SQLAlchemy   Table
+        records:
+        pk:
+        db_cols:   ( None,  model_class.columns.keys())
 
     Returns:
-        SQLAlchemy Insert statement с on_conflict_do_update
+        SQLAlchemy Insert statement  on_conflict_do_update
     """
     if not records:
         raise ValueError("No records provided for UPSERT")
@@ -581,10 +581,10 @@ def build_upsert_statement(
         logger.debug(f"Building UPSERT for {len(records)} records")
         logger.debug(f"First record keys: {list(first_record.keys())}")
 
-    # Получаем колонки из БД или модели для фильтрации
+    #
     table_columns = db_cols if db_cols is not None else set(model_class.columns.keys())
 
-    # Фильтруем записи по колонкам таблицы
+    #
     filtered_records = []
     for record in records:
         filtered_record = {k: v for k, v in record.items() if k in table_columns}
@@ -593,9 +593,7 @@ def build_upsert_statement(
     if filtered_records:
         removed_cols = set(first_record.keys()) - table_columns
         if removed_cols and should_log(LogCategory.DIAG, Verbosity.VERBOSE):
-            logger.warning(
-                f"Filtered out {len(removed_cols)} columns not in table"
-            )
+            logger.warning(f"Filtered out {len(removed_cols)} columns not in table")
 
     records = filtered_records
     if not records:
@@ -603,22 +601,22 @@ def build_upsert_statement(
 
     first_record = records[0]
 
-    # Финальная нормализация: преобразуем все значения в базовые Python типы
-    # для избежания проблем с SQLAlchemy bound parameters
+    #  :      Python
+    #     SQLAlchemy bound parameters
     normalized_records: list[dict[str, Any]] = []
-    psar_types: set[str] = set()  # Для диагностики типов psar
+    psar_types: set[str] = set()  #    psar
 
     for record in records:
         normalized_record: dict[str, Any] = {}
         for key, value in record.items():
-            # Диагностика для psar (DEBUG only)
+            #   psar (DEBUG only)
             if key == "psar":
                 psar_types.add(type(value).__name__)
 
             if value is None or pd.isna(value):
                 normalized_record[key] = None
             elif isinstance(value, pd.Series | pd.DataFrame):
-                # Обрабатываем pandas структуры
+                #  pandas
                 if len(value) == 0:
                     normalized_record[key] = None
                 else:
@@ -631,12 +629,12 @@ def build_upsert_statement(
                         if pd.isna(scalar_value):
                             normalized_record[key] = None
                         else:
-                            # Пытаемся преобразовать в базовый тип
+                            #
                             normalized_record[key] = _normalize_value(scalar_value)
                     except Exception:
                         normalized_record[key] = None
             elif isinstance(value, np.ndarray):
-                # Обрабатываем numpy массивы
+                #  numpy
                 if value.size == 0:
                     normalized_record[key] = None
                 else:
@@ -646,7 +644,7 @@ def build_upsert_statement(
                     except Exception:
                         normalized_record[key] = None
             else:
-                # Пытаемся нормализовать значение
+                #
                 normalized_record[key] = _normalize_value(value)
         normalized_records.append(normalized_record)
 
@@ -658,35 +656,35 @@ def build_upsert_statement(
                 psar_normalized_types.add(type(record["psar"]).__name__)
         logger.debug(f"psar types: {psar_types} -> {psar_normalized_types}")
 
-    # Убеждаемся, что все записи имеют одинаковый набор ключей
-    # Это важно для SQLAlchemy, чтобы правильно обработать bound parameters
+    # ,
+    #    SQLAlchemy,    bound parameters
     if normalized_records:
         all_keys: set[str] = set()
         for record in normalized_records:
             all_keys.update(record.keys())
 
-        # Добавляем отсутствующие ключи со значением None
+        #      None
         for record in normalized_records:
             for key in all_keys:
                 if key not in record:
                     record[key] = None
 
-    # Дополнительная нормализация: для числовых колонок преобразуем строки в числа
-    # или None, чтобы избежать ошибок типа "column is of type double precision but expression is of type character varying"
+    #  :
+    #  None,     "column is of type double precision but expression is of type character varying"
     if normalized_records:
         numeric_column_names = set()
 
-        # Определяем числовые колонки из модели или таблицы
+        #
         if hasattr(model_class, "columns"):
-            # Для SQLAlchemy Table или модели
+            #  SQLAlchemy Table
             for col_name, col in model_class.columns.items():
                 from sqlalchemy.types import REAL, BigInteger, Float, Integer, Numeric
 
                 col_type = col.type
-                # Проверяем по типу SQLAlchemy
+                #    SQLAlchemy
                 if isinstance(col_type, Numeric | Float | Integer | BigInteger | REAL):
                     numeric_column_names.add(col_name)
-                # Проверяем по строковому представлению типа (для отражённых таблиц)
+                #      (  )
                 elif hasattr(col_type, "__class__"):
                     type_str = str(col_type).upper()
                     if any(
@@ -704,7 +702,7 @@ def build_upsert_statement(
                     ):
                         numeric_column_names.add(col_name)
         elif hasattr(model_class, "__table__"):
-            # Для ORM модели
+            #  ORM
             for col_name, col in model_class.__table__.columns.items():
                 from sqlalchemy.types import REAL, BigInteger, Float, Integer, Numeric
 
@@ -729,11 +727,9 @@ def build_upsert_statement(
                         numeric_column_names.add(col_name)
 
         if numeric_column_names and should_log(LogCategory.DIAG, Verbosity.DEBUG):
-            logger.debug(
-                f"Normalizing {len(numeric_column_names)} numeric columns"
-            )
+            logger.debug(f"Normalizing {len(numeric_column_names)} numeric columns")
 
-            # Сохраняем типы колонок для правильной нормализации
+            #
             column_types: dict[str, Any] = {}
             if hasattr(model_class, "columns"):
                 for col_name, col in model_class.columns.items():
@@ -744,7 +740,7 @@ def build_upsert_statement(
                     if col_name in numeric_column_names:
                         column_types[col_name] = col.type
 
-            # Диагностика: проверяем проблемные значения ДО нормализации
+            # :
             problematic_values: dict[str, list[tuple[Any, type]]] = {}
             for record in normalized_records:
                 for key in numeric_column_names:
@@ -761,7 +757,7 @@ def build_upsert_statement(
                         f"String values in numeric column '{key}': {len(samples)} found"
                     )
 
-            # Принудительная нормализация всех значений для числовых колонок
+            #
             for record in normalized_records:
                 for key in numeric_column_names:
                     if key in record:
@@ -770,10 +766,10 @@ def build_upsert_statement(
                             continue
                         col_type = column_types.get(key)
                         if isinstance(value, str):
-                            # Пытаемся преобразовать строку в число
-                            # Проверяем, нужен ли int или float
+                            #
+                            # ,   int  float
                             try:
-                                # Проверяем, является ли колонка integer по типу или строковому представлению
+                                # ,    integer
                                 is_integer = False
                                 if col_type:
                                     if isinstance(col_type, Integer | BigInteger):
@@ -787,7 +783,7 @@ def build_upsert_statement(
                                         ):
                                             is_integer = True
 
-                                # Проверяем переполнение NUMERIC, если тип колонки известен
+                                #   NUMERIC,
                                 if (
                                     col_type
                                     and hasattr(col_type, "precision")
@@ -798,7 +794,7 @@ def build_upsert_statement(
                                     from sqlalchemy.types import Numeric
 
                                     if isinstance(col_type, Numeric):
-                                        # Обрезаем значение перед преобразованием
+                                        #
                                         clipped = _clip_numeric_value(
                                             float(value),
                                             col_type.precision,
@@ -812,14 +808,14 @@ def build_upsert_statement(
                                         if is_integer:
                                             normalized = int(
                                                 float(value)
-                                            )  # Через float для "1.0" -> 1
+                                            )  #  float  "1.0" -> 1
                                         else:
                                             normalized = float(value)
                                 else:
                                     if is_integer:
                                         normalized = int(
                                             float(value)
-                                        )  # Через float для "1.0" -> 1
+                                        )  #  float  "1.0" -> 1
                                     else:
                                         normalized = float(value)
                                 record[key] = normalized
@@ -829,10 +825,10 @@ def build_upsert_statement(
                         elif value is not None and not isinstance(
                             value, int | float | np.number
                         ):
-                            # Для других нечисловых типов пытаемся преобразовать
+                            #
                             try:
                                 normalized: float = float(value)
-                                # Проверяем переполнение NUMERIC, если тип колонки известен
+                                #   NUMERIC,
                                 if (
                                     col_type
                                     and hasattr(col_type, "precision")
@@ -853,9 +849,9 @@ def build_upsert_statement(
                                 # Silently convert to None - logged at aggregate level
                                 record[key] = None
                         elif isinstance(value, np.number):
-                            # Преобразуем numpy типы в Python типы
+                            #  numpy   Python
                             normalized: float | int = float(value)
-                            # Проверяем переполнение NUMERIC, если тип колонки известен
+                            #   NUMERIC,
                             if (
                                 col_type
                                 and hasattr(col_type, "precision")
@@ -873,14 +869,14 @@ def build_upsert_statement(
                                     )
                             record[key] = normalized
 
-    # Создаём базовый INSERT statement
+    #   INSERT statement
     stmt = pg_insert(model_class).values(normalized_records)
 
-    # Строим update_dict с правильным использованием excluded
+    #  update_dict    excluded
     update_dict = {}
     non_pk_fields = [k for k in first_record if k not in pk]
 
-    # Используем правильный способ формирования update_dict
+    #     update_dict
     skipped_fields = []
     for field in non_pk_fields:
         try:
@@ -899,7 +895,7 @@ def build_upsert_statement(
     if not update_dict:
         raise ValueError("No fields available for UPSERT update")
 
-    # Добавляем on_conflict_do_update
+    #  on_conflict_do_update
     stmt = stmt.on_conflict_do_update(index_elements=list(pk), set_=update_dict)
 
     if should_log(LogCategory.DIAG, Verbosity.DEBUG):
@@ -912,20 +908,20 @@ def validate_upsert_data(
     records: list[dict[str, Any]], db_cols: set[str], required_fields: set[str]
 ) -> None:
     """
-    Выполняет полную валидацию данных перед UPSERT.
+         UPSERT.
 
     Args:
-        records: Записи для валидации
-        db_cols: Колонки БД
-        required_fields: Обязательные поля
+        records:
+        db_cols:
+        required_fields:
 
     Raises:
-        ValueError: При обнаружении проблем
+        ValueError:
     """
-    # Проверяем обязательные поля
+    #
     assert_required_fields(records, required_fields)
 
-    # Проверяем наличие критических полей
+    #
     critical_fields = ["ics_26", "rma_20", "t3_20"]
     missing_critical = []
 
@@ -936,7 +932,7 @@ def validate_upsert_data(
     if missing_critical and should_log(LogCategory.DIAG, Verbosity.VERBOSE):
         logger.warning(f"Critical fields missing from all records: {missing_critical}")
 
-    # Проверяем типы данных
+    #
     type_warnings = 0
     for record in records:
         for key, value in record.items():
@@ -954,15 +950,15 @@ async def execute_upsert(
     session: AsyncSession, stmt: Any, records: list[dict[str, Any]]
 ) -> int:
     """
-    Выполняет UPSERT с полной диагностикой.
+     UPSERT   .
 
     Args:
-        session: SQLAlchemy сессия
+        session: SQLAlchemy
         stmt: UPSERT statement
-        records: Записи для вставки
+        records:
 
     Returns:
-        Количество вставленных записей
+
     """
     # DEBUG: detailed pre-execution logging
     if should_log(LogCategory.DIAG, Verbosity.DEBUG) and records:
@@ -986,7 +982,9 @@ async def execute_upsert(
         result = await session.execute(stmt)
 
         # DEBUG: affected rows
-        if should_log(LogCategory.DIAG, Verbosity.DEBUG) and hasattr(result, "rowcount"):
+        if should_log(LogCategory.DIAG, Verbosity.DEBUG) and hasattr(
+            result, "rowcount"
+        ):
             logger.debug(f"Affected rows: {result.rowcount}")
 
         return len(records)
@@ -1016,27 +1014,27 @@ async def build_and_execute_upsert(
     required_fields: set[str] | None = None,
 ) -> int:
     """
-    Полный цикл: валидация, очистка, построение и выполнение UPSERT.
+     : , ,    UPSERT.
 
     Args:
-        session: SQLAlchemy сессия
-        model_class: SQLAlchemy модель
-        records: Записи для вставки
-        db_cols: Колонки БД
-        pk: Первичные ключи
-        required_fields: Обязательные поля
+        session: SQLAlchemy
+        model_class: SQLAlchemy
+        records:
+        db_cols:
+        pk:
+        required_fields:
 
     Returns:
-        Количество вставленных записей
+
     """
     # Use aggregator for summary logging
     with LogAggregator(LogCategory.INSERT, "upsert") as agg:
-        # 1. Валидация данных
+        # 1.
         if required_fields is None:
             required_fields = {"symbol", "timeframe", "timestamp", "calculated_at"}
         validate_upsert_data(records, db_cols, required_fields)
 
-        # 2. Очистка записей
+        # 2.
         sanitized_records = sanitize_records(records, db_cols)
 
         if should_log(LogCategory.DIAG, Verbosity.DEBUG):
@@ -1048,24 +1046,24 @@ async def build_and_execute_upsert(
             logger.warning("No valid records after sanitization")
             return 0
 
-        # 2.5. Фильтруем проблемные поля ДО построения UPSERT statement
+        # 2.5.      UPSERT statement
         filtered_records = filter_problematic_fields(sanitized_records)
 
         if not filtered_records:
             logger.warning("No valid records after filtering")
             return 0
 
-        # 2.7. Определяем числовые колонки для валидации
+        # 2.7.
         numeric_columns = get_numeric_columns(model_class)
 
-        # 2.8. Валидация типов перед батчингом
+        # 2.8.
         try:
             validate_numeric_types(filtered_records, numeric_columns, row_offset=0)
         except (TypeError, ValueError) as validation_error:
             logger.error(f"Type validation failed: {validation_error}")
             raise
 
-        # 2.9. Батчирование для избежания asyncpg лимита параметров (32767)
+        # 2.9.    asyncpg   (32767)
         if filtered_records:
             num_fields = len(filtered_records[0])
             calculated_batch_size = _get_dynamic_batch_size(
@@ -1088,9 +1086,7 @@ async def build_and_execute_upsert(
             (len(filtered_records) - 1) // calculated_batch_size + 1,
         )
         if symbol_label and timeframe_label:
-            prom.record_batch_size(
-                symbol_label, timeframe_label, calculated_batch_size
-            )
+            prom.record_batch_size(symbol_label, timeframe_label, calculated_batch_size)
             logger.info(
                 "Batch plan: %d records, %d fields, batch_size=%d, num_batches=%d",
                 len(filtered_records),
@@ -1101,7 +1097,7 @@ async def build_and_execute_upsert(
 
         total_saved = 0
 
-        # РЕЖИМ ДИАГНОСТИКИ: одна строка - один запрос
+        #  :   -
         if DIAGNOSTIC_SINGLE_ROW:
             logger.warning(
                 f"DIAGNOSTIC_SINGLE_ROW: Processing {len(filtered_records)} records individually"
@@ -1157,16 +1153,14 @@ async def build_and_execute_upsert(
                     total_saved += batch_saved
                     agg.add("batches", value=len(batch))
                 except Exception as batch_error:
-                    logger.error(
-                        f"UPSERT failed for batch {batch_num}: {batch_error}"
-                    )
+                    logger.error(f"UPSERT failed for batch {batch_num}: {batch_error}")
                     raise
 
             agg.set_extra("saved", total_saved)
             agg.set_extra("batches_count", num_batches)
             return total_saved
 
-        # Если записей немного, выполняем за один раз
+        #   ,
         stmt = build_upsert_statement(model_class, filtered_records, pk, db_cols)
         result = await execute_upsert(session, stmt, filtered_records)
         agg.set_extra("saved", result)

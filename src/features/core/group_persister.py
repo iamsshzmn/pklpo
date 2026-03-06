@@ -12,8 +12,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from src.logging import LogCategory, get_category_logger
+
 from ..infrastructure.upsert_optimizer import UpsertConfig, UpsertOptimizer
-from ..observability.logging import LogCategory, get_category_logger
 
 if TYPE_CHECKING:
     import pandas as pd

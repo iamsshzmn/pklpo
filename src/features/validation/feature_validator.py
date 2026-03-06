@@ -21,7 +21,7 @@ except Exception:  # pragma: no cover - defensive import for partial environment
     FEATURE_SPECS = {}
     PHASE_2_REQUIRED_FEATURES = []
 try:
-    from .infrastructure.indicator_registry import (
+    from ..registry import (
         AVAILABLE_INDICATORS,
         INDICATOR_CONFIG,
     )
@@ -33,7 +33,7 @@ logger = get_logger(__name__)
 
 
 def validate_specs_registry_consistency() -> bool:
-    """Проверяет соответствие между specs.py и registry/"""
+    """specs.py  registry/"""
     specs_keys = set(FEATURE_SPECS.keys()) if FEATURE_SPECS else set()
     registry_keys = set(AVAILABLE_INDICATORS) if AVAILABLE_INDICATORS else set()
     config_keys = set(INDICATOR_CONFIG.keys()) if INDICATOR_CONFIG else set()
@@ -110,7 +110,7 @@ def validate_ohlcv_data(df: pd.DataFrame) -> None:
 
     # Enforce monotonic timestamps if present
     if "ts" in df.columns and not df["ts"].is_monotonic_increasing:
-        logger.warning("Timestamps are not in ascending order")
+        raise FeatureValidationError("Timestamps are not in ascending order")
 
     logger.debug(f"OHLCV data validation passed for {len(df)} rows")
 

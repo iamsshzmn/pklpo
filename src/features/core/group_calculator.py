@@ -13,14 +13,15 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from ..domain.models import FeatureError
-from ..indicator_groups.registry import GroupRegistry
-from ..observability.logging import (
+from src.logging import (
     LogCategory,
     Verbosity,
     get_category_logger,
     should_log,
 )
+
+from ..domain.models import FeatureError
+from ..indicator_groups.registry import GroupRegistrySnapshot, build_registry_snapshot
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -43,14 +44,15 @@ class GroupFeatureCalculator:
     Uses GroupRegistry for OCP-compliant group management.
     """
 
-    def __init__(self):
+    def __init__(self, registry: GroupRegistrySnapshot | None = None):
         """Initialize the calculator."""
         self._logger = get_category_logger(LogCategory.CALC)
+        self._registry = registry or build_registry_snapshot()
         self._init_registry()
 
     def _init_registry(self) -> None:
         """Initialize GroupRegistry and log available groups."""
-        ordered_groups = GroupRegistry.get_ordered()
+        ordered_groups = self._registry.get_ordered()
         if should_log(LogCategory.DIAG, Verbosity.DEBUG):
             group_names = [g.name for g in ordered_groups]
             self._logger.debug(
@@ -79,7 +81,7 @@ class GroupFeatureCalculator:
         Raises:
             FeatureError: If calculation fails
         """
-        calculator_fn = GroupRegistry.get_calculator(group_name)
+        calculator_fn = self._registry.get_calculator(group_name)
         if calculator_fn is None:
             self._logger.warning(f"Unknown group: {group_name}")
             return {}
@@ -95,7 +97,7 @@ class GroupFeatureCalculator:
             result = calculator_fn(df, available, **kwargs)
 
             # Validate result conforms to Protocol (LSP)
-            GroupRegistry.validate_result(result, group_name)
+            self._registry.validate_result(result, group_name)
 
             # Log completion at DEBUG level
             if should_log(LogCategory.DIAG, Verbosity.DEBUG):
@@ -130,7 +132,7 @@ class GroupFeatureCalculator:
             Dictionary mapping group names to their results
         """
         if groups is None:
-            groups = [entry.name for entry in GroupRegistry.get_ordered()]
+            groups = [entry.name for entry in self._registry.get_ordered()]
 
         results = {}
         for group_name in groups:
@@ -146,8 +148,8 @@ class GroupFeatureCalculator:
 
     def get_ordered_groups(self) -> list[GroupEntry]:
         """Get all groups in execution order."""
-        return GroupRegistry.get_ordered()
+        return self._registry.get_ordered()
 
     def get_group_names(self) -> list[str]:
         """Get names of all registered groups."""
-        return [entry.name for entry in GroupRegistry.get_ordered()]
+        return [entry.name for entry in self._registry.get_ordered()]

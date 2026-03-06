@@ -1,4 +1,4 @@
-"""
+﻿"""
 Calculation module for features - separates calculation from saving.
 
 This module implements the strategy of calculating indicators and saving to parquet files
@@ -11,6 +11,7 @@ for better testability and DIP compliance.
 from __future__ import annotations
 
 import gc
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -18,11 +19,10 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from src.config import FeaturesSettings, get_settings
+from src.logging import get_features_logger, set_log_context
 
 from ..domain.strategy import get_max_lookback_for_strategies
-from ..observability.logging import get_features_logger, set_log_context
 from ..utils.memlog import force_cleanup, memory_monitor
-from .feature_service import get_default_service
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
@@ -30,6 +30,21 @@ if TYPE_CHECKING:
     from ..domain.protocols import FeatureCalculator
 
 logger = get_features_logger("features.calc")
+
+_CUMULATIVE_INDICATORS = {"obv", "ad", "pvt", "nvi", "pvi", "vwap"}
+
+
+def _get_legacy_default_calculator():
+    """Build a default calculator for deprecated call sites."""
+    warnings.warn(
+        "Calling features application entrypoints without an explicit calculator "
+        "is deprecated. Inject create_feature_service() at the entrypoint.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    from .feature_service import create_feature_service
+
+    return create_feature_service()
 
 
 def process_chunks(
@@ -59,9 +74,8 @@ def process_chunks(
     if config is None:
         config = get_settings().features
 
-    # Use injected calculator or default service (DIP compliance)
     if calculator is None:
-        calculator = get_default_service()
+        calculator = _get_legacy_default_calculator()
 
     # Determine max lookback
     if available_indicators:
@@ -70,6 +84,10 @@ def process_chunks(
         max_lookback = config.max_lookback
 
     overlap_size = max(max_lookback, config.overlap_size)
+    preserve_full_history = bool(
+        available_indicators
+        and _CUMULATIVE_INDICATORS.intersection(available_indicators)
+    )
 
     # Keep track of overlap data
     overlap_data = None
@@ -89,9 +107,12 @@ def process_chunks(
                     mem_log.log_dataframe_memory(chunk_df, f"Chunk {chunk_count}")
 
                 # Add overlap from previous chunk
+                previous_overlap_len = (
+                    len(overlap_data) if overlap_data is not None else 0
+                )
                 if overlap_data is not None:
                     # Combine overlap with new chunk
-                    # Валидация: проверяем что overlap_data и chunk_df не пустые
+                    # Validate that both overlap_data and chunk_df are non-empty.
                     if (
                         overlap_data is not None
                         and not overlap_data.empty
@@ -133,7 +154,9 @@ def process_chunks(
                         # Remove overlap from the beginning (except for first chunk)
                         if overlap_data is not None:
                             # Keep only the new data (after overlap)
-                            clean_features_df = features_df.iloc[overlap_size:].copy()
+                            clean_features_df = features_df.iloc[
+                                previous_overlap_len:
+                            ].copy()
                             logger.debug(
                                 f"Removed overlap: {len(features_df)} -> {len(clean_features_df)} rows"
                             )
@@ -143,12 +166,19 @@ def process_chunks(
                                 f"First chunk, no overlap removal: {len(clean_features_df)} rows"
                             )
 
-                        # Store overlap for next chunk
-                        if len(features_df) > overlap_size:
-                            overlap_data = features_df.iloc[-overlap_size:].copy()
+                        # Keep raw OHLCV rows as overlap for the next chunk.
+                        # Reusing calculated frames here mixes derived columns and
+                        # normalized timestamps with fresh raw chunks.
+                        if preserve_full_history:
+                            overlap_data = combined_df.copy()
+                            logger.debug(
+                                f"Stored cumulative history as overlap: {len(overlap_data)} rows"
+                            )
+                        elif len(combined_df) > overlap_size:
+                            overlap_data = combined_df.iloc[-overlap_size:].copy()
                             logger.debug(f"Stored overlap: {len(overlap_data)} rows")
                         else:
-                            overlap_data = features_df.copy()
+                            overlap_data = combined_df.copy()
                             logger.debug(
                                 f"Stored full chunk as overlap: {len(overlap_data)} rows"
                             )
@@ -201,9 +231,8 @@ def compute_and_dump_parquet(
     """
     logger.info(f"Starting calculation for {symbol} {timeframe}")
 
-    # Use injected calculator or default service (DIP compliance)
     if calculator is None:
-        calculator = get_default_service()
+        calculator = _get_legacy_default_calculator()
 
     try:
         # Validate input data
@@ -379,6 +408,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
+        from .feature_service import create_feature_service
+
         # Load OHLCV data
         df_ohlcv = pd.read_csv(args.input_csv)
 
@@ -389,6 +420,7 @@ if __name__ == "__main__":
             timeframe=args.timeframe,
             output_path=args.output_parquet,
             volatility_normalize=args.volatility_normalize,
+            calculator=create_feature_service(),
         )
 
         print(

@@ -21,8 +21,11 @@ from src.features.application.freshness_gate import (
     FreshnessGateConfig,
     check_has_work_to_do,
 )
+from src.features.application.save import save_batch
+from src.features.application.save_dependencies import (
+    create_feature_save_dependencies,
+)
 from src.features.core import compute_features
-from src.features.infrastructure.persistence.inserter import insert_indicators
 from src.features.presets.features_calc_short_v1 import FEATURES_CALC_SHORT_SPECS
 from src.logging import get_logger
 from src.market_meta.application.quality_pipeline import run_quality_pipeline
@@ -49,22 +52,17 @@ async def save_features_batch(
     symbol: str,
     timeframe: str,
 ) -> int:
-    payload = df_features.copy()
-    payload["symbol"] = symbol
-    payload["timeframe"] = timeframe
-
-    if "timestamp" not in payload.columns:
-        if "ts" in payload.columns:
-            payload["timestamp"] = payload["ts"] * 1000
-        else:
-            raise ValueError("DataFrame must have 'timestamp' or 'ts' column")
-
-    return await insert_indicators(
+    save_deps = create_feature_save_dependencies(session)
+    result = await save_batch(
         session=session,
-        ind_df=payload,
+        df=df_features,
         symbol=symbol,
         timeframe=timeframe,
+        repository=save_deps.repository,
+        observer=save_deps.observer,
+        commit=False,
     )
+    return int(result["rows_saved"])
 
 
 async def process_symbol_features(
@@ -121,7 +119,9 @@ async def process_symbol_features(
                 timeout=timeout,
             )
 
-            rows_saved = await save_features_batch(session, df_features, symbol, timeframe)
+            rows_saved = await save_features_batch(
+                session, df_features, symbol, timeframe
+            )
             results[timeframe] = {
                 "rows_processed": len(df_ohlcv),
                 "rows_saved": rows_saved,
@@ -277,7 +277,9 @@ async def run_features_calc_short(
             if isinstance(r, dict)
         )
         avg_compute_time = (
-            total_compute_time / stats["total_symbols"] if stats["total_symbols"] > 0 else 0
+            total_compute_time / stats["total_symbols"]
+            if stats["total_symbols"] > 0
+            else 0
         )
         symbols_with_work = sum(
             1

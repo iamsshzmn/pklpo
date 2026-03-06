@@ -1,11 +1,19 @@
 import numpy as np
 import pandas as pd
 
+from .registry import GroupRegistry
+
 
 def _nan_series(df: pd.DataFrame) -> pd.Series:
     return pd.Series([np.nan] * len(df), index=df.index)
 
 
+@GroupRegistry.register(
+    "performance",
+    order=9,
+    dependencies=["overlap", "ma", "volatility"],
+    description="Performance indicators",
+)
 def calc_performance_indicators(
     df: pd.DataFrame, available: set[str], window: int = 20, **kwargs
 ) -> dict[str, pd.Series]:

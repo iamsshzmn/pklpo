@@ -1,9 +1,30 @@
 """
-Exception classes for ta_safe module.
+Exception classes and result types for ta_safe module.
 """
+
+from __future__ import annotations
+
+from enum import Enum
 
 
 class FeatureCalcError(Exception):
-    """Ошибка при расчете индикаторов."""
+    """Raised when indicator calculation fails."""
 
     pass
+
+
+class CalculationStatus(str, Enum):
+    """
+    Explicit indicator calculation status (Stage 3.3).
+
+    Replaces the implicit model where failures are hidden behind NaN outputs.
+
+    Values:
+        CALCULATED: Success via a primary backend such as TA-Lib or pandas_ta.
+        FALLBACK_USED: Success via the Python fallback implementation.
+        CALCULATION_FAILED: All available backends failed.
+    """
+
+    CALCULATED = "calculated"
+    FALLBACK_USED = "fallback_used"
+    CALCULATION_FAILED = "calculation_failed"

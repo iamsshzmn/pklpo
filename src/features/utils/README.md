@@ -131,6 +131,6 @@ is_valid = is_valid_numeric(value)  # Не NaN, не Inf
 ## Тестирование
 
 ```bash
-pytest src/features/tests/test_time_utils.py -v
-pytest src/features/tests/test_utils.py -v
+pytest tests/features/tests/test_time_utils.py -v
+pytest tests/features/tests/test_utils.py -v
 ```

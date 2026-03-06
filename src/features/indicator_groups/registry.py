@@ -27,7 +27,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from src.logging import get_logger
 
@@ -98,6 +98,95 @@ class GroupCalculatorTypeError(TypeError):
     pass
 
 
+class GroupRegistrySnapshot:
+    """Immutable-ish snapshot of registered groups for runtime calculation paths."""
+
+    def __init__(self, groups: dict[str, GroupEntry] | None = None) -> None:
+        self._groups = dict(groups or {})
+
+    def get(self, name: str) -> GroupEntry | None:
+        return self._groups.get(name)
+
+    def get_calculator(self, name: str) -> GroupCalculatorFunc | None:
+        entry = self.get(name)
+        return entry.calculator if entry else None
+
+    def _resolve_execution_order(self) -> list[str]:
+        """Resolve runtime group order from dependency metadata first."""
+        try:
+            import networkx as nx  # type: ignore[import-untyped]
+
+            dag = nx.DiGraph()
+            for name in self._groups:
+                dag.add_node(name)
+
+            for name, entry in self._groups.items():
+                for dependency in entry.dependencies:
+                    if dependency not in dag:
+                        dag.add_node(dependency)
+                    dag.add_edge(dependency, name)
+
+            if not nx.is_directed_acyclic_graph(dag):
+                cycles = list(nx.simple_cycles(dag))
+                raise ValueError(
+                    f"Circular dependency detected in group registry: {cycles}"
+                )
+
+            ordered = nx.lexicographical_topological_sort(
+                dag,
+                key=lambda group_name: (
+                    self._groups.get(
+                        group_name, GroupEntry("", lambda *_args, **_kwargs: {}, 999)
+                    ).order,
+                    group_name,
+                ),
+            )
+            known_groups = set(self._groups)
+            return [name for name in ordered if name in known_groups]
+        except (ImportError, ValueError) as exc:
+            logger.warning(
+                "Falling back to numeric group order due to dependency resolution error: %s",
+                exc,
+            )
+            return [
+                entry.name
+                for entry in sorted(self._groups.values(), key=lambda g: g.order)
+            ]
+
+    def get_ordered(self) -> list[GroupEntry]:
+        ordered_names = self._resolve_execution_order()
+        return [self._groups[name] for name in ordered_names]
+
+    def get_ordered_items(self) -> list[tuple[str, GroupCalculatorFunc]]:
+        return [(entry.name, entry.calculator) for entry in self.get_ordered()]
+
+    def get_all_names(self) -> list[str]:
+        return list(self._groups.keys())
+
+    def get_dependencies(self, name: str) -> list[str]:
+        entry = self.get(name)
+        return entry.dependencies if entry else []
+
+    def get_metadata(self, name: str) -> dict[str, Any]:
+        entry = self.get(name)
+        if entry is None:
+            return {}
+        return {
+            "name": entry.name,
+            "description": entry.description,
+            "dependencies": entry.dependencies,
+            "order": entry.order,
+        }
+
+    def get_all_metadata(self) -> dict[str, dict[str, Any]]:
+        return {name: self.get_metadata(name) for name in self._groups}
+
+    def validate_result(
+        self, result: Any, group_name: str, *, strict: bool = False
+    ) -> bool:
+        return GroupRegistry.validate_result(result, group_name, strict=strict)
+
+
 class GroupRegistry:
     """
     Centralized registry for indicator groups.
@@ -115,9 +204,9 @@ class GroupRegistry:
             result = entry.calculator(df, available)
     """
 
-    # Private class attributes with name mangling for encapsulation
+    # Private class attributes with name mangling for encapsulation.
+    # Only self-registered groups live here; runtime reads go through snapshots.
     __groups: dict[str, GroupEntry] = {}
-    __initialized: bool = False
 
     @classmethod
     def register(
@@ -212,8 +301,7 @@ class GroupRegistry:
     @classmethod
     def get(cls, name: str) -> GroupEntry | None:
         """Get a group entry by name."""
-        cls.__ensure_initialized()
-        return cls.__groups.get(name)
+        return build_registry_snapshot().get(name)
 
     @classmethod
     def get_calculator(cls, name: str) -> GroupCalculatorFunc | None:
@@ -224,8 +312,7 @@ class GroupRegistry:
     @classmethod
     def get_ordered(cls) -> list[GroupEntry]:
         """Get all groups sorted by execution order."""
-        cls.__ensure_initialized()
-        return sorted(cls.__groups.values(), key=lambda g: g.order)
+        return build_registry_snapshot().get_ordered()
 
     @classmethod
     def get_ordered_items(cls) -> list[tuple[str, GroupCalculatorFunc]]:
@@ -235,8 +322,7 @@ class GroupRegistry:
     @classmethod
     def get_all_names(cls) -> list[str]:
         """Get all registered group names."""
-        cls.__ensure_initialized()
-        return list(cls.__groups.keys())
+        return build_registry_snapshot().get_all_names()
 
     @classmethod
     def get_dependencies(cls, name: str) -> list[str]:
@@ -312,53 +398,40 @@ class GroupRegistry:
     @classmethod
     def get_all_metadata(cls) -> dict[str, dict[str, Any]]:
         """Get metadata for all groups."""
-        cls.__ensure_initialized()
-        return {name: cls.get_metadata(name) for name in cls.__groups}
+        return build_registry_snapshot().get_all_metadata()
 
     @classmethod
     def clear(cls) -> None:
         """Clear all registered groups (for testing)."""
         cls.__groups.clear()
-        cls.__initialized = False
 
     @classmethod
-    def __ensure_initialized(cls) -> None:
-        """Ensure legacy groups are imported and registered."""
-        if cls.__initialized:
-            return
+    def _get_self_registered_groups(cls) -> dict[str, GroupEntry]:
+        """Return a shallow copy of decorator-registered groups."""
+        return dict(cls.__groups)
 
-        # Import legacy groups to trigger registration
-        # This provides backward compatibility
-        if not cls.__groups:
-            cls.__import_legacy_groups()
 
-        cls.__initialized = True
+def build_registry_snapshot() -> GroupRegistrySnapshot:
+    """
+    Build an explicit runtime snapshot of all known groups.
 
-    @classmethod
-    def __import_legacy_groups(cls) -> None:
-        """Import legacy groups from __init__.py for backward compatibility."""
-        try:
-            from . import (
-                GROUP_CALCULATORS,
-                GROUP_METADATA,
-            )
+    This keeps calculation paths independent from the mutable class-level store:
+    decorators contribute self-registered groups, and missing registrations are
+    bootstrapped by importing/reloading the known group modules.
+    """
+    decorated_groups = GroupRegistry._get_self_registered_groups()
 
-            for name, calculator in GROUP_CALCULATORS.items():
-                if name not in cls.__groups:
-                    meta = GROUP_METADATA.get(name, {})
-                    entry = GroupEntry(
-                        name=name,
-                        calculator=calculator,
-                        order=meta.get("order", 999),
-                        dependencies=meta.get("dependencies", []),
-                        description=meta.get("description", ""),
-                    )
-                    cls.__groups[name] = entry
+    try:
+        from . import GROUP_METADATA, ensure_group_modules_loaded
 
-            logger.debug(f"Imported {len(cls.__groups)} legacy groups")
+        expected_groups = set(GROUP_METADATA)
+        if not expected_groups.issubset(decorated_groups):
+            ensure_group_modules_loaded(force_reload=True)
+            decorated_groups = GroupRegistry._get_self_registered_groups()
 
-        except ImportError as e:
-            logger.warning(f"Failed to import legacy groups: {e}")
+        return GroupRegistrySnapshot(decorated_groups)
+    except ImportError:
+        return GroupRegistrySnapshot(decorated_groups)
 
 
 # =============================================================================
@@ -375,15 +448,15 @@ def get_ordered_groups() -> list[tuple[str, GroupCalculatorFunc]]:
     Returns:
         List of (group_name, calculator) tuples
     """
-    return GroupRegistry.get_ordered_items()
+    return build_registry_snapshot().get_ordered_items()
 
 
 def get_group_calculator(name: str) -> GroupCalculatorFunc | None:
     """Get calculator for a group by name."""
-    return GroupRegistry.get_calculator(name)
+    return build_registry_snapshot().get_calculator(name)
 
 
 def get_group_order(name: str) -> int:
     """Get execution order for a group."""
-    entry = GroupRegistry.get(name)
+    entry = build_registry_snapshot().get(name)
     return entry.order if entry else 999

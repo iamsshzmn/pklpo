@@ -14,7 +14,7 @@ import os
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.features.observability.logging import (
+from src.logging import (
     LogAggregator,
     LogCategory,
     Verbosity,
@@ -297,7 +297,10 @@ async def insert_indicators(
             prom.record_batch_size(symbol, timeframe, len(validated_records))
 
             # Check state after (for diagnostics) - only in DEBUG mode
-            if should_log(LogCategory.DIAG, Verbosity.DEBUG) and count_before is not None:
+            if (
+                should_log(LogCategory.DIAG, Verbosity.DEBUG)
+                and count_before is not None
+            ):
                 count_after, _ = await check_db_state(session, symbol, timeframe)
                 rows_added = (count_after or 0) - count_before
                 agg.set_extra("rows_added", rows_added)

@@ -19,9 +19,10 @@ import pandas as pd
 if TYPE_CHECKING:
     from ..domain.protocols import FeatureNormalizer
 
+from src.logging import get_features_logger, performance_timer
+
 from ..domain.models import FeatureError
 from ..indicator_groups import get_ordered_groups
-from ..observability.logging import get_features_logger, performance_timer
 from ..specs import FEATURE_SPECS, FeatureSpec
 from ..utils.dependency_resolver import resolve_dependencies
 from ..utils.time_utils import validate_timestamp_consistency
@@ -115,10 +116,14 @@ def compute_features(
         feature_specs = _prepare_feature_specs(specs)
 
         # Run pre-calculation phase (validation, timestamps, metrics start)
-        result_df = run_pre_calculation(df_ohlcv, ctx, feature_specs, validate_specs=True)
+        result_df = run_pre_calculation(
+            df_ohlcv, ctx, feature_specs, validate_specs=True
+        )
 
         # Calculate features using group-based approach
-        result_df = _calculate_features_internal(result_df, feature_specs, ctx, **kwargs)
+        result_df = _calculate_features_internal(
+            result_df, feature_specs, ctx, **kwargs
+        )
         _debug_log_dataframe_info(result_df, "AFTER CALCULATION")
 
         # Apply volatility normalization if requested
@@ -195,9 +200,13 @@ def _apply_volatility_normalization(
                 result_df, window=normalize_window, method=normalize_method
             )
         elif volatility_normalize_features is None:
-            logger.warning(f"[{ctx.run_id}] volatility_normalize_features is None, skipping")
+            logger.warning(
+                f"[{ctx.run_id}] volatility_normalize_features is None, skipping"
+            )
         else:
-            logger.warning(f"[{ctx.run_id}] volatility_normalize_features not callable, skipping")
+            logger.warning(
+                f"[{ctx.run_id}] volatility_normalize_features not callable, skipping"
+            )
 
     except Exception as e:
         logger.warning(f"[{ctx.run_id}] Failed to apply volatility normalization: {e}")
@@ -239,11 +248,15 @@ def _calculate_features_internal(
         for col in ("open", "high", "low", "close", "volume"):
             if col in result_df.columns:
                 non_null_count = result_df[col].notna().sum()
-                logger.debug(f"[{ctx.run_id}] {col} non_null={non_null_count}/{len(result_df)}")
+                logger.debug(
+                    f"[{ctx.run_id}] {col} non_null={non_null_count}/{len(result_df)}"
+                )
 
     # Validate timestamp consistency (legacy check for backward compatibility)
     if not validate_timestamp_consistency(result_df):
-        logger.warning(f"[{ctx.run_id}] Timestamp consistency validation failed - continuing")
+        logger.warning(
+            f"[{ctx.run_id}] Timestamp consistency validation failed - continuing"
+        )
 
     # Calculate features using group-based approach
     available_names = {spec.name for spec in feature_specs}
@@ -258,6 +271,7 @@ def _calculate_features_internal(
     # Critical indicators from configuration (OCP compliance)
     try:
         from src.config import get_settings
+
         settings = get_settings()
         critical_indicators = settings.features.critical_indicators
     except ImportError:
@@ -306,7 +320,9 @@ def _calculate_features_internal(
         except FeatureError:
             raise
         except Exception as e:
-            logger.error(f"[{ctx.run_id}] Error in {group_name} group: {e}", exc_info=True)
+            logger.error(
+                f"[{ctx.run_id}] Error in {group_name} group: {e}", exc_info=True
+            )
             ctx.failed_groups.append(group_name)
             raise FeatureError(f"Error calculating {group_name} group: {e}") from e
 

@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+from .registry import GroupRegistry
+
 
 def _heikin_ashi(df: pd.DataFrame) -> dict[str, pd.Series]:
     ha_close = (df["open"] + df["high"] + df["low"] + df["close"]) / 4.0
@@ -33,6 +35,12 @@ def _cdl_inside(df: pd.DataFrame) -> pd.Series:
     return inside.astype(int)
 
 
+@GroupRegistry.register(
+    "candles",
+    order=7,
+    dependencies=["overlap"],
+    description="Candlestick patterns",
+)
 def calc_candles_indicators(
     df: pd.DataFrame, available: set[str], **kwargs
 ) -> dict[str, pd.Series]:

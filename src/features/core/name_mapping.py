@@ -190,6 +190,14 @@ MULTI_OUTPUT_INDICATORS = {
 
 # Cache for capability checking
 _capability_cache: dict[str, bool] = {}
+_FALLBACK_AVAILABLE_INDICATORS = {
+    "ema",
+    "sma",
+    "rsi",
+    "macd",
+    "atr",
+    "obv",
+}
 
 
 def check_indicator_capability(indicator_name: str) -> bool:
@@ -206,8 +214,9 @@ def check_indicator_capability(indicator_name: str) -> bool:
         return _capability_cache[indicator_name]
 
     if ta is None:
-        _capability_cache[indicator_name] = False
-        return False
+        available = indicator_name.lower() in _FALLBACK_AVAILABLE_INDICATORS
+        _capability_cache[indicator_name] = available
+        return available
 
     try:
         # Try to access the indicator function
@@ -330,7 +339,9 @@ def normalize_indicator_name(raw_name: str) -> str:
 
     # Handle patterns like BBANDS -> bbands, MACD -> macd
     normalized = raw.strip().lower()
-    normalized = re.sub(r"\s+", "_", normalized)  # Replace spaces with underscores
+    normalized = re.sub(
+        r"[\s\-]+", "_", normalized
+    )  # Replace separators with underscores
     return re.sub(
         r"[^a-z0-9_]", "", normalized
     )  # Remove non-alphanumeric except underscores
@@ -344,7 +355,7 @@ def get_available_indicators() -> set[str]:
         Set of available indicator names
     """
     if ta is None:
-        return set()
+        return set(_FALLBACK_AVAILABLE_INDICATORS)
 
     try:
         # Get all attributes that are likely indicators (functions)

@@ -176,7 +176,9 @@ def get_sync_config(context: dict[str, Any]) -> dict[str, Any]:
     }
 
     # Получаем базовую конфигурацию для режима и копируем для модификации
-    selected_config = cast("dict[str, Any]", mode_configs.get(mode, mode_configs["fast"]))
+    selected_config = cast(
+        "dict[str, Any]", mode_configs.get(mode, mode_configs["fast"])
+    )
     base_config: dict[str, Any] = dict(selected_config)
 
     # Переопределение из conf
@@ -211,9 +213,7 @@ def should_refresh_instruments(context: dict[str, Any]) -> bool:
     if cache_file.exists():
         age_hours = (
             datetime.now(UTC).timestamp()
-            - datetime.fromtimestamp(
-                cache_file.stat().st_mtime, tz=UTC
-            ).timestamp()
+            - datetime.fromtimestamp(cache_file.stat().st_mtime, tz=UTC).timestamp()
         ) / 3600
         if age_hours < 24:
             return False
@@ -403,6 +403,41 @@ def swap_sync_task(**context):
     return xcom_stats
 
 
+def quality_pipeline_task(**context):
+    """Run data quality checks (duplicate detection, freshness, fill-rate) and dispatch alerts."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from src.market_meta.application.quality_pipeline import run_quality_pipeline
+    from src.market_meta.infrastructure.sqlalchemy_pool_adapter import (
+        SQLAlchemyPoolAdapter,
+    )
+
+    env = get_dag_env()
+    setup_env(env)
+
+    loop = get_or_create_event_loop()
+
+    async def _run():
+        engine = create_async_engine(env["DATABASE_URL"])
+        pool = SQLAlchemyPoolAdapter(engine)
+        try:
+            report, alert_stats = await run_quality_pipeline(pool, send_alerts=True)
+            violations = sum(1 for r in report.results if str(r.severity) != "ok")
+            print(
+                f"[quality_pipeline] total_checks={len(report.results)} "
+                f"violations={violations} alert_stats={alert_stats}"
+            )
+            return {
+                "total_checks": len(report.results),
+                "violations": violations,
+                "alert_stats": alert_stats,
+            }
+        finally:
+            await engine.dispose()
+
+    return loop.run_until_complete(_run())
+
+
 def smoke_validate_task(**context):
     """Валидация данных без subprocess."""
     from datetime import datetime
@@ -529,4 +564,10 @@ with DAG(
         python_callable=smoke_validate_task,
     )
 
-    refresh_okx >> swap_sync >> smoke_validate
+    quality_pipeline = PythonOperator(
+        task_id="quality_pipeline",
+        python_callable=quality_pipeline_task,
+        trigger_rule="all_done",  # run even if smoke_validate fails
+    )
+
+    refresh_okx >> swap_sync >> smoke_validate >> quality_pipeline
