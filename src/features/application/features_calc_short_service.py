@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 from src.features.application.feature_window import (
     check_has_new_ohlcv,
