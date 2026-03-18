@@ -13,6 +13,7 @@ from datetime import datetime
 
 from sqlalchemy import text
 
+from src.models import INDICATORS_TABLE_NAME
 from src.utils.session_utils import get_db_session
 
 from ..infrastructure.repository import PostgresCombinationRepository
@@ -39,10 +40,10 @@ async def debug_combinations(
     async with get_db_session() as session:
         # Загружаем indicators
         indicators_query = text(
-            """
+            f"""
             SELECT timestamp, rsi14, macd, macd_signal, macd_histogram,
                    ema_12, ema_26, adx14, stoch_k, stoch_d, obv, cmf
-            FROM indicators
+            FROM {INDICATORS_TABLE_NAME}
             WHERE symbol = :symbol AND timeframe = :timeframe
             ORDER BY timestamp DESC
             LIMIT :limit

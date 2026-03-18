@@ -13,6 +13,7 @@ from src.logging import (
     get_category_logger,
     should_log,
 )
+from src.models import INDICATORS_TABLE_NAME
 
 logger = get_category_logger(LogCategory.SCHEMA)
 
@@ -34,11 +35,11 @@ async def check_unique_index(session: AsyncSession) -> None:
             """
             SELECT indexdef
             FROM pg_indexes
-            WHERE tablename = 'indicators'
+            WHERE tablename = :table_name
             AND indexdef LIKE '%UNIQUE%'
         """
         )
-        result = await session.execute(index_query)
+        result = await session.execute(index_query, {"table_name": INDICATORS_TABLE_NAME})
         indexes = [row[0] for row in result.all()]
 
         #
@@ -71,15 +72,17 @@ async def check_schema_and_search_path(session: AsyncSession) -> None:
             """
             SELECT table_schema, table_name, column_name, data_type
             FROM information_schema.columns
-            WHERE table_name = 'indicators'
+            WHERE table_name = :table_name
             AND table_schema = 'public'
             ORDER BY ordinal_position
         """
         )
-        result = await session.execute(schema_query)
+        result = await session.execute(
+            schema_query, {"table_name": INDICATORS_TABLE_NAME}
+        )
         columns = result.all()
 
-        logger.debug(f"public.indicators: {len(columns)} columns")
+        logger.debug("public.%s: %d columns", INDICATORS_TABLE_NAME, len(columns))
 
     except Exception as e:
         logger.error(f"Failed to check schema: {e}")
@@ -100,10 +103,11 @@ async def load_db_columns(session: AsyncSession) -> set[str]:
             """
         SELECT column_name
         FROM information_schema.columns
-        WHERE table_name = 'indicators'
+        WHERE table_name = :table_name
         AND table_schema = 'public'
     """
-        )
+        ),
+        {"table_name": INDICATORS_TABLE_NAME},
     )
     db_cols = {row[0] for row in result.all()}
     if should_log(LogCategory.DIAG, Verbosity.DEBUG):
@@ -133,11 +137,11 @@ async def reflect_indicators_table(session: AsyncSession) -> Table:
     def _reflect_table(sync_conn):
         """reflection   async ."""
         insp = inspect(sync_conn)
-        columns = insp.get_columns("indicators", schema="public")
+        columns = insp.get_columns(INDICATORS_TABLE_NAME, schema="public")
 
         #
         table = Table(
-            "indicators",
+            INDICATORS_TABLE_NAME,
             metadata,
             schema="public",
         )
@@ -219,9 +223,9 @@ async def check_db_state(
     """
     try:
         count_query = text(
-            """
+            f"""
             SELECT COUNT(*), MAX(timestamp)
-            FROM public.indicators
+            FROM public.{INDICATORS_TABLE_NAME}
             WHERE symbol = :symbol AND timeframe = :timeframe
         """
         )

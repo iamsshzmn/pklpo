@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from src.database import get_async_session
 from src.logging import get_logger
+from src.models import INDICATORS_TABLE_NAME
 
 logger = get_logger(__name__)
 
@@ -30,12 +31,14 @@ async def check_unique_index():
                 """
                 SELECT indexname, indexdef
                 FROM pg_indexes
-                WHERE tablename = 'indicators'
+                WHERE tablename = :table_name
                 AND indexdef LIKE '%UNIQUE%'
                 ORDER BY indexname
             """
             )
-            result = await session.execute(index_query)
+            result = await session.execute(
+                index_query, {"table_name": INDICATORS_TABLE_NAME}
+            )
             indexes = result.fetchall()
 
             print(f"Found {len(indexes)} unique indexes:")
@@ -56,10 +59,11 @@ async def check_unique_index():
 
             # Создаем уникальный индекс
             create_index_sql = text(
-                """
+                f"""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_indicators_unique
-                    ON indicators (symbol, timeframe, timestamp)
+                    ON {INDICATORS_TABLE_NAME} (symbol, timeframe, timestamp)
                 """
+
             )
             await session.execute(create_index_sql)
             await session.commit()
@@ -83,12 +87,14 @@ async def check_table_schema():
                 """
                 SELECT column_name, data_type, is_nullable, column_default
                 FROM information_schema.columns
-                WHERE table_name = 'indicators'
+                WHERE table_name = :table_name
                 AND table_schema = 'public'
                 ORDER BY ordinal_position
             """
             )
-            result = await session.execute(schema_query)
+            result = await session.execute(
+                schema_query, {"table_name": INDICATORS_TABLE_NAME}
+            )
             columns = result.fetchall()
 
             print(f"Table has {len(columns)} columns:")
@@ -129,12 +135,14 @@ async def check_permissions():
                 """
                 SELECT privilege_type
                 FROM information_schema.table_privileges
-                WHERE table_name = 'indicators'
+                WHERE table_name = :table_name
                 AND table_schema = 'public'
                 AND grantee = current_user
             """
             )
-            result = await session.execute(perm_query)
+            result = await session.execute(
+                perm_query, {"table_name": INDICATORS_TABLE_NAME}
+            )
             privileges = [row[0] for row in result.fetchall()]
 
             print(f"User privileges: {privileges}")
@@ -162,19 +170,20 @@ async def test_upsert():
     try:
         async for session in get_async_session():
             # Проверяем текущее количество записей
-            count_query = text("SELECT COUNT(*) FROM public.indicators")
+            count_query = text(f"SELECT COUNT(*) FROM public.{INDICATORS_TABLE_NAME}")
             result = await session.execute(count_query)
             count_before = result.scalar()
             print(f"Records before test: {count_before}")
 
             # Вставляем тестовую запись
             test_insert = text(
-                """
-                INSERT INTO public.indicators (symbol, timeframe, timestamp, calculated_at, rsi_14)
+                f"""
+                INSERT INTO public.{INDICATORS_TABLE_NAME} (symbol, timeframe, timestamp, calculated_at, rsi_14)
                 VALUES ('TEST-SYMBOL', '1m', 1761044280000, NOW(), 65.5)
                 ON CONFLICT (symbol, timeframe, timestamp)
                 DO UPDATE SET rsi_14 = EXCLUDED.rsi_14, calculated_at = EXCLUDED.calculated_at
             """
+
             )
 
             await session.execute(test_insert)
@@ -190,7 +199,7 @@ async def test_upsert():
 
                 # Удаляем тестовую запись
                 cleanup = text(
-                    "DELETE FROM public.indicators WHERE symbol = 'TEST-SYMBOL'"
+                    f"DELETE FROM public.{INDICATORS_TABLE_NAME} WHERE symbol = 'TEST-SYMBOL'"
                 )
                 await session.execute(cleanup)
                 await session.commit()

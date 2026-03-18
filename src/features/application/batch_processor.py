@@ -10,6 +10,7 @@ import time
 from typing import TYPE_CHECKING
 
 from src.logging import get_logger
+from src.models import INDICATORS_TABLE_NAME
 
 from ..domain.calculator import calculate_batch
 from ..domain.strategy import get_max_lookback_for_strategies
@@ -82,7 +83,7 @@ async def process_single_pair(
             for c in ind_df.columns
             if c not in ("open", "high", "low", "close", "volume", "ts")
         ]
-        await ensure_columns_exist(session, "indicators", indicator_columns)
+        await ensure_columns_exist(session, INDICATORS_TABLE_NAME, indicator_columns)
 
         save_deps = create_feature_save_dependencies(session)
         save_result = await save_batch(

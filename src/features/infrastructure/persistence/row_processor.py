@@ -63,7 +63,8 @@ def build_batch_data(
             seen_timestamps.add(timestamp_ms)
 
             ts_sec = timestamp_ms // 1000
-            calculated_at = datetime.datetime.utcfromtimestamp(ts_sec)
+            # asyncpg expects naive UTC datetime for TIMESTAMPTZ columns
+            calculated_at = datetime.datetime.fromtimestamp(ts_sec, datetime.UTC).replace(tzinfo=None)
 
             indicator_data = {"symbol": symbol, "timeframe": timeframe, "timestamp": timestamp_ms, "calculated_at": calculated_at}
             indicators_added = 0

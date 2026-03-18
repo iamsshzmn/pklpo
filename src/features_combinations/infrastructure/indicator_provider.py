@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 from sqlalchemy import text
 
+from src.models import INDICATORS_TABLE_NAME
+
 from ..logging_config import get_combinations_logger
 
 if TYPE_CHECKING:
@@ -58,10 +60,10 @@ class PostgresIndicatorProvider:
 
         # Загружаем список колонок из БД (исключаем служебные)
         cols_query = text(
-            """
+            f"""
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_name = 'indicators'
+            WHERE table_name = '{INDICATORS_TABLE_NAME}'
             AND table_schema = 'public'
             AND column_name NOT IN ('symbol', 'timeframe', 'calculated_at',
                                      'run_id', 'params_hash', 'data_quality_status',
@@ -85,7 +87,7 @@ class PostgresIndicatorProvider:
         # Строим запрос
         query_str = f"""
             SELECT {select_clause}
-            FROM indicators
+            FROM {INDICATORS_TABLE_NAME}
             WHERE {where_clause}
             ORDER BY timestamp ASC
         """

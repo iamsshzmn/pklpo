@@ -34,7 +34,7 @@ success, count, time, errors = await process_single_pair(
 ```
 
 **Workflow:**
-1. Получение последнего timestamp из indicators
+1. Получение последнего timestamp из `indicators_p`
 2. Извлечение новых OHLCV данных
 3. Проверка достаточности данных (min 20 строк)
 4. Расчёт индикаторов через Core API

@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 
 from src.logging import get_features_logger
+from src.models import INDICATORS_TABLE_NAME
 
 logger = get_features_logger("features.upsert_optimizer")
 
@@ -141,7 +142,7 @@ class UpsertOptimizer:
         self,
         df: pd.DataFrame,
         group_name: str,
-        table_name: str = "indicators",
+        table_name: str = INDICATORS_TABLE_NAME,
         **kwargs,
     ) -> bool:
         """

@@ -28,8 +28,9 @@ from src.features.application.save_dependencies import (
 from src.features.core import compute_features
 from src.features.presets.features_calc_short_v1 import FEATURES_CALC_SHORT_SPECS
 from src.logging import get_logger
-from src.market_meta.application.quality_pipeline import run_quality_pipeline
-from src.market_meta.infrastructure.sqlalchemy_pool_adapter import SQLAlchemyPoolAdapter
+from src.candles.application.quality_pipeline import run_quality_pipeline
+from src.candles.infrastructure.sqlalchemy_pool_adapter import SQLAlchemyPoolAdapter
+from src.models import INDICATORS_TABLE_NAME
 
 logger = get_logger("features.application.features_calc_short_service")
 
@@ -317,11 +318,12 @@ async def run_features_calc_short_validate(
                 max_ts = (
                     await session.execute(
                         text(
-                            """
+                            f"""
                             SELECT MAX(timestamp)
-                            FROM indicators
+                            FROM {INDICATORS_TABLE_NAME}
                             WHERE timeframe = :tf
                             """
+                            ,
                         ),
                         {"tf": tf},
                     )

@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.logging import get_logger
+from src.models import INDICATORS_TABLE_NAME
 
 logger = get_logger("features.application.freshness_gate")
 
@@ -94,11 +95,12 @@ async def check_has_work_to_do(
         indicators_max_ts_ms = (
             await session.execute(
                 text(
-                    """
+                    f"""
                     SELECT MAX(timestamp)
-                    FROM indicators
+                    FROM {INDICATORS_TABLE_NAME}
                     WHERE timeframe = :tf
                     """
+                    ,
                 ),
                 {"tf": timeframe},
             )

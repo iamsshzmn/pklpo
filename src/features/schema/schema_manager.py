@@ -11,6 +11,7 @@ from sqlalchemy import Table, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.logging import get_logger
+from src.models import INDICATORS_TABLE_NAME
 
 logger = get_logger(__name__)
 
@@ -208,12 +209,12 @@ class SchemaManager:
             """
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_name = 'indicators'
+            WHERE table_name = :table_name
             AND table_schema = 'public'
         """
         )
 
-        result = await session.execute(query)
+        result = await session.execute(query, {"table_name": INDICATORS_TABLE_NAME})
         columns = {
             row[0] for row in result.all()
         }  # FIXED: .all() instead of .fetchall() for async
@@ -232,7 +233,7 @@ class SchemaManager:
         nullable_clause = "" if nullable else "NOT NULL"
 
         alter_sql = f"""
-            ALTER TABLE indicators
+            ALTER TABLE {INDICATORS_TABLE_NAME}
             ADD COLUMN {column_name} {column_type} {nullable_clause}
         """
 
