@@ -175,6 +175,12 @@ src/**/*_SUMMARY.md
 
 # Tests (не коммитить)
 tests/
+!tests/
+tests/*
+!tests/db/
+tests/db/*
+!tests/db/test_indicators_partition_maintenance.py
+!tests/db/test_indicators_partition_maintenance_dag.py
 src/**/tests/
 src/**/test_*.py
 /benchmarks

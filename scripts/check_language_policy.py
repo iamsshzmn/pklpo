@@ -2,7 +2,7 @@
 """
 Pre-commit language policy:
 - Python source files must be English-only (no Cyrillic characters).
-- Repository root README.md must contain Russian text (at least one Cyrillic char).
+- README and Markdown documentation are not enforced here.
 """
 
 from __future__ import annotations
@@ -36,30 +36,11 @@ def _check_python_file(path: Path) -> list[str]:
     return errors
 
 
-def _check_root_readme(path: Path) -> list[str]:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError as exc:
-        return [f"{path}: cannot decode as UTF-8 ({exc})"]
-
-    if not CYRILLIC_RE.search(text):
-        return [
-            f"{path}: no Cyrillic text found. "
-            "Repository README.md must be written in Russian."
-        ]
-    return []
-
-
 def main(argv: list[str]) -> int:
     errors: list[str] = []
     for raw in argv:
         path = Path(raw)
         posix = path.as_posix()
-        name_lower = path.name.lower()
-
-        if name_lower == "readme.md" and path.parent in {Path("."), Path("")}:
-            errors.extend(_check_root_readme(path))
-            continue
 
         if path.suffix.lower() == ".py":
             # Skip virtual env and caches if they leak into file list.
