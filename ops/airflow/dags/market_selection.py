@@ -133,10 +133,12 @@ async def _run_migrations_async(database_url: str) -> bool:
     from src.market_selection.migrations import run_market_selection_migrations
 
     engine = create_async_engine(database_url, echo=False)
-
-    async with AsyncSession(engine) as session:
-        await run_market_selection_migrations(session)
-        return True
+    try:
+        async with AsyncSession(engine) as session:
+            await run_market_selection_migrations(session)
+            return True
+    finally:
+        await engine.dispose()
 
 
 def run_migrations_task(**context) -> dict[str, Any]:
@@ -164,32 +166,36 @@ async def _run_pipeline_async(
     """Run market selection pipeline."""
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-    from src.market_selection.application.pipeline import MarketSelectionPipeline
     from src.market_selection.config import MarketSelectionConfig
+    from src.market_selection.infrastructure.factory import (
+        build_market_selection_pipeline,
+    )
 
     engine = create_async_engine(database_url, echo=False)
+    try:
+        # Build config with overrides from params
+        config = MarketSelectionConfig()
+        if params.get("top_n") is not None:
+            config.universe.top_n = int(params["top_n"])
 
-    # Build config with overrides from params
-    config = MarketSelectionConfig()
-    if params.get("top_n") is not None:
-        config.universe.top_n = int(params["top_n"])
+        async with AsyncSession(engine) as session:
+            pipeline = build_market_selection_pipeline(session, config)
+            result = await pipeline.run()
 
-    async with AsyncSession(engine) as session:
-        pipeline = MarketSelectionPipeline(session, config)
-        result = await pipeline.run()
-
-    return {
-        "success": result.success,
-        "ts_version": result.ts_version,
-        "ts_eval": result.ts_eval,
-        "universe_size": result.universe_size,
-        "status": result.status.value,
-        "global_regime": result.global_regime.value if result.global_regime else None,
-        "eligible_counts": result.eligible_counts,
-        "execution_time_seconds": result.execution_time_seconds,
-        "config_hash": result.config_hash,
-        "error_message": result.error_message,
-    }
+        return {
+            "success": result.success,
+            "ts_version": result.ts_version,
+            "ts_eval": result.ts_eval,
+            "universe_size": result.universe_size,
+            "status": result.status.value,
+            "global_regime": result.global_regime.value if result.global_regime else None,
+            "eligible_counts": result.eligible_counts,
+            "execution_time_seconds": result.execution_time_seconds,
+            "config_hash": result.config_hash,
+            "error_message": result.error_message,
+        }
+    finally:
+        await engine.dispose()
 
 
 def run_pipeline_task(**context) -> dict[str, Any]:
@@ -235,68 +241,70 @@ async def _validate_universe_async(database_url: str) -> dict[str, Any]:
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
     engine = create_async_engine(database_url, echo=False)
-
-    async with AsyncSession(engine) as session:
-        # Check latest version
-        result = await session.execute(
-            text(
-                """
-            SELECT ts_version, status, universe_size, global_regime, config_hash
-            FROM market_universe_versions
-            ORDER BY ts_version DESC
-            LIMIT 1
-        """
+    try:
+        async with AsyncSession(engine) as session:
+            # Check latest version
+            result = await session.execute(
+                text(
+                    """
+                SELECT ts_version, status, universe_size, global_regime, config_hash
+                FROM market_universe_versions
+                ORDER BY ts_version DESC
+                LIMIT 1
+            """
+                )
             )
-        )
-        row = result.fetchone()
+            row = result.fetchone()
 
-        if not row:
-            return {"valid": False, "reason": "No universe version found"}
+            if not row:
+                return {"valid": False, "reason": "No universe version found"}
 
-        ts_version, status, universe_size, regime, config_hash = row
+            ts_version, status, universe_size, regime, config_hash = row
 
-        if status not in ("published", "fallback_prev"):
+            if status not in ("published", "fallback_prev"):
+                return {
+                    "valid": False,
+                    "reason": f"Latest version status is {status}",
+                    "ts_version": ts_version,
+                }
+
+            if universe_size < 5:
+                return {
+                    "valid": False,
+                    "reason": f"Universe too small: {universe_size}",
+                    "ts_version": ts_version,
+                }
+
+            # Get symbols
+            symbols_result = await session.execute(
+                text(
+                    """
+                SELECT symbol, final_score, rank
+                FROM market_universe
+                WHERE ts_version = :ts_version
+                ORDER BY rank
+                LIMIT 10
+            """
+                ),
+                {"ts_version": ts_version},
+            )
+
+            top_symbols = [
+                {"symbol": r[0], "score": r[1], "rank": r[2]}
+                for r in symbols_result.fetchall()
+            ]
+
             return {
-                "valid": False,
-                "reason": f"Latest version status is {status}",
+                "valid": True,
                 "ts_version": ts_version,
+                "status": status,
+                "universe_size": universe_size,
+                "global_regime": regime,
+                "config_hash": config_hash,
+                "top_symbols": top_symbols,
             }
-
-        if universe_size < 5:
-            return {
-                "valid": False,
-                "reason": f"Universe too small: {universe_size}",
-                "ts_version": ts_version,
-            }
-
-        # Get symbols
-        symbols_result = await session.execute(
-            text(
-                """
-            SELECT symbol, final_score, rank
-            FROM market_universe
-            WHERE ts_version = :ts_version
-            ORDER BY rank
-            LIMIT 10
-        """
-            ),
-            {"ts_version": ts_version},
-        )
-
-        top_symbols = [
-            {"symbol": r[0], "score": r[1], "rank": r[2]}
-            for r in symbols_result.fetchall()
-        ]
-
-        return {
-            "valid": True,
-            "ts_version": ts_version,
-            "status": status,
-            "universe_size": universe_size,
-            "global_regime": regime,
-            "config_hash": config_hash,
-            "top_symbols": top_symbols,
-        }
+    finally:
+        await engine.dispose()
 
 
 def validate_universe_task(**context) -> dict[str, Any]:
@@ -339,19 +347,21 @@ async def _cleanup_old_data_async(database_url: str) -> dict[str, Any]:
 
     engine = create_async_engine(database_url, echo=False)
     config = MarketSelectionConfig()
+    try:
+        async with AsyncSession(engine) as session:
+            persistence = MarketSelectionPersistence(session)
+            scores_deleted, universe_deleted = await persistence.cleanup_old_data(
+                scores_retention_days=config.universe.scores_retention_days,
+                universe_retention_days=config.universe.universe_retention_days,
+            )
+            await session.commit()
 
-    async with AsyncSession(engine) as session:
-        persistence = MarketSelectionPersistence(session)
-        scores_deleted, universe_deleted = await persistence.cleanup_old_data(
-            scores_retention_days=config.universe.scores_retention_days,
-            universe_retention_days=config.universe.universe_retention_days,
-        )
-        await session.commit()
-
-    return {
-        "scores_deleted": scores_deleted,
-        "universe_deleted": universe_deleted,
-    }
+        return {
+            "scores_deleted": scores_deleted,
+            "universe_deleted": universe_deleted,
+        }
+    finally:
+        await engine.dispose()
 
 
 async def _get_universe_symbols_async(database_url: str) -> list[str]:
@@ -360,39 +370,41 @@ async def _get_universe_symbols_async(database_url: str) -> list[str]:
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
     engine = create_async_engine(database_url, echo=False)
-
-    async with AsyncSession(engine) as session:
-        # Get latest published universe
-        result = await session.execute(
-            text(
-                """
-            SELECT ts_version FROM market_universe_versions
-            WHERE status IN ('published', 'fallback_prev')
-            ORDER BY ts_version DESC
-            LIMIT 1
-        """
+    try:
+        async with AsyncSession(engine) as session:
+            # Get latest published universe
+            result = await session.execute(
+                text(
+                    """
+                SELECT ts_version FROM market_universe_versions
+                WHERE status IN ('published', 'fallback_prev')
+                ORDER BY ts_version DESC
+                LIMIT 1
+            """
+                )
             )
-        )
-        row = result.fetchone()
+            row = result.fetchone()
 
-        if not row:
-            return []
+            if not row:
+                return []
 
-        ts_version = row[0]
+            ts_version = row[0]
 
-        # Get symbols
-        symbols_result = await session.execute(
-            text(
-                """
-            SELECT symbol FROM market_universe
-            WHERE ts_version = :ts_version
-            ORDER BY rank
-        """
-            ),
-            {"ts_version": ts_version},
-        )
+            # Get symbols
+            symbols_result = await session.execute(
+                text(
+                    """
+                SELECT symbol FROM market_universe
+                WHERE ts_version = :ts_version
+                ORDER BY rank
+            """
+                ),
+                {"ts_version": ts_version},
+            )
 
-        return [r[0] for r in symbols_result.fetchall()]
+            return [r[0] for r in symbols_result.fetchall()]
+    finally:
+        await engine.dispose()
 
 
 def prepare_features_calc_config(**context) -> dict[str, Any]:
@@ -477,6 +489,28 @@ def branch_cleanup_daily(**context) -> str:
     return "skip_cleanup_old_data"
 
 
+def branch_wait_for_features(**context) -> str:
+    """Skip external wait for manual/forced runs triggered from UI."""
+    dag_run = context.get("dag_run")
+    dag_run_conf = getattr(dag_run, "conf", None) or {}
+    is_manual_run = bool(dag_run and dag_run.run_type == "manual")
+    force_run = bool(dag_run_conf.get("force_run", False))
+
+    selected_branch = (
+        "skip_wait_for_features_calc_short"
+        if is_manual_run or force_run
+        else "wait_for_features_calc_short"
+    )
+    logger.info(
+        "branch_wait_for_features decision %s selected_branch=%s is_manual_run=%s force_run=%s",
+        _build_log_context(context),
+        selected_branch,
+        is_manual_run,
+        force_run,
+    )
+    return selected_branch
+
+
 # DAG definition
 with DAG(
     dag_id="market_selection",
@@ -492,6 +526,15 @@ with DAG(
         "force_run": False,
     },
 ) as dag:
+
+    branch_wait_for_features_task = BranchPythonOperator(
+        task_id="branch_wait_for_features",
+        python_callable=branch_wait_for_features,
+    )
+
+    skip_wait_for_features = EmptyOperator(
+        task_id="skip_wait_for_features_calc_short",
+    )
 
     # Wait for features_calc_short to complete (last task of that DAG)
     wait_for_features = ExternalTaskSensor(
@@ -568,7 +611,10 @@ with DAG(
     )
 
     # Task dependencies
-    wait_for_features >> run_migrations >> run_pipeline >> validate_universe
+    branch_wait_for_features_task >> [skip_wait_for_features, wait_for_features]
+    skip_wait_for_features >> run_migrations
+    wait_for_features >> run_migrations
+    run_migrations >> run_pipeline >> validate_universe
 
     # After validation, prepare trigger config; branch on empty universe
     validate_universe >> prepare_trigger >> branch_skip_or_trigger_task

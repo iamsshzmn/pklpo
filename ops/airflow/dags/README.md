@@ -8,6 +8,7 @@
 - [features_calc_short](#features_calc_short) - Расчёт коротких фичей
 - [market_selection](#market_selection) - Выбор торговых пар
 - [features_calc](#features_calc) - Расчёт всех фичей
+- [indicators_partition_maintenance](#indicators_partition_maintenance) - Обслуживание monthly partitions
 - [Общие настройки](#общие-настройки)
 - [Тестирование](#тестирование)
 
@@ -212,6 +213,64 @@ airflow dags trigger okx_swap_ohlcv_sync_v2 --conf '{"mode":"bootstrap","refresh
 
 ---
 
+## indicators_partition_maintenance
+
+**DAG ID:** `indicators_partition_maintenance`
+
+**Назначение:**
+- Поддерживает готовый горизонт monthly partitions для `indicators_p`
+- Создаёт отсутствующие partition tables заранее, не дожидаясь первого INSERT нового месяца
+- Проверяет, что текущий месяц и следующие месяцы доступны для записи
+
+**Расписание:** `0 1 * * *` (ежедневно в 01:00 UTC)
+
+**Состав задач:**
+1. `ensure_indicators_partitions` - создаёт недостающие partitions в окне обслуживания
+2. `validate_partition_horizon` - валидирует, что горизонт вперёд покрыт
+
+**Параметры запуска (через `dag_run.conf`):**
+
+```json
+{
+  "months_back": 1,
+  "months_ahead": 3,
+  "reference_dt": null,
+  "require_parent_pk": true
+}
+```
+
+**Особенности:**
+- DAG идемпотентен: повторный запуск не создаёт дубликаты
+- `reference_dt` нужен только для ручной отладки или проверки исторического окна
+- `require_parent_pk=true` проверяет prereq для UPSERT: на `indicators_p` должен быть PK/UNIQUE по `(symbol, timeframe, timestamp)`
+- DAG вызывает interface entrypoint `src.platform_ops.interfaces.*`, а не SQL/DB adapter напрямую
+
+**Ручной operational path (CLI):**
+
+```bash
+# Безопасный preview по умолчанию (dry-run)
+python -m src.cli.main indicators-partitions
+
+# Preview для конкретного окна
+python -m src.cli.main indicators-partitions --months-back 1 --months-ahead 3 --reference-dt 2026-03-07T00:00:00Z
+
+# Применить изменения явно
+python -m src.cli.main indicators-partitions --apply
+
+# Применить и сразу провалидировать horizon
+python -m src.cli.main indicators-partitions --apply --validate
+```
+
+**Важно:**
+- ручной CLI path по умолчанию не меняет схему
+- для реального apply нужен явный `--apply`
+- `--skip-parent-pk-check` допустим только для bootstrap/диагностического сценария
+
+**Логирование:**
+- В stdout Airflow логируется окно обслуживания, число созданных и уже существующих partitions
+
+---
+
 ## Общие настройки
 
 ### Airflow Connection
@@ -282,6 +341,9 @@ airflow tasks test features_calc_short features_calc_short_run 2025-01-01
 ```bash
 # Trigger DAG с конфигурацией
 airflow dags trigger <dag_id> --conf '{"mode":"fast","symbols":["BTC-USDT-SWAP"]}'
+
+# Trigger indicators partition maintenance
+airflow dags trigger indicators_partition_maintenance --conf '{"months_back":1,"months_ahead":3}'
 ```
 
 ### Проверка синтаксиса

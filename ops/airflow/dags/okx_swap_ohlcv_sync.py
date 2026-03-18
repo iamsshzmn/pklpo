@@ -98,7 +98,7 @@ def swap_sync_task(**context):
     Path("/tmp/pklpo/data").mkdir(parents=True, exist_ok=True)
 
     # Import after env is set to avoid logging writing to /opt/airflow/project/logs
-    from src.candles.sync_swap_candles import sync_swap_candles
+    from src.candles.interfaces.swap_sync import sync_swap_candles
 
     # Enable fetching extra metrics (funding rate, open interest)
     cfg = {
@@ -206,3 +206,4 @@ with DAG(
     )
 
     refresh_okx >> swap_sync >> smoke_validate
+
