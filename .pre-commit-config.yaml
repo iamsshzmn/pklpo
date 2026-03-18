@@ -31,11 +31,11 @@ repos:
   - repo: local
     hooks:
       - id: language-policy
-        name: Enforce language policy (code=EN, README=RU)
+        name: Enforce language policy (Python=EN)
         entry: python scripts/check_language_policy.py
         language: python
         pass_filenames: true
-        files: ^(README\.md|src/.*\.py|tests/.*\.py|scripts/.*\.py)$
+        files: ^(src/.*\.py|tests/.*\.py|scripts/.*\.py)$
 # ============================================
 # ПРИМЕЧАНИЯ:
 # ============================================

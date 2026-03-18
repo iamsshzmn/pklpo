@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 async def migrate_create_swap_ohlcv() -> None:
     """
-    Создает упрощенную таблицу swap OHLCV.
+    Создает базовую таблицу swap OHLCV.
     """
     logger.info("📊 Создаем упрощенную таблицу swap OHLCV...")
 

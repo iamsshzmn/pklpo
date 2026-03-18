@@ -1,133 +1,129 @@
-# Индекс файлов модуля `src/db`
+# Index: src/db
 
-## 📁 Структура модуля
+## Module Structure
 
 ```
 src/db/
-├── README.md                           # Основная документация
-├── INDEX.md                            # Этот файл - индекс всех компонентов
-├── __init__.py                         # Инициализация модуля
+├── README.md                    # Основная документация
+├── INDEX.md                     # Этот файл
+├── DEVELOPER_CHECKLIST.md       # Чек-лист разработчика
+├── __init__.py
 │
-├── 🔧 Основные компоненты
-├── migration_runner.py                 # Движок выполнения миграций
-├── migration_registry.py               # Реестр всех миграций
-├── schema_validation.py                # Валидация схемы БД
+├── Core
+├── migration_runner.py          # Движок выполнения миграций (run_all, dry_run, rollback)
+├── migration_registry.py        # Упорядоченный реестр миграций (get_migrations)
+├── schema_validation.py         # Валидация схемы БД (validate_schema)
+├── db_schema_utils.py           # Утилиты для работы со схемой
 │
-├── 📊 Отчёты и мониторинг
-├── migration_reports.py                # Генерация отчётов о миграциях
-├── reports_cli.py                      # CLI для работы с отчётами
-├── monitoring_cli.py                   # CLI для системы мониторинга
+├── Reports & Monitoring
+├── migration_reports.py         # Генерация отчётов о миграциях
+├── reports_cli.py               # CLI: status, health, stats, report, performance
+├── monitoring_cli.py            # CLI: collect, metrics, alerts, locks, refresh, prometheus
 │
-├── 🧪 Тестирование
-├── migration_testing.py                # Тест-сьют для миграций
-├── run_migration_tests.py              # Скрипт запуска тестов
+├── Partition Maintenance
+├── indicators_partition/        # Логика обслуживания партиций indicators_p
+│   └── __init__.py
 │
-├── 🗄️ Миграции (по этапам)
-├── migrate_create_schema_migrations.py # 001: Базовая инфраструктура
-├── migrate_add_core_indexes.py         # 100: Основные индексы
-├── migrate_create_ohlcv_partitioned.py # 101: Партиционирование OHLCV
-├── migrate_create_indicators_partitioned.py # 102: Партиционирование индикаторов
-├── migrate_backfill_partitioned.py     # 120: Перенос данных
-├── migrate_add_data_constraints.py     # 130: Ограничения качества данных
-├── migrate_add_operational_reliability.py # 140: Операционная надёжность
-├── migrate_data_cleanup.py             # 150: Очистка и нормализация данных
-├── migrate_materialized_views.py       # 160: Материализованные представления
-├── migrate_monitoring_metrics.py       # 170: Система мониторинга
+├── migrations/                  # Все файлы миграций
+│   ├── __init__.py
+│   │
+│   ├── Bootstrap (registry-registered, ordered)
+│   ├── migrate_create_schema_migrations.py      # 000
+│   ├── migrate_create_ohlcv.py                  # 020
+│   ├── migrate_add_swap_fields.py               # 030
+│   ├── migrate_create_positions.py              # 040
+│   ├── migrate_create_score_results.py          # 050
+│   ├── migrate_fix_score_results_precision.py   # 060
+│   ├── migrate_add_swap_fields_to_instruments.py  # 070
+│   ├── migrate_create_trade_recommendations.py  # 080
+│   ├── migrate_add_core_indexes.py              # 090
+│   ├── migrate_create_ohlcv_partitioned.py      # 100
+│   ├── migrate_create_indicators_partitioned.py # 110 — target bootstrap indicators_p
+│   ├── migrate_add_data_constraints.py          # 130
+│   ├── migrate_add_operational_reliability.py   # 140
+│   ├── migrate_data_cleanup.py                  # 150
+│   ├── migrate_materialized_views.py            # 160
+│   ├── migrate_monitoring_metrics.py            # 170
+│   ├── migrate_create_swap_ohlcv.py             # 180
+│   ├── migrate_create_features_table.py         # 190
+│   ├── migrate_add_data_retention.py            # 210
+│   ├── migrate_expand_indicators_precision.py   # 230
+│   ├── migrate_create_combination_features.py   # 240
+│   ├── migrate_create_market_data_ext.py        # 250
+│   ├── migrate_create_market_selection.py       # 260
+│   ├── migrate_recreate_swap_ohlcv_partitioned.py # 270
+│   │
+│   ├── Transition-only
+│   ├── migrate_backfill_partitioned.py          # 120 — только для переноса indicators→indicators_p
+│   │
+│   ├── Legacy compatibility
+│   ├── migrate_create_unified_indicators_table.py   # 200 — legacy indicators
+│   ├── migrate_update_indicators_table.py           # 205 — legacy indicators
+│   ├── migrate_remove_ohlcv_from_indicators.py      # 220 — legacy indicators
+│   │
+│   └── Not in registry (orphaned / feature-specific)
+│       ├── migrate_create_ohlcv.py                  # используется в CLI migrate напрямую
+│       ├── migrate_create_indicators.py
+│       ├── migrate_create_mtf_v2_tables.py
+│       ├── migrate_create_mtf_expanded.py
+│       ├── migrate_create_mtf_signals.py
+│       ├── migrate_create_signals.py
+│       ├── migrate_create_signals_detailed.py
+│       ├── migrate_create_combination_results.py
+│       ├── migrate_fix_combination_results_timezone.py
+│       ├── migrate_create_data_quality_metrics.py
+│       ├── migrate_add_missing_columns.py
+│       ├── migrate_add_missing_ma_columns.py
+│       ├── migrate_add_ohlcv_to_indicators.py
+│       ├── migrate_add_ema200.py
+│       ├── migrate_add_indexes.py
+│       ├── migrate_cleanup_duplicate_columns.py
+│       ├── migrate_fix_instrument_columns.py
+│       └── migrate_phase3_quant_tables.py
 │
-├── 📚 Устаревшие миграции (legacy)
-├── migrate_create_ohlcv.py             # Старая версия OHLCV
-├── migrate_create_indicators.py        # Старая версия индикаторов
-├── migrate_create_mtf_v2_tables.py     # MTF таблицы
-├── migrate_create_mtf_expanded.py      # Расширенные MTF таблицы
-├── migrate_create_mtf_signals.py       # MTF сигналы
-├── migrate_create_trade_recommendations.py # Рекомендации по торговле
-├── migrate_create_score_results.py     # Результаты скоринга
-├── migrate_fix_score_results_precision.py # Исправление точности
-├── migrate_add_swap_fields_to_instruments.py # Поля свопов
-├── migrate_create_positions.py         # Позиции
-├── migrate_add_swap_fields.py          # Поля свопов (старая версия)
-├── migrate_add_indexes.py              # Индексы (старая версия)
-├── migrate_add_ema200.py               # EMA200
-├── migrate_add_missing_columns.py      # Отсутствующие колонки
-├── migrate_add_missing_ma_columns.py   # Отсутствующие MA колонки
-├── migrate_add_ohlcv_to_indicators.py  # OHLCV в индикаторы
-├── migrate_create_combination_results.py # Результаты комбинаций
-├── migrate_create_signals.py           # Сигналы
-├── migrate_create_signals_detailed.py  # Детальные сигналы
-├── migrate_fix_combination_results_timezone.py # Исправление часовых поясов
-├── migrate_cleanup_duplicate_columns.py # Очистка дубликатов колонок
-├── migrate_fix_instrument_columns.py   # Исправление колонок инструментов
+├── rollback_phase3_quant_tables.sql  # SQL для отката phase3
 │
-├── 🛠️ Утилиты
-├── db_schema_utils.py                  # Утилиты для работы со схемой
-│
-├── 📊 Отчёты и документация
 └── reports/
-    ├── STAGES_8_9_COMPLETION_SUMMARY.md # Отчёт о завершении Этапов 8-9
-    └── MIGRATION_TESTING_SUMMARY.md     # Отчёт о тестировании миграций
+    ├── STAGES_8_9_COMPLETION_SUMMARY.md
+    ├── MIGRATION_TESTING_SUMMARY.md
+    └── README_TESTING.md
 ```
-
-## 🎯 Основные компоненты
-
-### 🔧 Ядро системы
-- **`migration_runner.py`** - Основной движок для выполнения миграций
-- **`migration_registry.py`** - Централизованный реестр всех миграций
-- **`schema_validation.py`** - Валидация схемы базы данных
-
-### 📊 Отчёты и мониторинг
-- **`migration_reports.py`** - Генерация детальных отчётов о миграциях
-- **`reports_cli.py`** - CLI для работы с отчётами (статус, здоровье, статистика)
-- **`monitoring_cli.py`** - CLI для системы мониторинга (метрики, алерты, логи)
-
-### 🧪 Тестирование
-- **`migration_testing.py`** - Полный тест-сьют для миграций
-- **`run_migration_tests.py`** - Скрипт для запуска тестов
-
-## 🗄️ Миграции по этапам
-
-### ✅ Этап 1: Базовая инфраструктура
-- `migrate_create_schema_migrations.py` - Создание системы отслеживания миграций
-
-### ✅ Этап 3: Индексация и производительность
-- `migrate_add_core_indexes.py` - Основные индексы
-- `migrate_create_ohlcv_partitioned.py` - Партиционирование OHLCV
-- `migrate_create_indicators_partitioned.py` - Партиционирование индикаторов
-
-### ✅ Этап 4: Качество данных и ограничения
-- `migrate_add_data_constraints.py` - Ограничения качества данных
-
-### ✅ Этап 5: Операционная надёжность
-- `migrate_add_operational_reliability.py` - Функции надёжности
-
-### ✅ Этап 8: Миграции по содержимому
-- `migrate_data_cleanup.py` - Очистка и нормализация данных
-- `migrate_materialized_views.py` - Материализованные представления
-
-### ✅ Этап 9: Мониторинг и метрики
-- `migrate_monitoring_metrics.py` - Система мониторинга
-
-## 🚀 Быстрый старт
-
-### Основные команды
-```bash
-# Запуск всех миграций
-python src/main_v2.py --migrations
-
-# Просмотр статуса
-python src/db/reports_cli.py status
-
-# Сбор метрик
-python src/db/monitoring_cli.py collect
-
-# Запуск тестов
-python run_migration_tests.py
-```
-
-### Полезные ссылки
-- [Основная документация](README.md)
-- [Отчёт о завершении Этапов 8-9](reports/STAGES_8_9_COMPLETION_SUMMARY.md)
-- [Тестирование миграций](reports/MIGRATION_TESTING_SUMMARY.md)
 
 ---
 
-**📝 Примечание:** Файлы в разделе "Устаревшие миграции" сохранены для совместимости, но новые разработки должны использовать современные миграции из основных этапов.
+## Key Files
+
+### migration_registry.py
+
+Единственный источник истины об упорядоченных миграциях. Любая новая миграция регистрируется здесь. Файлы в `migrations/`, не попавшие в реестр, не применяются автоматически.
+
+### migration_runner.py
+
+Движок применения: читает реестр, проверяет `schema_migrations`, пропускает уже применённые, поддерживает dry-run и откат при ошибке.
+
+### indicators_partition/
+
+Runtime-логика обслуживания партиций `indicators_p` (создание новых партиций, vacuum). Управляется через `python -m src.cli.main indicators-partitions`. Не является частью bootstrap-пути миграций.
+
+---
+
+## Quick Reference
+
+```bash
+# Применить миграции
+python -m src.cli.main migrate
+
+# Статус
+python src/db/reports_cli.py status
+
+# Валидация схемы
+python -c "import asyncio; from src.db.schema_validation import validate_schema; asyncio.run(validate_schema())"
+
+# Обслуживание партиций indicators_p
+python -m src.cli.main indicators-partitions --apply --validate
+```
+
+---
+
+Подробная документация: [README.md](README.md)
+Чек-лист разработчика: [DEVELOPER_CHECKLIST.md](DEVELOPER_CHECKLIST.md)

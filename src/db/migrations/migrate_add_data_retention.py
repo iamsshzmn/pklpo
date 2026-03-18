@@ -45,8 +45,8 @@ async def migrate_add_data_retention() -> None:
                     cutoff_timestamp BIGINT;
                     deleted_count INTEGER;
                 BEGIN
-                    -- Вычисляем timestamp для 2 дней назад (в секундах)
-                    cutoff_timestamp := EXTRACT(EPOCH FROM NOW() - INTERVAL '2 days')::BIGINT;
+                    -- swap_ohlcv_p хранит timestamp в миллисекундах
+                    cutoff_timestamp := (EXTRACT(EPOCH FROM NOW() - INTERVAL '2 days') * 1000)::BIGINT;
 
                     -- Удаляем данные старше 2 дней
                     DELETE FROM swap_ohlcv_p
@@ -72,7 +72,7 @@ async def migrate_add_data_retention() -> None:
                 RETURNS trigger AS $$
                 DECLARE
                     last_cleanup_time TIMESTAMP;
-                    current_time TIMESTAMP;
+                    current_ts TIMESTAMP;
                 BEGIN
                     -- Получаем время последней очистки
                     SELECT COALESCE(
@@ -80,16 +80,16 @@ async def migrate_add_data_retention() -> None:
                         '1970-01-01'::TIMESTAMP
                     ) INTO last_cleanup_time;
 
-                    current_time := NOW();
+                    current_ts := NOW();
 
                     -- Запускаем очистку раз в час
-                    IF current_time - last_cleanup_time > INTERVAL '1 hour' THEN
+                    IF current_ts - last_cleanup_time > INTERVAL '1 hour' THEN
                         PERFORM cleanup_old_swap_data();
 
                         -- Обновляем время последней очистки
                         INSERT INTO system_settings (key, value)
-                        VALUES ('last_cleanup_time', current_time::TEXT)
-                        ON CONFLICT (key) DO UPDATE SET value = current_time::TEXT;
+                        VALUES ('last_cleanup_time', current_ts::TEXT)
+                        ON CONFLICT (key) DO UPDATE SET value = current_ts::TEXT;
                     END IF;
 
                     RETURN NEW;
@@ -102,17 +102,19 @@ async def migrate_add_data_retention() -> None:
 
             # 3. Создаем сам триггер
             logger.info("🔄 Создаем триггер...")
-            create_trigger_definition_q = text(
-                """
-                DROP TRIGGER IF EXISTS trigger_cleanup_swap_data ON swap_ohlcv_p;
-
-                CREATE TRIGGER trigger_cleanup_swap_data
-                AFTER INSERT ON swap_ohlcv_p
-                FOR EACH ROW
-                EXECUTE FUNCTION trigger_cleanup_old_data();
-            """
+            await session.execute(
+                text("DROP TRIGGER IF EXISTS trigger_cleanup_swap_data ON swap_ohlcv_p;")
             )
-            await session.execute(create_trigger_definition_q)
+            await session.execute(
+                text(
+                    """
+                    CREATE TRIGGER trigger_cleanup_swap_data
+                    AFTER INSERT ON swap_ohlcv_p
+                    FOR EACH ROW
+                    EXECUTE FUNCTION trigger_cleanup_old_data();
+                    """
+                )
+            )
             logger.info("✅ Триггер создан")
 
             # 4. Создаем функцию для ручной очистки
@@ -125,8 +127,8 @@ async def migrate_add_data_retention() -> None:
                     cutoff_ts BIGINT;
                     deleted_cnt BIGINT;
                 BEGIN
-                    -- Вычисляем timestamp для указанного количества дней назад
-                    cutoff_ts := EXTRACT(EPOCH FROM NOW() - INTERVAL '1 day' * days_old)::BIGINT;
+                    -- swap_ohlcv_p хранит timestamp в миллисекундах
+                    cutoff_ts := (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 day' * days_old) * 1000)::BIGINT;
 
                     -- Удаляем данные
                     DELETE FROM swap_ohlcv_p

@@ -1,398 +1,477 @@
 """
-Модуль для генерации отчётов о миграциях.
+Utilities for post-migration reports and system health snapshots.
 """
 
 import asyncio
 import json
 import logging
 from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.utils.session_utils import get_db_session
 
 logger = logging.getLogger(__name__)
 
+REPORTS_DIR = Path("reports") / "db"
+TRACKED_TABLES = (
+    "ohlcv_p",
+    "indicators_p",
+    "swap_ohlcv_p",
+    "instruments",
+    "schema_migrations",
+    "migration_logs",
+    "combination_features",
+    "market_data_ext",
+)
+
+
+def _epoch_to_iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value).isoformat()
+    return str(value)
+
+
+def _shorten(text_value: str | None, limit: int = 120) -> str | None:
+    if text_value is None or len(text_value) <= limit:
+        return text_value
+    return f"{text_value[:limit].rstrip()}..."
+
+
+def _normalize_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.replace(tzinfo=None)
+
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
 
 class MigrationReport:
-    """Класс для генерации отчётов о миграциях."""
+    """Collects structured information after a migration run."""
 
     def __init__(self, migration_id: str, duration_ms: int):
         self.migration_id = migration_id
         self.duration_ms = duration_ms
         self.timestamp = datetime.now()
-        self.report_data = {}
+        self.report_data: dict[str, Any] = {
+            "migration_id": migration_id,
+            "duration_ms": duration_ms,
+            "timestamp": self.timestamp.isoformat(),
+            "duration_formatted": self._format_duration(duration_ms),
+        }
+
+    async def _run_section(self, section_name: str, collector) -> None:
+        try:
+            async with get_db_session() as session:
+                self.report_data[section_name] = await collector(session)
+        except SQLAlchemyError as exc:
+            logger.warning("migration report section %s failed: %s", section_name, exc)
+            self.report_data[section_name] = {"error": str(exc)}
+        except Exception as exc:
+            logger.warning("unexpected error in section %s: %s", section_name, exc)
+            self.report_data[section_name] = {"error": str(exc)}
 
     async def generate_full_report(self) -> dict[str, Any]:
-        """
-        Генерирует полный отчёт о миграции.
-        """
-        logger.info(f"📊 Генерируем отчёт для миграции: {self.migration_id}")
+        logger.info("generating migration report for %s", self.migration_id)
 
-        async with get_db_session() as session:
-            # Базовая информация
-            self.report_data = {
-                "migration_id": self.migration_id,
-                "duration_ms": self.duration_ms,
-                "timestamp": self.timestamp.isoformat(),
-                "duration_formatted": self._format_duration(self.duration_ms),
-            }
+        await self._run_section("database_stats", self._collect_database_stats)
+        await self._run_section("changes_analysis", self._analyze_changes)
+        await self._run_section("recommendations", self._generate_recommendations)
+        await self._run_section(
+            "performance_metrics",
+            self._collect_performance_metrics,
+        )
 
-            # Статистика базы данных
-            await self._collect_database_stats(session)
+        logger.info("migration report generated for %s", self.migration_id)
+        return self.report_data
 
-            # Анализ изменений
-            await self._analyze_changes(session)
-
-            # Рекомендации
-            await self._generate_recommendations(session)
-
-            # Метрики производительности
-            await self._collect_performance_metrics(session)
-
-            logger.info("✅ Отчёт сгенерирован успешно")
-            return self.report_data
-
-    async def _collect_database_stats(self, session) -> None:
-        """Собирает статистику базы данных."""
-        try:
-            # Общая статистика
-            stats_q = text(
-                """
-                SELECT
-                    COUNT(*) as total_tables,
-                    SUM(pg_total_relation_size(schemaname||'.'||tablename)) as total_size_bytes,
-                    SUM(pg_relation_size(schemaname||'.'||tablename)) as table_size_bytes
-                FROM pg_tables
-                WHERE schemaname = 'public'
+    async def _collect_database_stats(self, session) -> dict[str, Any]:
+        db_stats_q = text(
             """
-            )
-            result = await session.execute(stats_q)
-            stats = result.fetchone()
-
-            # Статистика индексов
-            index_q = text(
-                """
-                SELECT
-                    COUNT(*) as total_indexes,
-                    SUM(pg_relation_size(indexrelid)) as index_size_bytes
-                FROM pg_indexes
-                WHERE schemaname = 'public'
+            SELECT
+                COUNT(*) AS total_tables,
+                COALESCE(SUM(pg_total_relation_size(c.oid)), 0) AS total_size_bytes,
+                COALESCE(SUM(pg_relation_size(c.oid)), 0) AS table_size_bytes
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relkind IN ('r', 'p', 'm')
             """
-            )
-            result = await session.execute(index_q)
-            index_stats = result.fetchone()
+        )
+        db_stats = (await session.execute(db_stats_q)).one()
 
-            # Статистика наших таблиц
-            our_tables_q = text(
-                """
-                SELECT
-                    tablename,
-                    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size_pretty,
-                    pg_total_relation_size(schemaname||'.'||tablename) as size_bytes,
-                    (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.tablename) as column_count
-                FROM pg_tables t
-                WHERE schemaname = 'public'
-                AND tablename IN ('ohlcv_p', 'indicators_p', 'instruments', 'schema_migrations')
-                ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC
+        index_stats_q = text(
             """
-            )
-            result = await session.execute(our_tables_q)
-            our_tables = result.fetchall()
-
-            self.report_data["database_stats"] = {
-                "total_tables": stats[0],
-                "total_size_mb": round(stats[1] / 1024 / 1024, 2) if stats[1] else 0,
-                "table_size_mb": round(stats[2] / 1024 / 1024, 2) if stats[2] else 0,
-                "index_size_mb": (
-                    round(index_stats[1] / 1024 / 1024, 2) if index_stats[1] else 0
-                ),
-                "total_indexes": index_stats[0],
-                "our_tables": [
-                    {
-                        "name": row[0],
-                        "size_pretty": row[1],
-                        "size_mb": round(row[2] / 1024 / 1024, 2) if row[2] else 0,
-                        "column_count": row[3],
-                    }
-                    for row in our_tables
-                ],
-            }
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка при сборе статистики БД: {e}")
-            self.report_data["database_stats"] = {"error": str(e)}
-
-    async def _analyze_changes(self, session) -> None:
-        """Анализирует изменения после миграции."""
-        try:
-            # Проверяем последние миграции
-            recent_migrations_q = text(
-                """
-                SELECT
-                    migration_id,
-                    migration_name,
-                    applied_at,
-                    duration_ms,
-                    status
-                FROM schema_migrations
-                ORDER BY applied_at DESC
-                LIMIT 5
+            SELECT
+                COUNT(*) AS total_indexes,
+                COALESCE(SUM(pg_relation_size(i.indexrelid)), 0) AS index_size_bytes
+            FROM pg_index i
+            JOIN pg_class idx ON idx.oid = i.indexrelid
+            JOIN pg_namespace n ON n.oid = idx.relnamespace
+            WHERE n.nspname = 'public'
             """
-            )
-            result = await session.execute(recent_migrations_q)
-            recent_migrations = result.fetchall()
+        )
+        index_stats = (await session.execute(index_stats_q)).one()
 
-            # Проверяем новые объекты
-            new_objects_q = text(
-                """
-                SELECT
-                    schemaname,
-                    tablename,
-                    tableowner,
-                    tablespace
-                FROM pg_tables
-                WHERE schemaname = 'public'
-                AND tablename LIKE '%_p'  -- Партиционированные таблицы
-                ORDER BY tablename
+        tracked_tables_q = text(
             """
-            )
-            result = await session.execute(new_objects_q)
-            new_objects = result.fetchall()
-
-            # Проверяем новые индексы
-            new_indexes_q = text(
-                """
+            SELECT
+                c.relname AS table_name,
+                c.relkind AS relkind,
+                pg_total_relation_size(c.oid) AS size_bytes,
+                pg_size_pretty(pg_total_relation_size(c.oid)) AS size_pretty,
+                COALESCE(cols.column_count, 0) AS column_count
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            LEFT JOIN (
                 SELECT
-                    schemaname,
-                    tablename,
-                    indexname,
-                    indexdef
-                FROM pg_indexes
-                WHERE schemaname = 'public'
-                AND indexname LIKE '%_p%'  -- Индексы партиционированных таблиц
-                ORDER BY tablename, indexname
+                    table_name,
+                    COUNT(*) AS column_count
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                GROUP BY table_name
+            ) cols ON cols.table_name = c.relname
+            WHERE n.nspname = 'public'
+              AND c.relname = ANY(:tracked_tables)
+              AND c.relkind IN ('r', 'p', 'm')
+            ORDER BY size_bytes DESC, c.relname
             """
+        )
+        tracked_tables = (
+            await session.execute(tracked_tables_q, {"tracked_tables": list(TRACKED_TABLES)})
+        ).fetchall()
+
+        return {
+            "total_tables": int(db_stats.total_tables or 0),
+            "total_size_mb": round((db_stats.total_size_bytes or 0) / 1024 / 1024, 2),
+            "table_size_mb": round((db_stats.table_size_bytes or 0) / 1024 / 1024, 2),
+            "total_indexes": int(index_stats.total_indexes or 0),
+            "index_size_mb": round(
+                (index_stats.index_size_bytes or 0) / 1024 / 1024,
+                2,
+            ),
+            "tracked_tables": [
+                {
+                    "name": row.table_name,
+                    "kind": row.relkind,
+                    "size_pretty": row.size_pretty,
+                    "size_mb": round((row.size_bytes or 0) / 1024 / 1024, 2),
+                    "column_count": int(row.column_count or 0),
+                }
+                for row in tracked_tables
+            ],
+        }
+
+    async def _analyze_changes(self, session) -> dict[str, Any]:
+        migrations_q = text(
+            """
+            SELECT
+                id,
+                name,
+                applied_at,
+                duration_ms,
+                status,
+                attempt,
+                error
+            FROM schema_migrations
+            ORDER BY applied_at DESC
+            LIMIT 5
+            """
+        )
+        recent_migrations = (await session.execute(migrations_q)).fetchall()
+
+        current_migration_q = text(
+            """
+            SELECT
+                id,
+                name,
+                applied_at,
+                duration_ms,
+                status,
+                attempt,
+                error
+            FROM schema_migrations
+            WHERE id = :migration_id
+            """
+        )
+        current_migration = (
+            await session.execute(
+                current_migration_q,
+                {"migration_id": self.migration_id},
             )
-            result = await session.execute(new_indexes_q)
-            new_indexes = result.fetchall()
+        ).fetchone()
 
-            self.report_data["changes_analysis"] = {
-                "recent_migrations": [
-                    {
-                        "id": row[0],
-                        "name": row[1],
-                        "applied_at": row[2].isoformat() if row[2] else None,
-                        "duration_ms": row[3],
-                        "status": row[4],
-                    }
-                    for row in recent_migrations
-                ],
-                "new_partitioned_tables": [
-                    {"name": row[1], "owner": row[2], "tablespace": row[3]}
-                    for row in new_objects
-                ],
-                "new_indexes": [
-                    {
-                        "table": row[1],
-                        "name": row[2],
-                        "definition": (
-                            row[3][:100] + "..." if len(row[3]) > 100 else row[3]
-                        ),
-                    }
-                    for row in new_indexes
-                ],
-            }
+        partitioned_tables_q = text(
+            """
+            SELECT c.relname
+            FROM pg_partitioned_table pt
+            JOIN pg_class c ON c.oid = pt.partrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+            ORDER BY c.relname
+            """
+        )
+        partitioned_tables = (await session.execute(partitioned_tables_q)).fetchall()
 
-        except Exception as e:
-            logger.error(f"❌ Ошибка при анализе изменений: {e}")
-            self.report_data["changes_analysis"] = {"error": str(e)}
+        materialized_views_q = text(
+            """
+            SELECT matviewname
+            FROM pg_matviews
+            WHERE schemaname = 'public'
+            ORDER BY matviewname
+            """
+        )
+        materialized_views = (await session.execute(materialized_views_q)).fetchall()
 
-    async def _generate_recommendations(self, session) -> None:
-        """Генерирует рекомендации на основе анализа."""
-        try:
-            recommendations = []
+        migration_related_indexes_q = text(
+            """
+            SELECT
+                tablename,
+                indexname
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND (
+                    tablename = ANY(:tracked_tables)
+                 OR indexname ILIKE :migration_hint
+              )
+            ORDER BY tablename, indexname
+            LIMIT 20
+            """
+        )
+        migration_related_indexes = (
+            await session.execute(
+                migration_related_indexes_q,
+                {
+                    "tracked_tables": list(TRACKED_TABLES),
+                    "migration_hint": f"%{self.migration_id.split('_', 1)[-1]}%",
+                },
+            )
+        ).fetchall()
 
-            # Проверяем размер БД
-            if (
-                self.report_data.get("database_stats", {}).get("total_size_mb", 0)
-                > 1000
-            ):
+        return {
+            "current_migration": (
+                {
+                    "id": current_migration.id,
+                    "name": current_migration.name,
+                    "applied_at": _epoch_to_iso(current_migration.applied_at),
+                    "duration_ms": current_migration.duration_ms,
+                    "status": current_migration.status,
+                    "attempt": current_migration.attempt,
+                    "error": current_migration.error,
+                }
+                if current_migration
+                else None
+            ),
+            "recent_migrations": [
+                {
+                    "id": row.id,
+                    "name": row.name,
+                    "applied_at": _epoch_to_iso(row.applied_at),
+                    "duration_ms": row.duration_ms,
+                    "status": row.status,
+                    "attempt": row.attempt,
+                    "error": row.error,
+                }
+                for row in recent_migrations
+            ],
+            "partitioned_tables": [row.relname for row in partitioned_tables],
+            "materialized_views": [row.matviewname for row in materialized_views],
+            "relevant_indexes": [
+                {"table": row.tablename, "name": row.indexname}
+                for row in migration_related_indexes
+            ],
+        }
+
+    async def _generate_recommendations(self, session) -> list[dict[str, str]]:
+        recommendations: list[dict[str, str]] = []
+
+        db_stats = self.report_data.get("database_stats", {})
+        if (
+            isinstance(db_stats, dict)
+            and "error" not in db_stats
+            and db_stats.get("total_size_mb", 0) > 1024
+        ):
+            recommendations.append(
+                {
+                    "type": "warning",
+                    "message": "Database size is above 1 GB. Review retention and archival policy.",
+                    "action": "Inspect large tables and schedule cleanup for cold data.",
+                }
+            )
+
+        stale_stats_q = text(
+            """
+            SELECT
+                relname,
+                last_analyze,
+                last_vacuum
+            FROM pg_stat_user_tables
+            WHERE schemaname = 'public'
+              AND relname = ANY(:tracked_tables)
+            ORDER BY relname
+            """
+        )
+        stale_stats = (
+            await session.execute(stale_stats_q, {"tracked_tables": list(TRACKED_TABLES)})
+        ).fetchall()
+
+        now = datetime.now()
+        for row in stale_stats:
+            last_analyze = (
+                _normalize_datetime(row.last_analyze) if row.last_analyze else None
+            )
+            last_vacuum = (
+                _normalize_datetime(row.last_vacuum) if row.last_vacuum else None
+            )
+
+            if last_analyze is None or (now - last_analyze).days > 7:
                 recommendations.append(
                     {
                         "type": "warning",
-                        "message": "База данных превышает 1GB - рассмотрите архивирование старых данных",
-                        "action": "DELETE FROM ohlcv WHERE timestamp < extract(epoch from now() - interval '6 months')",
+                        "message": f"Statistics are stale for {row.relname}.",
+                        "action": f"ANALYZE {row.relname};",
                     }
                 )
-
-            # Проверяем фрагментацию индексов
-            fragmentation_q = text(
-                """
-                SELECT
-                    schemaname,
-                    tablename,
-                    indexname,
-                    pg_size_pretty(pg_relation_size(indexrelid)) as index_size
-                FROM pg_indexes
-                WHERE schemaname = 'public'
-                AND tablename IN ('ohlcv_p', 'indicators_p')
-                ORDER BY pg_relation_size(indexrelid) DESC
-                LIMIT 5
-            """
-            )
-            result = await session.execute(fragmentation_q)
-            large_indexes = result.fetchall()
-
-            if large_indexes:
+            if last_vacuum is None or (now - last_vacuum).days > 30:
                 recommendations.append(
                     {
                         "type": "info",
-                        "message": f"Найдено {len(large_indexes)} крупных индексов - рассмотрите REINDEX",
-                        "action": "REINDEX INDEX CONCURRENTLY index_name",
+                        "message": f"Vacuum has not run recently for {row.relname}.",
+                        "action": f"VACUUM ANALYZE {row.relname};",
                     }
                 )
 
-            # Проверяем статистику
-            stats_q = text(
-                """
-                SELECT
-                    schemaname,
-                    tablename,
-                    last_analyze,
-                    last_vacuum
-                FROM pg_stat_user_tables
-                WHERE schemaname = 'public'
-                AND tablename IN ('ohlcv_p', 'indicators_p')
+        if not recommendations:
+            recommendations.append(
+                {
+                    "type": "success",
+                    "message": "No immediate post-migration actions detected.",
+                    "action": "Continue with normal monitoring.",
+                }
+            )
+
+        return recommendations
+
+    async def _collect_performance_metrics(self, session) -> dict[str, Any]:
+        pg_stat_statements_q = text(
             """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_extension
+                WHERE extname = 'pg_stat_statements'
             )
-            result = await session.execute(stats_q)
-            table_stats = result.fetchall()
+            """
+        )
+        has_pg_stat_statements = bool(
+            (await session.execute(pg_stat_statements_q)).scalar()
+        )
 
-            for row in table_stats:
-                if not row[2] or (datetime.now() - row[2]).days > 7:
-                    recommendations.append(
-                        {
-                            "type": "warning",
-                            "message": f"Статистика таблицы {row[1]} устарела",
-                            "action": f"ANALYZE {row[1]}",
-                        }
-                    )
-
-                if not row[3] or (datetime.now() - row[3]).days > 30:
-                    recommendations.append(
-                        {
-                            "type": "info",
-                            "message": f"Таблица {row[1]} не подвергалась VACUUM более 30 дней",
-                            "action": f"VACUUM ANALYZE {row[1]}",
-                        }
-                    )
-
-            # Общие рекомендации
-            recommendations.extend(
-                [
-                    {
-                        "type": "success",
-                        "message": "Миграция выполнена успешно",
-                        "action": "Продолжайте мониторинг производительности",
-                    },
-                    {
-                        "type": "info",
-                        "message": "Рекомендуется запустить тесты миграций",
-                        "action": "python run_migration_tests.py",
-                    },
-                ]
-            )
-
-            self.report_data["recommendations"] = recommendations
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка при генерации рекомендаций: {e}")
-            self.report_data["recommendations"] = [{"type": "error", "message": str(e)}]
-
-    async def _collect_performance_metrics(self, session) -> None:
-        """Собирает метрики производительности."""
-        try:
-            # Время выполнения запросов
-            performance_q = text(
+        slow_queries: list[dict[str, Any]] = []
+        if has_pg_stat_statements:
+            slow_queries_q = text(
                 """
                 SELECT
                     query,
                     calls,
-                    total_time,
-                    mean_time,
+                    total_exec_time,
+                    mean_exec_time,
                     rows
                 FROM pg_stat_statements
-                WHERE query LIKE '%ohlcv_p%' OR query LIKE '%indicators_p%'
-                ORDER BY total_time DESC
+                WHERE query ILIKE '%ohlcv%'
+                   OR query ILIKE '%indicator%'
+                   OR query ILIKE '%schema_migrations%'
+                ORDER BY total_exec_time DESC
                 LIMIT 10
-            """
-            )
-            result = await session.execute(performance_q)
-            slow_queries = result.fetchall()
-
-            # Статистика блокировок
-            locks_q = text(
                 """
-                SELECT
-                    COUNT(*) as active_locks,
-                    COUNT(CASE WHEN NOT granted THEN 1 END) as waiting_locks
-                FROM pg_locks
-                WHERE database = (SELECT oid FROM pg_database WHERE datname = current_database())
-            """
             )
-            result = await session.execute(locks_q)
-            lock_stats = result.fetchone()
+            try:
+                slow_rows = (await session.execute(slow_queries_q)).fetchall()
+            except SQLAlchemyError:
+                fallback_q = text(
+                    """
+                    SELECT
+                        query,
+                        calls,
+                        total_time,
+                        mean_time,
+                        rows
+                    FROM pg_stat_statements
+                    WHERE query ILIKE '%ohlcv%'
+                       OR query ILIKE '%indicator%'
+                       OR query ILIKE '%schema_migrations%'
+                    ORDER BY total_time DESC
+                    LIMIT 10
+                    """
+                )
+                slow_rows = (await session.execute(fallback_q)).fetchall()
 
-            # Размер логов
-            log_q = text(
-                """
-                SELECT
-                    pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')) as wal_size
+            slow_queries = [
+                {
+                    "query": _shorten(row[0]),
+                    "calls": int(row[1] or 0),
+                    "total_time_ms": round(float(row[2] or 0), 2),
+                    "mean_time_ms": round(float(row[3] or 0), 2),
+                    "rows": int(row[4] or 0),
+                }
+                for row in slow_rows
+            ]
+
+        locks_q = text(
             """
-            )
-            result = await session.execute(log_q)
-            wal_size = result.scalar()
+            SELECT
+                COUNT(*) AS active_locks,
+                COUNT(*) FILTER (WHERE NOT granted) AS waiting_locks
+            FROM pg_locks
+            WHERE database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            """
+        )
+        lock_stats = (await session.execute(locks_q)).one()
 
-            self.report_data["performance_metrics"] = {
-                "slow_queries": [
-                    {
-                        "query": row[0][:100] + "..." if len(row[0]) > 100 else row[0],
-                        "calls": row[1],
-                        "total_time_ms": round(row[2], 2),
-                        "mean_time_ms": round(row[3], 2),
-                        "rows": row[4],
-                    }
-                    for row in slow_queries
-                ],
-                "lock_statistics": {
-                    "active_locks": lock_stats[0],
-                    "waiting_locks": lock_stats[1],
-                },
-                "wal_size": wal_size,
-                "migration_performance": {
-                    "duration_ms": self.duration_ms,
-                    "performance_rating": self._rate_performance(),
-                },
-            }
+        wal_q = text(
+            """
+            SELECT pg_size_pretty(pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')) AS wal_size
+            """
+        )
+        wal_size = (await session.execute(wal_q)).scalar()
 
-        except Exception as e:
-            logger.error(f"❌ Ошибка при сборе метрик производительности: {e}")
-            self.report_data["performance_metrics"] = {"error": str(e)}
+        return {
+            "pg_stat_statements_enabled": has_pg_stat_statements,
+            "slow_queries": slow_queries,
+            "lock_statistics": {
+                "active_locks": int(lock_stats.active_locks or 0),
+                "waiting_locks": int(lock_stats.waiting_locks or 0),
+            },
+            "wal_size": wal_size,
+            "migration_performance": {
+                "duration_ms": self.duration_ms,
+                "performance_rating": self._rate_performance(),
+            },
+        }
 
     def _format_duration(self, ms: int) -> str:
-        """Форматирует длительность в читаемый вид."""
         if ms < 1000:
             return f"{ms}ms"
         if ms < 60000:
-            return f"{ms/1000:.1f}s"
+            return f"{ms / 1000:.1f}s"
         minutes = ms // 60000
         seconds = (ms % 60000) / 1000
         return f"{minutes}m {seconds:.1f}s"
 
     def _rate_performance(self) -> str:
-        """Оценивает производительность миграции."""
         if self.duration_ms < 1000:
             return "excellent"
         if self.duration_ms < 5000:
@@ -402,207 +481,204 @@ class MigrationReport:
         return "slow"
 
     def save_report(self, filename: str | None = None) -> str:
-        """Сохраняет отчёт в JSON файл."""
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
         if not filename:
             timestamp = self.timestamp.strftime("%Y%m%d_%H%M%S")
-            filename = f"migration_report_{self.migration_id}_{timestamp}.json"
+            path = REPORTS_DIR / f"migration_report_{self.migration_id}_{timestamp}.json"
+        else:
+            path = Path(filename)
 
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(self.report_data, f, indent=2, ensure_ascii=False, default=str)
+        with path.open("w", encoding="utf-8") as file_handle:
+            json.dump(
+                self.report_data,
+                file_handle,
+                indent=2,
+                ensure_ascii=False,
+                default=_json_default,
+            )
 
-        logger.info(f"📄 Отчёт сохранен в {filename}")
-        return filename
+        logger.info("migration report saved to %s", path)
+        return str(path)
 
     def print_summary(self) -> None:
-        """Выводит краткое резюме отчёта."""
-        print(f"\n📊 ОТЧЁТ О МИГРАЦИИ: {self.migration_id}")
+        print(f"\nMigration report: {self.migration_id}")
         print("=" * 60)
-        print(f"⏱️  Длительность: {self.report_data.get('duration_formatted', 'N/A')}")
-        print(f"📅 Время выполнения: {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Duration: {self.report_data.get('duration_formatted', 'N/A')}")
+        print(f"Generated at: {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
 
-        # Статистика БД
         db_stats = self.report_data.get("database_stats", {})
         if db_stats and "error" not in db_stats:
-            print(f"🗄️  Размер БД: {db_stats.get('total_size_mb', 0)} MB")
-            print(f"📋 Таблиц: {db_stats.get('total_tables', 0)}")
-            print(f"🔍 Индексов: {db_stats.get('total_indexes', 0)}")
+            print(f"Database size: {db_stats.get('total_size_mb', 0)} MB")
+            print(f"Tables: {db_stats.get('total_tables', 0)}")
+            print(f"Indexes: {db_stats.get('total_indexes', 0)}")
 
-        # Рекомендации
         recommendations = self.report_data.get("recommendations", [])
         if recommendations:
-            print(f"\n💡 Рекомендации ({len(recommendations)}):")
-            for i, rec in enumerate(recommendations[:3], 1):  # Показываем первые 3
-                print(f"  {i}. {rec['message']}")
+            print(f"\nRecommendations ({len(recommendations)}):")
+            for index, recommendation in enumerate(recommendations[:3], start=1):
+                print(f"  {index}. {recommendation['message']}")
             if len(recommendations) > 3:
-                print(f"  ... и еще {len(recommendations) - 3} рекомендаций")
+                print(f"  ... and {len(recommendations) - 3} more")
 
-        # Производительность
         perf_metrics = self.report_data.get("performance_metrics", {})
         if perf_metrics and "error" not in perf_metrics:
             rating = perf_metrics.get("migration_performance", {}).get(
-                "performance_rating", "unknown"
+                "performance_rating",
+                "unknown",
             )
-            print(f"\n⚡ Оценка производительности: {rating.upper()}")
+            print(f"\nPerformance rating: {rating.upper()}")
 
         print("=" * 60)
 
 
 async def generate_migration_report(
-    migration_id: str, duration_ms: int, save_file: bool = True
+    migration_id: str,
+    duration_ms: int,
+    save_file: bool = True,
 ) -> MigrationReport:
-    """
-    Генерирует полный отчёт о миграции.
-
-    Args:
-        migration_id: ID миграции
-        duration_ms: Длительность выполнения в миллисекундах
-        save_file: Сохранять ли отчёт в файл
-
-    Returns:
-        MigrationReport: Объект отчёта
-    """
     report = MigrationReport(migration_id, duration_ms)
     await report.generate_full_report()
 
     if save_file:
-        filename = report.save_report()
-        logger.info(f"📄 Отчёт сохранен: {filename}")
+        report.save_report()
 
     return report
 
 
 async def generate_system_health_report() -> dict[str, Any]:
-    """
-    Генерирует отчёт о состоянии системы.
-    """
-    logger.info("🏥 Генерируем отчёт о состоянии системы...")
+    logger.info("generating system health report")
 
-    async with get_db_session() as session:
-        try:
-            # Общая статистика
-            stats_q = text(
+    try:
+        async with get_db_session() as session:
+            db_stats_q = text(
                 """
                 SELECT
-                    COUNT(*) as total_tables,
-                    SUM(pg_total_relation_size(schemaname||'.'||tablename)) as total_size_bytes,
-                    COUNT(CASE WHEN tablename LIKE '%_p' THEN 1 END) as partitioned_tables
-                FROM pg_tables
-                WHERE schemaname = 'public'
-            """
+                    COUNT(*) AS total_tables,
+                    COALESCE(SUM(pg_total_relation_size(c.oid)), 0) AS total_size_bytes
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                  AND c.relkind IN ('r', 'p', 'm')
+                """
             )
-            result = await session.execute(stats_q)
-            stats = result.fetchone()
+            db_stats = (await session.execute(db_stats_q)).one()
 
-            # Статистика миграций
+            partitioned_tables_q = text(
+                """
+                SELECT COUNT(*)
+                FROM pg_partitioned_table pt
+                JOIN pg_class c ON c.oid = pt.partrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                """
+            )
+            partitioned_tables = (await session.execute(partitioned_tables_q)).scalar()
+
             migrations_q = text(
                 """
                 SELECT
-                    COUNT(*) as total_migrations,
-                    COUNT(CASE WHEN status = 'success' THEN 1 END) as successful_migrations,
-                    COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_migrations,
-                    MAX(applied_at) as last_migration
+                    COUNT(*) AS total_migrations,
+                    COUNT(*) FILTER (WHERE status = 'applied') AS applied_migrations,
+                    COUNT(*) FILTER (WHERE status = 'failed') AS failed_migrations,
+                    MAX(applied_at) AS last_migration
                 FROM schema_migrations
-            """
+                """
             )
-            result = await session.execute(migrations_q)
-            migration_stats = result.fetchone()
+            migration_stats = (await session.execute(migrations_q)).one()
 
-            # Проверка здоровья
-            health_checks = []
+            health_checks: list[dict[str, str]] = []
 
-            # Проверка критичных таблиц
-            critical_tables = [
-                "ohlcv_p",
-                "indicators_p",
-                "instruments",
-                "schema_migrations",
-            ]
-            for table in critical_tables:
-                check_q = text("SELECT to_regclass(:table) IS NOT NULL")
-                result = await session.execute(check_q, {"table": table})
-                exists = result.scalar()
+            for table_name in ("ohlcv_p", "indicators_p", "instruments", "schema_migrations"):
+                exists_q = text("SELECT to_regclass(:qualified_name) IS NOT NULL")
+                exists = bool(
+                    (
+                        await session.execute(
+                            exists_q,
+                            {"qualified_name": f"public.{table_name}"},
+                        )
+                    ).scalar()
+                )
                 health_checks.append(
                     {
-                        "check": f"Table {table} exists",
-                        "status": "✅" if exists else "❌",
-                        "details": "Exists" if exists else "Missing",
+                        "check": f"table {table_name}",
+                        "status": "ok" if exists else "error",
+                        "details": "exists" if exists else "missing",
                     }
                 )
 
-            # Проверка индексов
-            index_q = text(
-                "SELECT COUNT(*) FROM pg_indexes WHERE tablename IN ('ohlcv_p', 'indicators_p')"
+            index_count_q = text(
+                """
+                SELECT COUNT(*)
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND tablename IN ('ohlcv_p', 'indicators_p', 'swap_ohlcv_p')
+                """
             )
-            result = await session.execute(index_q)
-            index_count = result.scalar()
+            index_count = int((await session.execute(index_count_q)).scalar() or 0)
             health_checks.append(
                 {
-                    "check": "Indexes on partitioned tables",
-                    "status": "✅" if index_count > 0 else "⚠️",
+                    "check": "indexes on core tables",
+                    "status": "ok" if index_count > 0 else "warning",
                     "details": f"{index_count} indexes found",
                 }
             )
 
-            # Проверка функций
-            func_q = text(
+            failed_migrations_q = text(
                 """
-                SELECT COUNT(*) FROM pg_proc
-                WHERE proname IN ('create_table_backup', 'check_migration_readiness')
-            """
+                SELECT id, error
+                FROM schema_migrations
+                WHERE status = 'failed'
+                ORDER BY applied_at DESC
+                LIMIT 3
+                """
             )
-            result = await session.execute(func_q)
-            func_count = result.scalar()
-            health_checks.append(
-                {
-                    "check": "Utility functions",
-                    "status": "✅" if func_count >= 2 else "⚠️",
-                    "details": f"{func_count}/2 functions found",
-                }
-            )
+            failed_migrations = (await session.execute(failed_migrations_q)).fetchall()
+            if failed_migrations:
+                health_checks.append(
+                    {
+                        "check": "recent failed migrations",
+                        "status": "warning",
+                        "details": ", ".join(row.id for row in failed_migrations),
+                    }
+                )
+
+            overall_status = "healthy"
+            if any(check["status"] == "error" for check in health_checks):
+                overall_status = "needs_attention"
+            elif any(check["status"] == "warning" for check in health_checks):
+                overall_status = "degraded"
 
             return {
                 "timestamp": datetime.now().isoformat(),
                 "database_stats": {
-                    "total_tables": stats[0],
-                    "total_size_mb": (
-                        round(stats[1] / 1024 / 1024, 2) if stats[1] else 0
+                    "total_tables": int(db_stats.total_tables or 0),
+                    "total_size_mb": round(
+                        (db_stats.total_size_bytes or 0) / 1024 / 1024,
+                        2,
                     ),
-                    "partitioned_tables": stats[2],
+                    "partitioned_tables": int(partitioned_tables or 0),
                 },
                 "migration_stats": {
-                    "total_migrations": migration_stats[0],
-                    "successful_migrations": migration_stats[1],
-                    "failed_migrations": migration_stats[2],
-                    "last_migration": (
-                        datetime.fromtimestamp(migration_stats[3]).isoformat()
-                        if migration_stats[3]
-                        else None
-                    ),
+                    "total_migrations": int(migration_stats.total_migrations or 0),
+                    "applied_migrations": int(migration_stats.applied_migrations or 0),
+                    "failed_migrations": int(migration_stats.failed_migrations or 0),
+                    "last_migration": _epoch_to_iso(migration_stats.last_migration),
                 },
                 "health_checks": health_checks,
-                "overall_status": (
-                    "healthy"
-                    if all(check["status"] == "✅" for check in health_checks)
-                    else "needs_attention"
-                ),
+                "overall_status": overall_status,
             }
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка при генерации отчёта о состоянии: {e}")
-            return {"error": str(e)}
+    except Exception as exc:
+        logger.error("failed to generate system health report: %s", exc)
+        return {"error": str(exc)}
 
 
 if __name__ == "__main__":
-    # Пример использования
-    async def main():
-        # Генерация отчёта о миграции
+    async def main() -> None:
         report = await generate_migration_report("140_operational_reliability", 1500)
         report.print_summary()
 
-        # Генерация отчёта о состоянии системы
         health_report = await generate_system_health_report()
-        print(
-            f"\n🏥 Состояние системы: {health_report.get('overall_status', 'unknown')}"
-        )
+        print(f"\nSystem health: {health_report.get('overall_status', 'unknown')}")
 
     asyncio.run(main())

@@ -14,55 +14,67 @@ def get_migrations() -> list[Migration]:
     Ordered list of migrations to run.
     Add new migrations at the end to preserve order.
     """
-    from src.db.migrate_add_core_indexes import migrate_add_core_indexes
-    from src.db.migrate_add_data_constraints import run_data_constraints_migration
-    from src.db.migrate_add_data_retention import migrate_add_data_retention
-    from src.db.migrate_add_operational_reliability import (
+    from src.db.migrations.migrate_add_core_indexes import migrate_add_core_indexes
+    from src.db.migrations.migrate_add_data_constraints import (
+        run_data_constraints_migration,
+    )
+    from src.db.migrations.migrate_add_data_retention import migrate_add_data_retention
+    from src.db.migrations.migrate_add_operational_reliability import (
         run_operational_reliability_migration,
     )
-    from src.db.migrate_add_swap_fields import run_migrations as mig_add_swap_fields
-    from src.db.migrate_add_swap_fields_to_instruments import (
+    from src.db.migrations.migrate_add_swap_fields import (
+        run_migrations as mig_add_swap_fields,
+    )
+    from src.db.migrations.migrate_add_swap_fields_to_instruments import (
         migrate_add_swap_fields_to_instruments,
     )
-    from src.db.migrate_backfill_partitioned import run_backfill_migration
-    from src.db.migrate_create_combination_features import (
+    from src.db.migrations.migrate_create_combination_features import (
         migrate_create_combination_features,
     )
-    from src.db.migrate_create_features_table import migrate_create_features_table
-    from src.db.migrate_create_indicators_partitioned import (
+    from src.db.migrations.migrate_create_features_table import (
+        migrate_create_features_table,
+    )
+    from src.db.migrations.migrate_create_indicators_partitioned import (
         migrate_create_indicators_partitioned,
     )
-    from src.db.migrate_create_market_data_ext import (
+    from src.db.migrations.migrate_create_market_data_ext import (
         migrate_create_market_data_ext,
     )
-    from src.db.migrate_create_market_selection import (
+    from src.db.migrations.migrate_create_market_selection import (
         migrate_create_market_selection,
     )
-    from src.db.migrate_create_ohlcv import run_migrations as mig_ohlcv
-    from src.db.migrate_create_ohlcv_partitioned import migrate_create_ohlcv_partitioned
-    from src.db.migrate_create_positions import run_migrations as mig_positions
-    from src.db.migrate_create_schema_migrations import migrate_create_schema_migrations
-    from src.db.migrate_create_score_results import migrate_create_score_results
-    from src.db.migrate_create_swap_ohlcv import migrate_create_swap_ohlcv
-    from src.db.migrate_create_trade_recommendations import (
+    from src.db.migrations.migrate_create_ohlcv import run_migrations as mig_ohlcv
+    from src.db.migrations.migrate_create_ohlcv_partitioned import (
+        migrate_create_ohlcv_partitioned,
+    )
+    from src.db.migrations.migrate_create_ops_data_quality_metrics import (
+        migrate_create_ops_data_quality_metrics,
+    )
+    from src.db.migrations.migrate_create_positions import (
+        run_migrations as mig_positions,
+    )
+    from src.db.migrations.migrate_create_schema_migrations import (
+        migrate_create_schema_migrations,
+    )
+    from src.db.migrations.migrate_create_score_results import (
+        migrate_create_score_results,
+    )
+    from src.db.migrations.migrate_create_swap_ohlcv import migrate_create_swap_ohlcv
+    from src.db.migrations.migrate_create_trade_recommendations import (
         migrate_create_trade_recommendations,
     )
-    from src.db.migrate_create_unified_indicators_table import (
-        migrate_create_unified_indicators_table,
-    )
-    from src.db.migrate_data_cleanup import migrate_data_cleanup
-    from src.db.migrate_expand_indicators_precision import (
+    from src.db.migrations.migrate_data_cleanup import migrate_data_cleanup
+    from src.db.migrations.migrate_expand_indicators_precision import (
         migrate_expand_indicators_precision,
     )
-    from src.db.migrate_fix_score_results_precision import (
+    from src.db.migrations.migrate_fix_score_results_precision import (
         migrate_fix_score_results_precision,
     )
-    from src.db.migrate_materialized_views import migrate_materialized_views
-    from src.db.migrate_monitoring_metrics import migrate_monitoring_metrics
-    from src.db.migrate_remove_ohlcv_from_indicators import (
-        migrate_remove_ohlcv_from_indicators,
+    from src.db.migrations.migrate_materialized_views import migrate_materialized_views
+    from src.db.migrations.migrate_monitoring_metrics import migrate_monitoring_metrics
+    from src.db.migrations.migrate_recreate_swap_ohlcv_partitioned import (
+        migrate_recreate_swap_ohlcv_partitioned,
     )
-    from src.db.migrate_update_indicators_table import migrate_update_indicators_table
     from src.migrate_create_instruments import run_migrations as mig_instruments
 
     return [
@@ -109,11 +121,6 @@ def get_migrations() -> list[Migration]:
             migrate_create_indicators_partitioned,
         ),
         Migration(
-            "120_backfill_partitioned",
-            "backfill data to partitioned tables",
-            run_backfill_migration,
-        ),
-        Migration(
             "130_data_constraints",
             "add data quality constraints",
             run_data_constraints_migration,
@@ -138,7 +145,7 @@ def get_migrations() -> list[Migration]:
         ),
         Migration(
             "180_swap_ohlcv",
-            "create swap OHLCV table with partitioning",
+            "create swap OHLCV table",
             migrate_create_swap_ohlcv,
         ),
         Migration(
@@ -147,24 +154,9 @@ def get_migrations() -> list[Migration]:
             migrate_create_features_table,
         ),
         Migration(
-            "200_unified_indicators",
-            "create unified indicators table with all 52 indicators",
-            migrate_create_unified_indicators_table,
-        ),
-        Migration(
-            "205_update_indicators",
-            "update existing indicators table to new structure",
-            migrate_update_indicators_table,
-        ),
-        Migration(
             "210_data_retention",
             "add data retention policy (2 days)",
             migrate_add_data_retention,
-        ),
-        Migration(
-            "220_remove_ohlcv_from_indicators",
-            "remove OHLCV columns from indicators table to avoid duplication",
-            migrate_remove_ohlcv_from_indicators,
         ),
         Migration(
             "230_expand_indicators_precision",
@@ -185,5 +177,15 @@ def get_migrations() -> list[Migration]:
             "260_market_selection",
             "create market_selection tables (scores_tf, universe, versions, regime_history)",
             migrate_create_market_selection,
+        ),
+        Migration(
+            "270_swap_ohlcv_partitioned",
+            "recreate swap_ohlcv_p as partitioned parent",
+            migrate_recreate_swap_ohlcv_partitioned,
+        ),
+        Migration(
+            "280_ops_data_quality_metrics",
+            "create ops schema and ops.data_quality_metrics table",
+            migrate_create_ops_data_quality_metrics,
         ),
     ]

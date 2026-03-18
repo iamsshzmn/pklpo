@@ -22,7 +22,7 @@ from src.utils.session_utils import get_db_session
 
 async def show_migration_status() -> None:
     """Показывает статус миграций."""
-    from src.db.migration_runner import get_migrations
+    from src.db.migration_registry import get_migrations
 
     async with get_db_session() as session:
         # Получаем список всех миграций
@@ -46,7 +46,7 @@ async def show_migration_status() -> None:
         result = await session.execute(status_q)
         applied_migrations = {row[0]: row for row in result.fetchall()}
 
-        print("📋 СТАТУС МИГРАЦИЙ")
+        print("СТАТУС МИГРАЦИЙ")
         print("=" * 80)
         print(
             f"{'ID':<20} {'Статус':<10} {'Длительность':<12} {'Попыток':<8} {'Последнее применение'}"
@@ -71,24 +71,39 @@ async def show_migration_status() -> None:
                 else:
                     applied_str = "N/A"
 
-                status_icon = {"applied": "✅", "failed": "❌", "planned": "📝"}.get(
-                    status, "❓"
+                status_icon = {"applied": "OK", "failed": "ERR", "planned": "PLAN"}.get(
+                    status, "UNK"
                 )
 
                 print(
                     f"{migration_id:<20} {status_icon} {status:<8} {duration:<12} {attempts:<8} {applied_str}"
                 )
             else:
-                print(f"{migration_id:<20} ⏳ pending    N/A         N/A      N/A")
+                print(f"{migration_id:<20} PEND pending    N/A         N/A      N/A")
 
         print("-" * 80)
 
         # Статистика
+        known_ids = {migration.id for migration in migrations}
+        known_rows = {
+            migration_id: row
+            for migration_id, row in applied_migrations.items()
+            if migration_id in known_ids
+        }
+        extra_rows = {
+            migration_id: row
+            for migration_id, row in applied_migrations.items()
+            if migration_id not in known_ids
+        }
         total = len(migrations)
-        applied = len([m for m in applied_migrations.values() if m[4] == "applied"])
-        failed = len([m for m in applied_migrations.values() if m[4] == "failed"])
+        applied = len([row for row in known_rows.values() if row[4] == "applied"])
+        failed = len([row for row in known_rows.values() if row[4] == "failed"])
 
-        print(f"📊 Всего миграций: {total}, Применено: {applied}, Ошибок: {failed}")
+        print(f"Всего миграций: {total}, Применено: {applied}, Ошибок: {failed}")
+        if extra_rows:
+            print("\nЗаписи в schema_migrations вне текущего реестра:")
+            for migration_id, row in sorted(extra_rows.items()):
+                print(f"   - {migration_id}: {row[1]} [{row[4]}]")
 
 
 async def show_system_health() -> None:
@@ -96,33 +111,33 @@ async def show_system_health() -> None:
     health_report = await generate_system_health_report()
 
     if "error" in health_report:
-        print(f"❌ Ошибка при получении отчёта: {health_report['error']}")
+        print(f"Ошибка при получении отчёта: {health_report['error']}")
         return
 
-    print("🏥 СОСТОЯНИЕ СИСТЕМЫ")
+    print("СОСТОЯНИЕ СИСТЕМЫ")
     print("=" * 50)
 
     # Базовая статистика
     db_stats = health_report.get("database_stats", {})
-    print("🗄️  База данных:")
-    print(f"   • Таблиц: {db_stats.get('total_tables', 0)}")
-    print(f"   • Размер: {db_stats.get('total_size_mb', 0)} MB")
-    print(f"   • Партиционированных таблиц: {db_stats.get('partitioned_tables', 0)}")
+    print("База данных:")
+    print(f"   - Таблиц: {db_stats.get('total_tables', 0)}")
+    print(f"   - Размер: {db_stats.get('total_size_mb', 0)} MB")
+    print(f"   - Партиционированных таблиц: {db_stats.get('partitioned_tables', 0)}")
 
     # Статистика миграций
     migration_stats = health_report.get("migration_stats", {})
-    print("\n📦 Миграции:")
-    print(f"   • Всего: {migration_stats.get('total_migrations', 0)}")
-    print(f"   • Успешных: {migration_stats.get('successful_migrations', 0)}")
-    print(f"   • Ошибок: {migration_stats.get('failed_migrations', 0)}")
+    print("\nМиграции:")
+    print(f"   - Всего: {migration_stats.get('total_migrations', 0)}")
+    print(f"   - Применено: {migration_stats.get('applied_migrations', 0)}")
+    print(f"   - Ошибок: {migration_stats.get('failed_migrations', 0)}")
 
     last_migration = migration_stats.get("last_migration")
     if last_migration:
-        print(f"   • Последняя: {last_migration}")
+        print(f"   - Последняя: {last_migration}")
 
     # Проверки здоровья
     health_checks = health_report.get("health_checks", [])
-    print("\n🔍 Проверки здоровья:")
+    print("\nПроверки здоровья:")
     for check in health_checks:
         status = check["status"]
         message = check["check"]
@@ -131,7 +146,7 @@ async def show_system_health() -> None:
 
     # Общий статус
     overall_status = health_report.get("overall_status", "unknown")
-    status_icon = "✅" if overall_status == "healthy" else "⚠️"
+    status_icon = "OK" if overall_status == "healthy" else "WARN"
     print(f"\n{status_icon} Общий статус: {overall_status.upper()}")
 
 
@@ -149,7 +164,7 @@ async def generate_report_for_migration(
             duration_result = result.scalar()
 
             if duration_result is None:
-                print(f"❌ Миграция {migration_id} не найдена в БД")
+                print(f"Миграция {migration_id} не найдена в БД")
                 return
 
             duration_ms = duration_result
@@ -160,7 +175,7 @@ async def generate_report_for_migration(
         )
         report.print_summary()
     except Exception as e:
-        print(f"❌ Ошибка при генерации отчёта: {e}")
+        print(f"Ошибка при генерации отчёта: {e}")
 
 
 async def show_database_stats() -> None:
@@ -183,7 +198,7 @@ async def show_database_stats() -> None:
         result = await session.execute(size_q)
         tables = result.fetchall()
 
-        print("📊 СТАТИСТИКА НАШИХ ТАБЛИЦ")
+        print("СТАТИСТИКА НАШИХ ТАБЛИЦ")
         print("=" * 60)
         print(f"{'Таблица':<20} {'Размер':<12} {'Колонок':<8} {'Размер (MB)'}")
         print("-" * 60)
@@ -216,7 +231,7 @@ async def show_database_stats() -> None:
         result = await session.execute(index_q)
         indexes = result.fetchall()
 
-        print("\n🔍 СТАТИСТИКА ИНДЕКСОВ")
+        print("\nСТАТИСТИКА ИНДЕКСОВ")
         print("=" * 40)
         print(f"{'Таблица':<20} {'Индексов':<10} {'Общий размер'}")
         print("-" * 40)
@@ -264,7 +279,7 @@ async def show_performance_metrics() -> None:
             result = await session.execute(slow_q)
             slow_queries = result.fetchall()
 
-            print("⚡ МЕДЛЕННЫЕ ЗАПРОСЫ")
+            print("МЕДЛЕННЫЕ ЗАПРОСЫ")
             print("=" * 80)
             print(
                 f"{'Запрос':<50} {'Вызовов':<8} {'Общее время':<12} {'Среднее время':<12} {'Строк'}"
@@ -284,9 +299,9 @@ async def show_performance_metrics() -> None:
 
             print("-" * 80)
         else:
-            print("⚡ МЕДЛЕННЫЕ ЗАПРОСЫ")
+            print("МЕДЛЕННЫЕ ЗАПРОСЫ")
             print("=" * 50)
-            print("📝 Расширение pg_stat_statements не установлено")
+            print("Расширение pg_stat_statements не установлено")
             print("   Для получения статистики запросов установите:")
             print("   CREATE EXTENSION pg_stat_statements;")
             print("-" * 50)
@@ -304,9 +319,9 @@ async def show_performance_metrics() -> None:
         result = await session.execute(locks_q)
         lock_stats = result.fetchone()
 
-        print("\n🔒 БЛОКИРОВКИ")
-        print(f"   • Активные: {lock_stats[0]}")
-        print(f"   • Ожидающие: {lock_stats[1]}")
+        print("\nБЛОКИРОВКИ")
+        print(f"   - Активные: {lock_stats[0]}")
+        print(f"   - Ожидающие: {lock_stats[1]}")
 
         # Дополнительная статистика
         table_stats_q = text(
@@ -328,7 +343,7 @@ async def show_performance_metrics() -> None:
         result = await session.execute(table_stats_q)
         table_stats = result.fetchall()
 
-        print("\n📊 СТАТИСТИКА ТАБЛИЦ")
+        print("\nСТАТИСТИКА ТАБЛИЦ")
         print("=" * 70)
         print(
             f"{'Таблица':<15} {'Вставки':<8} {'Обновления':<10} {'Удаления':<8} {'Живые строки':<12} {'Мёртвые строки':<12}"

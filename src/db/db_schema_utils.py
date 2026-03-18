@@ -2,6 +2,8 @@ import logging
 
 from sqlalchemy import MetaData, Table, inspect, text
 
+from src.models import INDICATORS_TABLE_NAME
+
 
 async def ensure_columns(session, table_name: str, columns: list[str]):
     """
@@ -40,10 +42,10 @@ async def ensure_columns(session, table_name: str, columns: list[str]):
 
 def get_indicators_table():
     """
-    Возвращает объект таблицы indicators для использования в запросах.
+    Возвращает объект целевой таблицы indicators для использования в запросах.
 
     Returns:
         Table: Объект таблицы indicators
     """
     metadata = MetaData()
-    return Table("indicators", metadata, autoload_with=None)
+    return Table(INDICATORS_TABLE_NAME, metadata, autoload_with=None)

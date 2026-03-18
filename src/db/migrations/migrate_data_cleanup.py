@@ -129,7 +129,7 @@ async def migrate_data_cleanup() -> None:
             # Индекс для ohlcv_p
             create_index_ohlcv_q = text(
                 """
-                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ohlcv_p_symbol_timeframe
+                CREATE INDEX IF NOT EXISTS idx_ohlcv_p_symbol_timeframe
                 ON ohlcv_p (symbol, timeframe)
             """
             )
@@ -138,7 +138,7 @@ async def migrate_data_cleanup() -> None:
             # Индекс для indicators_p
             create_index_indicators_q = text(
                 """
-                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_indicators_p_symbol_timeframe
+                CREATE INDEX IF NOT EXISTS idx_indicators_p_symbol_timeframe
                 ON indicators_p (symbol, timeframe)
             """
             )
@@ -147,8 +147,8 @@ async def migrate_data_cleanup() -> None:
             # Индекс для диапазона времени
             create_index_timestamp_q = text(
                 """
-                CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ohlcv_p_timestamp_range
-                ON ohlcv_p (timestamp) WHERE timestamp >= '2024-01-01'
+                CREATE INDEX IF NOT EXISTS idx_ohlcv_p_timestamp_range
+                ON ohlcv_p (timestamp) WHERE timestamp >= 1704067200
             """
             )
             await session.execute(create_index_timestamp_q)

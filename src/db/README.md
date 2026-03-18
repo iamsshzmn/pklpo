@@ -1,263 +1,267 @@
-# Модуль миграций базы данных
+# DB Module
 
-## 📋 Обзор
+**Версия:** 2.1.0 | **Статус:** Production Ready
 
-Модуль `src/db` представляет собой **полноценную enterprise-систему управления миграциями** для PostgreSQL с поддержкой:
+Модуль управления миграциями PostgreSQL с поддержкой идемпотентного применения, отслеживания состояния, партиционирования и мониторинга.
 
-### 🎯 Основные возможности
-- ✅ **Идемпотентные миграции** - безопасное повторное выполнение
-- ✅ **Отслеживание состояния** - полная история применения миграций
-- ✅ **Тестирование и валидация** - автоматические проверки схемы
-- ✅ **Мониторинг и метрики** - система алертов и производительности
-- ✅ **Автоматические бэкапы** - функции резервного копирования
-- ✅ **Партиционирование** - оптимизация для больших таблиц
-- ✅ **Материализованные представления** - агрегации для аналитики
-- ✅ **Очистка данных** - валидация и нормализация
-- ✅ **Prometheus интеграция** - готовность к внешним системам мониторинга
+---
 
-### 🏗️ Архитектура
+## 1. Purpose
+
+Централизованное управление схемой PostgreSQL для всех таблиц проекта:
+- **Idempotent migrations** — безопасное повторное выполнение
+- **Ordered execution** — реестр с фиксированным порядком применения
+- **Schema validation** — автоматические проверки перед/после
+- **Monitoring** — метрики, алерты, логи блокировок
+- **Materialized views** — агрегации для аналитики
+
+---
+
+## 2. Architecture
+
+### 2.1 Структура модуля
+
 ```
 src/db/
-├── migration_runner.py      # Основной движок миграций
-├── migration_registry.py    # Реестр всех миграций
-├── schema_validation.py     # Валидация схемы БД
-├── migration_testing.py     # Тест-сьют для миграций
-├── migration_reports.py     # Генерация отчётов
-├── reports_cli.py          # CLI для отчётов
-├── monitoring_cli.py       # CLI для мониторинга
-├── migrate_*.py            # Файлы миграций (по этапам)
-└── reports/                # Отчёты и документация
+├── migration_runner.py          # Движок выполнения миграций
+├── migration_registry.py        # Реестр с порядком миграций
+├── schema_validation.py         # Валидация схемы БД
+├── db_schema_utils.py           # Утилиты для работы со схемой
+├── migration_reports.py         # Генерация отчётов
+├── reports_cli.py               # CLI для отчётов
+├── monitoring_cli.py            # CLI для мониторинга
+├── DEVELOPER_CHECKLIST.md       # Чек-лист разработчика
+├── rollback_phase3_quant_tables.sql  # SQL для отката phase3
+├── migrations/                  # Файлы миграций
+│   ├── __init__.py
+│   ├── migrate_create_schema_migrations.py
+│   ├── migrate_create_ohlcv.py
+│   ├── migrate_create_ohlcv_partitioned.py
+│   ├── migrate_create_indicators_partitioned.py
+│   └── ...                      # Остальные миграции
+├── indicators_partition/        # Логика обслуживания партиций indicators_p
+└── reports/                     # Артефакты отчётов
+    ├── STAGES_8_9_COMPLETION_SUMMARY.md
+    └── MIGRATION_TESTING_SUMMARY.md
 ```
 
-## 🚀 Быстрый старт
+### 2.2 Слои
 
-### 🎯 Основные команды
+| Слой | Файл | Ответственность |
+|------|------|-----------------|
+| **Runner** | `migration_runner.py` | Применение миграций, dry-run, откат |
+| **Registry** | `migration_registry.py` | Упорядоченный список миграций |
+| **Validation** | `schema_validation.py` | Проверка схемы БД |
+| **Reports** | `migration_reports.py`, `reports_cli.py` | Статус, здоровье, статистика |
+| **Monitoring** | `monitoring_cli.py` | Метрики, алерты, логи блокировок |
+| **Migrations** | `migrations/*.py` | Идемпотентные DDL/DML изменения |
 
-#### Запуск всех миграций
+---
+
+## 3. Migration Registry
+
+Полный упорядоченный список миграций из `migration_registry.py`:
+
+| ID | Описание | Файл |
+|----|----------|------|
+| `000_base_migrations_table` | Создание таблицы отслеживания `schema_migrations` | `migrate_create_schema_migrations.py` |
+| `010_instruments` | Создание таблицы `instruments` | `src/migrate_create_instruments.py` |
+| `020_ohlcv` | Создание таблицы `ohlcv` | `migrate_create_ohlcv.py` |
+| `030_add_swap_fields` | Поля свопов | `migrate_add_swap_fields.py` |
+| `040_positions` | Таблицы позиций | `migrate_create_positions.py` |
+| `050_score_results` | Таблица `score_results` | `migrate_create_score_results.py` |
+| `060_fix_score_precision` | Точность `score_results` | `migrate_fix_score_results_precision.py` |
+| `070_add_swap_fields_to_instruments` | Поля свопов в `instruments` | `migrate_add_swap_fields_to_instruments.py` |
+| `080_trade_recommendations` | Таблицы рекомендаций | `migrate_create_trade_recommendations.py` |
+| `090_core_indexes` | Составные и BRIN индексы | `migrate_add_core_indexes.py` |
+| `100_ohlcv_partitioned` | Партиционированная `ohlcv_p` | `migrate_create_ohlcv_partitioned.py` |
+| `110_indicators_partitioned` | Партиционированная `indicators_p` | `migrate_create_indicators_partitioned.py` |
+| `130_data_constraints` | Ограничения качества данных | `migrate_add_data_constraints.py` |
+| `140_operational_reliability` | Функции надёжности и бэкапа | `migrate_add_operational_reliability.py` |
+| `150_data_cleanup` | Очистка и нормализация данных | `migrate_data_cleanup.py` |
+| `160_materialized_views` | Материализованные представления | `migrate_materialized_views.py` |
+| `170_monitoring_metrics` | Система мониторинга и метрик | `migrate_monitoring_metrics.py` |
+| `180_swap_ohlcv` | Партиционированная `swap_ohlcv` | `migrate_create_swap_ohlcv.py` |
+| `190_features_table` | Таблица `features` для индикаторов | `migrate_create_features_table.py` |
+| `210_data_retention` | Политика хранения данных (2 дня) | `migrate_add_data_retention.py` |
+| `230_expand_indicators_precision` | Расширение точности до `NUMERIC(38,12)` | `migrate_expand_indicators_precision.py` |
+| `240_combination_features` | Таблица `combination_features` | `migrate_create_combination_features.py` |
+| `250_market_data_ext` | Таблица `market_data_ext` (OI, funding, L2) | `migrate_create_market_data_ext.py` |
+| `260_market_selection` | Таблицы market selection | `migrate_create_market_selection.py` |
+
+### 3.1 Политика нумерации
+
+| Диапазон | Назначение |
+|----------|------------|
+| `000–099` | Базовая инфраструктура и схема |
+| `100–199` | Партиционирование и индексы |
+| `200–299` | Расширения схемы и точность |
+| `300–399` | (зарезервировано) |
+
+### 3.2 Политика для цепочки indicators_p
+
+Одновременно присутствуют target, transition и legacy миграции:
+
+| Тип | Миграции | Использование |
+|-----|---------|---------------|
+| **target bootstrap** | `110_indicators_partitioned` | Основной путь создания `indicators_p` |
+| **transition-only** | `120_backfill_partitioned` | Перенос данных `indicators → indicators_p` (временная) |
+| **legacy compat** | `200_unified_indicators`, `205_update_indicators`, `220_remove_ohlcv_from_indicators` | Описывают старую `indicators`, не являются целевым bootstrap path |
+| **mixed** | `230_expand_indicators_precision` | Полезна для `indicators_p` и партиций, содержит legacy-ветку |
+
+Практическое правило: для runtime-path ориентироваться на `indicators_p`. Legacy-ветки помечать явно как compatibility/transition, не выносить в основной bootstrap path.
+
+### 3.3 Обслуживание партиций indicators_p
+
+Routine partition maintenance (создание новых партиций, vacuum) вынесено в `src/db/indicators_partition/` и управляется отдельно:
+
 ```bash
-# Через main_v2.py (рекомендуется)
-python src/main_v2.py --migrations
+# Preview без изменений схемы
+python -m src.cli.main indicators-partitions
 
-# Напрямую через runner
-python -c "import asyncio; from src.db.migration_runner import run_all; asyncio.run(run_all())"
+# Применение maintenance
+python -m src.cli.main indicators-partitions --apply --validate
 ```
 
-#### Запуск тестов
+---
+
+## 4. CLI Commands
+
+### 4.1 Запуск миграций
+
 ```bash
-# Полный тест-сьют
-python run_migration_tests.py
+# Все миграции (через CLI)
+python -m src.cli.main migrate
 
-# CI/CD режим
-python run_migration_tests.py --ci
-
-# С подробным отчётом
-python run_migration_tests.py --report test_report.json --verbose
-```
-
-#### Dry-run (проверка без изменений)
-```bash
+# Dry-run через runner напрямую
 python -c "import asyncio; from src.db.migration_runner import run_all; asyncio.run(run_all(dry_run=True))"
 ```
 
-### 📊 Мониторинг и отчёты
+### 4.2 Валидация схемы
 
-#### Просмотр статуса миграций
 ```bash
+python -c "import asyncio; from src.db.schema_validation import validate_schema; asyncio.run(validate_schema())"
+```
+
+### 4.3 Отчёты
+
+```bash
+# Статус миграций
 python src/db/reports_cli.py status
-```
 
-#### Проверка здоровья системы
-```bash
+# Детальный отчёт
+python src/db/reports_cli.py report
+
+# Здоровье системы
 python src/db/reports_cli.py health
+
+# Статистика БД
+python src/db/reports_cli.py stats
+
+# Производительность
+python src/db/reports_cli.py performance
 ```
 
-#### Сбор метрик производительности
+### 4.4 Мониторинг
+
 ```bash
+# Сбор метрик
 python src/db/monitoring_cli.py collect
-```
 
-#### Просмотр алертов
-```bash
+# Просмотр метрик за 24 часа
+python src/db/monitoring_cli.py metrics --hours 24
+
+# Алерты
 python src/db/monitoring_cli.py alerts
-```
 
-### 🔧 Управление данными
+# Фильтр по уровню
+python src/db/monitoring_cli.py alerts --severity error
 
-#### Очистка и нормализация данных
-```bash
-# Автоматически выполняется при запуске миграций
-python src/main_v2.py --migrations
-```
+# Логи блокировок
+python src/db/monitoring_cli.py locks --hours 24
 
-#### Обновление материализованных представлений
-```bash
+# Обновление материализованных представлений
 python src/db/monitoring_cli.py refresh
+
+# Мониторинг блокировок в реальном времени
+python src/db/monitoring_cli.py monitor
+
+# Экспорт метрик в JSON
+python src/db/monitoring_cli.py export --output metrics.json
+
+# Prometheus метрики
+python src/db/monitoring_cli.py prometheus
 ```
 
-## 📚 Политика версионирования
+---
 
-### Формат ID миграций
-```
-XXX_description_of_migration
-```
+## 5. Storage Details
 
-**Примеры:**
-- `001_create_schema_migrations` - Базовая инфраструктура
-- `100_add_core_indexes` - Индексы и производительность
-- `110_create_ohlcv_partitioned` - Партиционирование
-- `120_backfill_partitioned` - Перенос данных
-- `130_data_constraints` - Ограничения и качество данных
-- `140_operational_reliability` - Операционная надежность
-- `150_data_cleanup` - Очистка и нормализация данных
-- `160_materialized_views` - Материализованные представления
-- `170_monitoring_metrics` - Система мониторинга и метрик
+### 5.1 Таблица отслеживания миграций
 
-### Правила нумерации
-- **000-099**: Базовая инфраструктура и схема
-- **100-199**: Производительность и индексы
-- **200-299**: Партиционирование и масштабирование
-- **300-399**: Качество данных и ограничения
-- **400-499**: Операционная надежность
-- **500-599**: Мониторинг и метрики
-- **600-699**: Очистка и нормализация данных
-- **700-799**: Материализованные представления
-- **800-899**: Резервные копии и восстановление
-- **900-999**: Экспериментальные функции
-
-## 🎯 Этапы развития системы
-
-### ✅ Этап 1: Базовая инфраструктура миграций
-- [x] Система версионирования миграций
-- [x] Реестр миграций с порядком выполнения
-- [x] Runner для применения миграций
-- [x] Dry-run режим
-- [x] Логирование и отчётность
-
-### ✅ Этап 2: Безопасность и идемпотентность
-- [x] Идемпотентные миграции
-- [x] Транзакционная безопасность
-- [x] Обработка ошибок и откатов
-- [x] Валидация схемы до/после
-
-### ✅ Этап 3: Индексация и производительность
-- [x] Партиционирование таблиц
-- [x] Оптимизированные индексы
-- [x] Backfill данных
-- [x] Анализ производительности
-
-### ✅ Этап 4: Качество данных и ограничения
-- [x] ENUM типы и домены
-- [x] PRIMARY KEY и UNIQUE ограничения
-- [x] CHECK ограничения
-- [x] Частичные индексы
-
-### ✅ Этап 5: Операционная надёжность
-- [x] Таймауты и лимиты
-- [x] Функции резервного копирования
-- [x] Мониторинг и метрики
-- [x] Retry с backoff
-
-### ✅ Этап 6: Тестирование и CI
-- [x] Тест-сьют для миграций
-- [x] Валидация схемы
-- [x] Тесты производительности
-- [x] CI/CD интеграция
-
-### ✅ Этап 7: Документация и DX
-- [x] Подробная документация
-- [x] CLI для отчётов
-- [x] Шаблоны миграций
-- [x] Лучшие практики
-
-### ✅ Этап 8: Миграции по содержимому
-- [x] Очистка и нормализация данных
-- [x] Удаление дубликатов
-- [x] Валидация цен и объемов
-- [x] Материализованные представления
-- [x] Агрегации и статистики
-
-### ✅ Этап 9: Мониторинг и метрики
-- [x] Система логирования миграций
-- [x] Мониторинг блокировок
-- [x] Сбор метрик производительности
-- [x] Система алертов
-- [x] Prometheus-совместимые метрики
-- [x] CLI для мониторинга
-
-## 🔄 Порядок миграций
-
-### 1. Базовая инфраструктура
 ```sql
--- 001: Создание таблицы отслеживания миграций
 CREATE TABLE schema_migrations (
-    migration_id TEXT PRIMARY KEY,
+    migration_id  TEXT PRIMARY KEY,
     migration_name TEXT NOT NULL,
-    applied_at TIMESTAMP DEFAULT NOW(),
-    duration_ms INTEGER,
-    status TEXT DEFAULT 'success',
-    error TEXT
+    applied_at    TIMESTAMP DEFAULT NOW(),
+    duration_ms   INTEGER,
+    status        TEXT DEFAULT 'success',
+    error         TEXT
 );
 ```
 
-### 2. Основные таблицы
+### 5.2 Основные таблицы
+
+| Таблица | Описание | Партиционирование |
+|---------|----------|--------------------|
+| `instruments` | Метаданные торговых пар | нет |
+| `ohlcv` | Рыночные свечи (legacy) | нет |
+| `ohlcv_p` | Рыночные свечи (production) | по `(symbol, timeframe)` |
+| `indicators_p` | Рассчитанные индикаторы | по `(symbol, timeframe)` |
+| `swap_ohlcv` | Свечи для свопов | по символу |
+| `score_results` | Результаты скоринга | нет |
+| `positions` | Позиции | нет |
+| `trade_recommendations` | Рекомендации | нет |
+| `features` | Технические индикаторы (features table) | нет |
+| `combination_features` | Комбинации фич (numeric-only) | нет |
+| `market_data_ext` | Extended market data (OI, funding, L2) | нет |
+| `market_selection_*` | Market selection (scores, universe, versions, regime) | нет |
+| `schema_migrations` | История миграций | нет |
+
+### 5.3 Мониторинговые таблицы (migration_monitoring_metrics)
+
+| Таблица | Описание |
+|---------|----------|
+| `migration_logs` | Логи выполнения миграций |
+| `lock_logs` | Логи блокировок и их длительности |
+| `performance_metrics` | Метрики производительности БД |
+| `alerts` | Система алертов (info / warning / error / critical) |
+
+### 5.4 Материализованные представления (migration_materialized_views)
+
+| Представление | Описание |
+|---------------|----------|
+| `mv_symbol_stats` | Статистика по символам и таймфреймам |
+| `mv_latest_prices` | Последние цены для каждого символа |
+| `mv_daily_aggregation` | Дневная агрегация OHLCV |
+| `mv_volatility` | Метрики волатильности по дням |
+| `mv_top_symbols` | Топ активных символов за 7 дней |
+| `mv_data_quality` | Метрики качества данных |
+
 ```sql
--- 010: Создание таблиц данных
-CREATE TABLE instruments (...);
-CREATE TABLE ohlcv (...);
-CREATE TABLE indicators (...);
+-- Обновление всех представлений
+SELECT refresh_materialized_views();
 ```
 
-### 3. Индексы и производительность
-```sql
--- 100: Добавление индексов
-CREATE INDEX CONCURRENTLY idx_ohlcv_symbol_timeframe_timestamp
-ON ohlcv (symbol, timeframe, timestamp);
-```
+---
 
-### 4. Партиционирование
-```sql
--- 110: Создание партиционированных таблиц
-CREATE TABLE ohlcv_p (
-    symbol VARCHAR(50),
-    timeframe VARCHAR(20),
-    timestamp BIGINT,
-    open DECIMAL(20,8),
-    high DECIMAL(20,8),
-    low DECIMAL(20,8),
-    close DECIMAL(20,8),
-    volume DECIMAL(30,8)
-) PARTITION BY RANGE (timestamp);
-```
+## 6. Writing Migrations
 
-### 5. Перенос данных
-```sql
--- 120: Перенос данных в партиционированные таблицы
-INSERT INTO ohlcv_p SELECT * FROM ohlcv WHERE timestamp IS NOT NULL;
-```
+### 6.1 Idempotency — обязательно
 
-### 6. Ограничения и качество
-```sql
--- 130: Добавление ограничений
-ALTER TABLE ohlcv_p ADD CONSTRAINT chk_ohlcv_p_volume_positive
-CHECK (volume >= 0);
-```
-
-### 7. Операционная надежность
-```sql
--- 140: Функции бэкапа и мониторинга
-CREATE OR REPLACE FUNCTION create_table_backup(...);
-CREATE VIEW table_size_monitoring AS ...;
-```
-
-## ✨ Как писать идемпотентные миграции
-
-### ✅ Правильно (идемпотентно)
 ```sql
 -- Создание таблицы
-CREATE TABLE IF NOT EXISTS my_table (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100)
-);
+CREATE TABLE IF NOT EXISTS my_table (id SERIAL PRIMARY KEY, name VARCHAR(100));
 
 -- Добавление колонки
 DO $$
@@ -271,8 +275,7 @@ BEGIN
 END $$;
 
 -- Создание индекса
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_my_table_name
-ON my_table (name);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_my_table_name ON my_table (name);
 
 -- Создание ENUM
 DO $$
@@ -283,429 +286,217 @@ BEGIN
 END $$;
 ```
 
-### ❌ Неправильно (не идемпотентно)
-```sql
--- Без IF NOT EXISTS
-CREATE TABLE my_table (id SERIAL PRIMARY KEY);
+### 6.2 Шаблон миграции
 
--- Без проверки существования
-ALTER TABLE my_table ADD COLUMN new_column VARCHAR(50);
-
--- Без IF NOT EXISTS
-CREATE INDEX idx_my_table_name ON my_table (name);
-```
-
-### 🔧 Шаблон миграции
 ```python
-async def run_migration_name() -> None:
-    """
-    Описание миграции.
-    """
-    logger.info("🔄 Начинаем миграцию...")
+import logging
+from sqlalchemy import text
+from src.utils.session_utils import get_db_session
+
+logger = logging.getLogger(__name__)
+
+
+async def migrate_your_migration_name() -> None:
+    """Описание что делает миграция."""
+    logger.info("Starting migration: your_migration_name")
 
     async with get_db_session() as session:
         try:
-            # 1. Проверяем текущее состояние
-            check_q = text("SELECT COUNT(*) FROM my_table")
-            result = await session.execute(check_q)
-            current_count = result.scalar()
-            logger.info(f"📊 Текущее количество записей: {current_count}")
-
-            # 2. Выполняем изменения (идемпотентно)
             migration_q = text("""
                 DO $$
                 BEGIN
                     IF NOT EXISTS (
                         SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'my_table' AND column_name = 'new_column'
+                        WHERE table_name = 'your_table' AND column_name = 'new_column'
                     ) THEN
-                        ALTER TABLE my_table ADD COLUMN new_column VARCHAR(50);
-                        RAISE NOTICE 'Column added successfully';
-                    ELSE
-                        RAISE NOTICE 'Column already exists';
+                        ALTER TABLE your_table ADD COLUMN new_column VARCHAR(50);
                     END IF;
                 END $$;
             """)
             await session.execute(migration_q)
-
-            # 3. Проверяем результат
-            verify_q = text("SELECT COUNT(*) FROM my_table")
-            result = await session.execute(verify_q)
-            new_count = result.scalar()
-            logger.info(f"✅ Миграция завершена. Новое количество: {new_count}")
-
             await session.commit()
+            logger.info("Migration completed: your_migration_name")
 
         except Exception as e:
             await session.rollback()
-            logger.error(f"❌ Ошибка миграции: {e}")
+            logger.error("Migration failed: %s", e)
             raise
 ```
 
-## 🔙 Как откатывать миграции
+### 6.3 Регистрация новой миграции
 
-### 1. Автоматический откат (в рамках транзакции)
+1. Создать файл в `src/db/migrations/migrate_your_name.py`
+2. Добавить в `migration_registry.py`:
+
 ```python
-async def run_migration_with_rollback() -> None:
-    """
-    Миграция с автоматическим откатом при ошибке.
-    """
-    async with get_db_session() as session:
-        try:
-            # Выполняем изменения
-            await session.execute(text("ALTER TABLE my_table ADD COLUMN test_col INT"))
-            await session.commit()
-            logger.info("✅ Миграция применена")
+from src.db.migrations.migrate_your_name import migrate_your_migration_name
 
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"❌ Миграция откачена: {e}")
-            raise
+# В get_migrations(), в конец списка:
+Migration("270_your_name", "description", migrate_your_migration_name),
 ```
 
-### 2. Ручной откат (для критических изменений)
+### 6.4 Использование CONCURRENTLY для индексов
+
+```sql
+-- Не блокирует таблицу (рекомендуется)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_name ON table_name (column);
+
+-- Блокирует таблицу (избегать на production)
+CREATE INDEX idx_name ON table_name (column);
+```
+
+---
+
+## 7. Rollback
+
+### 7.1 Автоматический откат (в рамках транзакции)
+
+Runner выполняет `session.rollback()` при любом исключении во время миграции.
+
+### 7.2 Ручной откат
+
 ```python
 async def rollback_migration(migration_id: str) -> None:
-    """
-    Ручной откат миграции.
-    """
-    logger.warning(f"⚠️ Откатываем миграцию: {migration_id}")
-
     async with get_db_session() as session:
         try:
-            # Выполняем откат
-            if migration_id == "130_data_constraints":
-                await session.execute(text("ALTER TABLE ohlcv_p DROP CONSTRAINT IF EXISTS chk_ohlcv_p_volume_positive"))
-                logger.info("✅ Ограничения удалены")
+            # Откат изменений (например, DROP COLUMN IF EXISTS)
+            await session.execute(text("ALTER TABLE my_table DROP COLUMN IF EXISTS new_column"))
 
-            # Обновляем статус в schema_migrations
-            update_q = text("""
+            await session.execute(text("""
                 UPDATE schema_migrations
                 SET status = 'rolled_back', applied_at = NOW()
                 WHERE migration_id = :migration_id
-            """)
-            await session.execute(update_q, {"migration_id": migration_id})
+            """), {"migration_id": migration_id})
 
             await session.commit()
-            logger.info(f"✅ Миграция {migration_id} откачена")
 
         except Exception as e:
             await session.rollback()
-            logger.error(f"❌ Ошибка отката: {e}")
             raise
 ```
 
-### 3. Откат через CLI
+### 7.3 Phase3 rollback
+
 ```bash
-# Откат конкретной миграции
-python -c "
-import asyncio
-from src.db.migration_runner import rollback_migration
-asyncio.run(rollback_migration('130_data_constraints'))
-"
+# SQL-файл для отката phase3 таблиц
+psql -d $POSTGRES_DB -f src/db/rollback_phase3_quant_tables.sql
 ```
 
-## 📊 Генерация отчётов
+---
 
-### Автоматический отчёт после миграции
-```python
-async def generate_migration_report(migration_id: str, duration_ms: int) -> Dict:
-    """
-    Генерирует отчёт о выполненной миграции.
-    """
-    async with get_db_session() as session:
-        # Собираем статистику
-        stats_q = text("""
-            SELECT
-                COUNT(*) as total_tables,
-                SUM(pg_total_relation_size(schemaname||'.'||tablename)) as total_size_bytes
-            FROM pg_tables
-            WHERE schemaname = 'public'
-        """)
-        result = await session.execute(stats_q)
-        stats = result.fetchone()
+## 8. Failure Modes & Troubleshooting
 
-        # Проверяем индексы
-        index_q = text("SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'public'")
-        result = await session.execute(index_q)
-        index_count = result.scalar()
+### 8.1 Частые сбои
 
-        return {
-            "migration_id": migration_id,
-            "duration_ms": duration_ms,
-            "timestamp": datetime.now().isoformat(),
-            "database_stats": {
-                "total_tables": stats[0],
-                "total_size_mb": round(stats[1] / 1024 / 1024, 2),
-                "total_indexes": index_count
-            },
-            "recommendations": [
-                "VACUUM ANALYZE для обновления статистики",
-                "REINDEX для фрагментированных индексов",
-                "Проверка размера логов"
-            ]
-        }
-```
+| Сбой | Поведение | Recovery |
+|------|-----------|----------|
+| Миграция уже применена | Пропускается по `schema_migrations` | Автоматический |
+| DDL ошибка | `session.rollback()`, запись `status='error'` | Исправить миграцию, повторить |
+| Блокировка таблицы | Зависание | Найти и завершить блокирующий процесс |
+| Недостаточно места | Ошибка PostgreSQL | Очистить данные или расширить диск |
 
-### Запуск отчёта
-```bash
-# Генерация отчёта о последней миграции
-python -c "
-import asyncio
-from src.db.migration_runner import generate_migration_report
-report = asyncio.run(generate_migration_report('140_operational_reliability', 1500))
-print(report)
-"
-```
+### 8.2 Миграция зависла
 
-## 🔧 Лучшие практики
-
-### 1. Всегда используйте транзакции
-```python
-async with get_db_session() as session:
-    try:
-        # Ваши изменения
-        await session.commit()
-    except Exception as e:
-        await session.rollback()
-        raise
-```
-
-### 2. Проверяйте существование перед созданием
 ```sql
--- Для таблиц
-CREATE TABLE IF NOT EXISTS my_table (...);
+-- Найти блокирующие запросы
+SELECT pid, state, wait_event_type, wait_event, query
+FROM pg_stat_activity
+WHERE state != 'idle';
 
--- Для колонок
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE ...) THEN
-        ALTER TABLE my_table ADD COLUMN new_col TYPE;
-    END IF;
-END $$;
-
--- Для индексов
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_name ON table_name (column);
-```
-
-### 3. Используйте CONCURRENTLY для индексов
-```sql
--- Не блокирует таблицу
-CREATE INDEX CONCURRENTLY idx_ohlcv_symbol_timeframe
-ON ohlcv (symbol, timeframe);
-
--- Блокирует таблицу (избегайте)
-CREATE INDEX idx_ohlcv_symbol_timeframe
-ON ohlcv (symbol, timeframe);
-```
-
-### 4. Логируйте все операции
-```python
-logger.info("🔄 Начинаем миграцию...")
-logger.info(f"📊 Текущее состояние: {current_stats}")
-logger.info("✅ Миграция завершена успешно")
-logger.error(f"❌ Ошибка: {error}")
-```
-
-### 5. Тестируйте миграции
-```bash
-# Запуск тестов после миграции
-python run_migration_tests.py
-
-# Проверка схемы
-python -c "
-import asyncio
-from src.db.schema_validation import validate_schema
-asyncio.run(validate_schema())
-"
-```
-
-## 🚨 Частые проблемы и решения
-
-### Проблема: Миграция зависла
-```bash
-# Проверка активных транзакций
-SELECT pid, state, query FROM pg_stat_activity WHERE state = 'active';
-
-# Принудительное завершение (осторожно!)
-SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = 'active';
-```
-
-### Проблема: Недостаточно места
-```bash
-# Проверка размера БД
-SELECT pg_size_pretty(pg_database_size('pklpo'));
-
-# Очистка старых данных
-DELETE FROM ohlcv WHERE timestamp < extract(epoch from now() - interval '1 year');
-VACUUM ANALYZE ohlcv;
-```
-
-### Проблема: Блокировки
-```sql
--- Проверка блокировок
-SELECT
-    l.pid,
-    l.mode,
-    l.granted,
-    a.query
+-- Найти незавершённые блокировки
+SELECT l.pid, l.mode, l.granted, a.query
 FROM pg_locks l
 JOIN pg_stat_activity a ON l.pid = a.pid
 WHERE NOT l.granted;
+
+-- Завершить процесс (осторожно)
+SELECT pg_terminate_backend(<pid>);
 ```
 
-## 🖥️ CLI интерфейсы
+### 8.3 Нехватка места
 
-### 📊 CLI для отчётов (`reports_cli.py`)
+```sql
+-- Размер БД
+SELECT pg_size_pretty(pg_database_size(current_database()));
 
-#### Статус миграций
+-- Размер таблиц
+SELECT tablename, pg_size_pretty(pg_total_relation_size(tablename::regclass))
+FROM pg_tables
+WHERE schemaname = 'public'
+ORDER BY pg_total_relation_size(tablename::regclass) DESC;
+```
+
+---
+
+## 9. Runbook
+
+### 9.1 Применение миграций
+
 ```bash
-# Общий статус
+# 1. Проверить текущее состояние
 python src/db/reports_cli.py status
 
-# Детальный отчёт
-python src/db/reports_cli.py report
+# 2. Dry-run
+python -c "import asyncio; from src.db.migration_runner import run_all; asyncio.run(run_all(dry_run=True))"
+
+# 3. Применить
+python -m src.cli.main migrate
+
+# 4. Проверить результат
+python src/db/reports_cli.py status
+python -c "import asyncio; from src.db.schema_validation import validate_schema; asyncio.run(validate_schema())"
 ```
 
-#### Здоровье системы
+### 9.2 Добавление новой миграции
+
+| Шаг | Действие |
+|-----|----------|
+| 1 | Создать `src/db/migrations/migrate_NNN_name.py` по шаблону из раздела 6.2 |
+| 2 | Зарегистрировать в `migration_registry.py` (в конец списка) |
+| 3 | Сделать dry-run для проверки |
+| 4 | Применить на staging |
+| 5 | Проверить схему через `schema_validation.py` |
+| 6 | Применить на production |
+
+### 9.3 Обновление материализованных представлений
+
 ```bash
-# Проверка здоровья
-python src/db/reports_cli.py health
-
-# Статистика БД
-python src/db/reports_cli.py stats
-
-# Метрики производительности
-python src/db/reports_cli.py performance
-```
-
-### 📈 CLI для мониторинга (`monitoring_cli.py`)
-
-#### Сбор и просмотр метрик
-```bash
-# Сбор метрик
-python src/db/monitoring_cli.py collect
-
-# Просмотр метрик за последние 24 часа
-python src/db/monitoring_cli.py metrics --hours 24
-
-# Экспорт метрик в JSON
-python src/db/monitoring_cli.py export --output metrics.json
-
-# Prometheus метрики
-python src/db/monitoring_cli.py prometheus
-```
-
-#### Алерты и логи
-```bash
-# Просмотр всех алертов
-python src/db/monitoring_cli.py alerts
-
-# Фильтр по уровню важности
-python src/db/monitoring_cli.py alerts --severity error
-
-# Логи блокировок
-python src/db/monitoring_cli.py locks --hours 24
-```
-
-#### Управление системой
-```bash
-# Мониторинг блокировок
-python src/db/monitoring_cli.py monitor
-
-# Обновление материализованных представлений
 python src/db/monitoring_cli.py refresh
 ```
 
-### 🧪 CLI для тестирования
+### 9.4 Диагностика схемы
 
-#### Запуск тестов
-```bash
-# Полный тест-сьют
-python run_migration_tests.py
-
-# CI/CD режим
-python run_migration_tests.py --ci
-
-# С подробным отчётом
-python run_migration_tests.py --report test_report.json --verbose
-```
-
-## 📞 Поддержка
-
-### Полезные команды
-```bash
-# Статус миграций
-python src/db/reports_cli.py status
-
-# Проверка схемы
-python -c "import asyncio; from src.db.schema_validation import validate_schema; asyncio.run(validate_schema())"
-
-# Мониторинг
-python src/db/monitoring_cli.py collect
-```
-
-### Логи и отладка
-- Логи миграций: `migration_runner.log`
-- Логи тестов: `migration_tests.log`
-- Отчёты: `migration_test_report.json`
-- Отчёты о миграциях: `src/db/reports/`
-
-## 🆕 Новые возможности (Этапы 8-9)
-
-### ✅ Этап 8: Миграции по содержимому
-
-#### Очистка и нормализация данных
-```bash
-# Запуск очистки данных
-python src/main_v2.py --migrations
-```
-
-**Возможности:**
-- 🧹 Удаление дубликатов из `ohlcv_p` и `indicators_p`
-- 🔧 Исправление неверных таймфреймов (`1Mutc` → `1M`)
-- ✅ Валидация цен (положительные значения, корректные спреды)
-- 📊 Валидация объемов (неотрицательные значения)
-- 🗑️ Удаление записей с NULL timestamp
-- 📈 Создание дополнительных индексов для оптимизации
-
-#### Материализованные представления
-
-**Доступные представления:**
 ```sql
--- Статистика по символам и таймфреймам
-SELECT symbol, timeframe, total_records, avg_volume, avg_spread
-FROM mv_symbol_stats
-WHERE total_records > 1000;
+-- Список партиций
+SELECT parent.relname AS parent, child.relname AS partition
+FROM pg_inherits
+JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
+JOIN pg_class child  ON pg_inherits.inhrelid  = child.oid
+ORDER BY parent.relname, child.relname;
 
--- Последние цены для каждого символа
-SELECT symbol, timeframe, close, volume, timestamp
-FROM mv_latest_prices
-ORDER BY timestamp DESC;
-
--- Дневная агрегация OHLCV данных
-SELECT symbol, trade_date, day_open, day_high, day_low, day_close, day_volume
-FROM mv_daily_aggregation
-WHERE trade_date >= CURRENT_DATE - INTERVAL '7 days';
-
--- Метрики волатильности по дням
-SELECT symbol, timeframe, day, avg_daily_change, volatility
-FROM mv_volatility
-WHERE day >= CURRENT_DATE - INTERVAL '30 days';
-
--- Топ активных символов за последние 7 дней
-SELECT symbol, total_records, total_volume, avg_volume
-FROM mv_top_symbols
-LIMIT 20;
-
--- Метрики качества данных
-SELECT table_name, total_records, unique_symbols, negative_volumes, invalid_spreads
-FROM mv_data_quality;
+-- Список индексов
+SELECT indexname, tablename, indexdef
+FROM pg_indexes
+WHERE schemaname = 'public'
+ORDER BY tablename, indexname;
 ```
 
-**Примеры аналитических запросов:**
+### 9.5 Environment Variables
+
+| Variable | Default | Описание |
+|----------|---------|----------|
+| `POSTGRES_USER` | — | DB user |
+| `POSTGRES_PASSWORD` | — | DB password |
+| `POSTGRES_DB` | — | DB name |
+| `DB_HOST` | localhost | DB host |
+| `DB_PORT` | 5432 | DB port |
+
+---
+
+## Appendix A: Аналитические запросы к материализованным представлениям
+
 ```sql
--- Найти символы с высокой волатильностью
+-- Символы с высокой волатильностью за 7 дней
 SELECT symbol, AVG(volatility) as avg_volatility
 FROM mv_volatility
 WHERE day >= CURRENT_DATE - INTERVAL '7 days'
@@ -713,7 +504,7 @@ GROUP BY symbol
 HAVING AVG(volatility) > 0.05
 ORDER BY avg_volatility DESC;
 
--- Сравнить объемы торгов по дням недели
+-- Сравнение объёмов по дням недели
 SELECT
     EXTRACT(DOW FROM trade_date) as day_of_week,
     AVG(day_volume) as avg_volume
@@ -722,176 +513,14 @@ WHERE trade_date >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY day_of_week
 ORDER BY day_of_week;
 
--- Найти символы с проблемами качества данных
-SELECT symbol,
-       COUNT(*) as total_records,
-       SUM(CASE WHEN volume < 0 THEN 1 ELSE 0 END) as negative_volumes
-FROM ohlcv_p
-GROUP BY symbol
-HAVING SUM(CASE WHEN volume < 0 THEN 1 ELSE 0 END) > 0;
-```
-
-### ✅ Этап 9: Мониторинг и метрики
-
-#### Система мониторинга
-```bash
-# CLI для мониторинга
-python src/db/monitoring_cli.py --help
-
-# Сбор метрик
-python src/db/monitoring_cli.py collect
-
-# Просмотр алертов
-python src/db/monitoring_cli.py alerts
-
-# Просмотр метрик
-python src/db/monitoring_cli.py metrics --hours 24
-
-# Логи блокировок
-python src/db/monitoring_cli.py locks --hours 24
-
-# Экспорт метрик
-python src/db/monitoring_cli.py export --output metrics.json
-
-# Prometheus метрики
-python src/db/monitoring_cli.py prometheus
-
-# Мониторинг блокировок
-python src/db/monitoring_cli.py monitor
-
-# Обновление представлений
-python src/db/monitoring_cli.py refresh
-```
-
-#### Компоненты системы мониторинга
-
-**Таблицы мониторинга:**
-- 📊 **migration_logs** - Логи выполнения миграций с детальной информацией
-- 🔒 **lock_logs** - Логи блокировок и их длительности
-- 📈 **performance_metrics** - Метрики производительности БД
-- 🚨 **alerts** - Система алертов с уровнями важности (info, warning, error, critical)
-
-**Представления и функции:**
-- 📊 **prometheus_metrics** - Prometheus-совместимые метрики
-- 🔧 **collect_performance_metrics()** - Автоматический сбор метрик
-- 🔍 **monitor_locks()** - Мониторинг блокировок в реальном времени
-- 📤 **export_metrics_json()** - Экспорт метрик в JSON формат
-
-**Автоматические алерты:**
-- ❌ **Неудачные миграции** - автоматическое создание алертов при ошибках
-- ⏰ **Длительные блокировки** - алерты для блокировок >30 секунд
-- 📊 **Высокое потребление ресурсов** - мониторинг производительности
-- 🔍 **Проблемы качества данных** - валидация целостности данных
-
-#### Автоматические функции
-```sql
--- Сбор метрик производительности
-SELECT collect_performance_metrics();
-
--- Мониторинг блокировок
-SELECT monitor_locks();
-
--- Обновление представлений
-SELECT refresh_materialized_views();
-
--- Экспорт метрик в JSON
-SELECT export_metrics_json();
-```
-
-#### Алерты
-Система автоматически создает алерты для:
-- ❌ Неудачных миграций
-- ⏰ Длительных блокировок (>30 секунд)
-- 📊 Высокого потребления ресурсов
-- 🔍 Проблем с качеством данных
-
-## ⚡ Производительность и оптимизация
-
-### 🚀 Партиционирование
-Система использует партиционирование по времени для оптимизации больших таблиц:
-
-```sql
--- ohlcv_p партиционирована по дням
--- indicators_p партиционирована по месяцам
--- Автоматическое создание новых партиций
-```
-
-### 📊 Индексы
-Оптимизированные индексы для быстрых запросов:
-
-```sql
--- Составные индексы для основных запросов
-CREATE INDEX CONCURRENTLY idx_ohlcv_p_symbol_timeframe_timestamp
-ON ohlcv_p (symbol, timeframe, timestamp);
-
--- BRIN индексы для временных диапазонов
-CREATE INDEX CONCURRENTLY idx_ohlcv_p_timestamp_brin
-ON ohlcv_p USING BRIN (timestamp);
-
--- Частичные индексы для оптимизации
-CREATE INDEX CONCURRENTLY idx_ohlcv_p_recent
-ON ohlcv_p (symbol, timeframe)
-WHERE timestamp >= extract(epoch from now() - interval '30 days');
-```
-
-### 🔄 Материализованные представления
-Автоматическое обновление представлений:
-
-```sql
--- Обновление всех представлений
-SELECT refresh_materialized_views();
-
--- Автоматическое обновление при изменениях данных
--- Триггеры для критически важных представлений
-```
-
-### 📈 Мониторинг производительности
-Постоянный мониторинг ключевых метрик:
-
-- **Размер таблиц и индексов**
-- **Cache hit ratio**
-- **Активные подключения**
-- **Медленные запросы**
-- **Блокировки и их длительность**
-
-## 🔧 Интеграция с внешними системами
-
-### 📊 Prometheus
-Готовность к интеграции с системами мониторинга:
-
-```bash
-# Экспорт метрик в Prometheus формате
-python src/db/monitoring_cli.py prometheus
-
-# Метрики доступны через представление prometheus_metrics
-```
-
-### 📤 JSON API
-Экспорт данных для внешних систем:
-
-```bash
-# Экспорт метрик в JSON
-python src/db/monitoring_cli.py export --output metrics.json
-
-# Структурированные отчёты
-python src/db/reports_cli.py report
-```
-
-### 🔗 CI/CD интеграция
-Готовность к автоматизации:
-
-```bash
-# CI/CD режим тестирования
-python run_migration_tests.py --ci
-
-# Автоматическая проверка здоровья
-python src/db/reports_cli.py health
+-- Символы с проблемами качества данных
+SELECT table_name, total_records, negative_volumes, invalid_spreads
+FROM mv_data_quality
+WHERE negative_volumes > 0 OR invalid_spreads > 0;
 ```
 
 ---
 
-**🎯 Помните: Всегда тестируйте миграции на staging перед production!**
-
-**📚 Дополнительная документация:**
-- [Отчёт о завершении Этапов 8-9](reports/STAGES_8_9_COMPLETION_SUMMARY.md)
-- [Тестирование миграций](reports/MIGRATION_TESTING_SUMMARY.md)
+**Версия:** 2.1.0
+**Последнее обновление:** 2026-03-07
+**Статус:** Production Ready

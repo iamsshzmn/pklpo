@@ -38,12 +38,17 @@ async def migrate_materialized_views() -> None:
                 FROM ohlcv_p
                 GROUP BY symbol, timeframe
                 ORDER BY symbol, timeframe;
-
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_symbol_stats_symbol_timeframe
-                ON mv_symbol_stats (symbol, timeframe);
             """
             )
             await session.execute(symbol_stats_q)
+            await session.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_symbol_stats_symbol_timeframe
+                    ON mv_symbol_stats (symbol, timeframe);
+                    """
+                )
+            )
             logger.info("✅ Представление статистики по символам создано")
 
             # 2. Представление для последних цен
@@ -62,12 +67,17 @@ async def migrate_materialized_views() -> None:
                     volume
                 FROM ohlcv_p
                 ORDER BY symbol, timeframe, timestamp DESC;
-
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_latest_prices_symbol_timeframe
-                ON mv_latest_prices (symbol, timeframe);
             """
             )
             await session.execute(latest_prices_q)
+            await session.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_mv_latest_prices_symbol_timeframe
+                    ON mv_latest_prices (symbol, timeframe);
+                    """
+                )
+            )
             logger.info("✅ Представление последних цен создано")
 
             # 3. Представление для агрегации по дням
@@ -77,7 +87,7 @@ async def migrate_materialized_views() -> None:
                 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_daily_aggregation AS
                 SELECT
                     symbol,
-                    DATE(timestamp) as trade_date,
+                    DATE(TO_TIMESTAMP(timestamp)) as trade_date,
                     MIN(open) as day_open,
                     MAX(high) as day_high,
                     MIN(low) as day_low,
@@ -86,14 +96,19 @@ async def migrate_materialized_views() -> None:
                     COUNT(*) as day_candles
                 FROM ohlcv_p
                 WHERE timeframe = '1H'
-                GROUP BY symbol, DATE(timestamp)
+                GROUP BY symbol, DATE(TO_TIMESTAMP(timestamp))
                 ORDER BY symbol, trade_date;
-
-                CREATE INDEX IF NOT EXISTS idx_mv_daily_agg_symbol_date
-                ON mv_daily_aggregation (symbol, trade_date);
             """
             )
             await session.execute(daily_agg_q)
+            await session.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_mv_daily_agg_symbol_date
+                    ON mv_daily_aggregation (symbol, trade_date);
+                    """
+                )
+            )
             logger.info("✅ Представление дневной агрегации создано")
 
             # 4. Представление для волатильности
@@ -104,20 +119,25 @@ async def migrate_materialized_views() -> None:
                 SELECT
                     symbol,
                     timeframe,
-                    DATE_TRUNC('day', timestamp) as day,
+                    DATE_TRUNC('day', TO_TIMESTAMP(timestamp)) as day,
                     AVG(ABS(close - open)) as avg_daily_change,
                     STDDEV(close - open) as volatility,
                     MAX(high - low) as max_spread,
                     MIN(high - low) as min_spread
                 FROM ohlcv_p
-                GROUP BY symbol, timeframe, DATE_TRUNC('day', timestamp)
+                GROUP BY symbol, timeframe, DATE_TRUNC('day', TO_TIMESTAMP(timestamp))
                 ORDER BY symbol, timeframe, day;
-
-                CREATE INDEX IF NOT EXISTS idx_mv_volatility_symbol_timeframe_day
-                ON mv_volatility (symbol, timeframe, day);
             """
             )
             await session.execute(volatility_q)
+            await session.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_mv_volatility_symbol_timeframe_day
+                    ON mv_volatility (symbol, timeframe, day);
+                    """
+                )
+            )
             logger.info("✅ Представление волатильности создано")
 
             # 5. Представление для топ активных символов
@@ -132,16 +152,21 @@ async def migrate_materialized_views() -> None:
                     AVG(volume) as avg_volume,
                     MAX(timestamp) as last_activity
                 FROM ohlcv_p
-                WHERE timestamp >= NOW() - INTERVAL '7 days'
+                WHERE timestamp >= EXTRACT(EPOCH FROM NOW() - INTERVAL '7 days')::BIGINT
                 GROUP BY symbol
                 ORDER BY total_volume DESC
                 LIMIT 100;
-
-                CREATE INDEX IF NOT EXISTS idx_mv_top_symbols_volume
-                ON mv_top_symbols (total_volume DESC);
             """
             )
             await session.execute(top_symbols_q)
+            await session.execute(
+                text(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_mv_top_symbols_volume
+                    ON mv_top_symbols (total_volume DESC);
+                    """
+                )
+            )
             logger.info("✅ Представление топ символов создано")
 
             # 6. Представление для метрик качества данных
@@ -210,15 +235,22 @@ async def migrate_materialized_views() -> None:
                     RETURN NEW;
                 END;
                 $$ LANGUAGE plpgsql;
-
-                DROP TRIGGER IF EXISTS trigger_refresh_views_ohlcv ON ohlcv_p;
-                CREATE TRIGGER trigger_refresh_views_ohlcv
-                    AFTER INSERT OR UPDATE OR DELETE ON ohlcv_p
-                    FOR EACH STATEMENT
-                    EXECUTE FUNCTION trigger_refresh_views();
             """
             )
             await session.execute(trigger_q)
+            await session.execute(
+                text("DROP TRIGGER IF EXISTS trigger_refresh_views_ohlcv ON ohlcv_p;")
+            )
+            await session.execute(
+                text(
+                    """
+                    CREATE TRIGGER trigger_refresh_views_ohlcv
+                        AFTER INSERT OR UPDATE OR DELETE ON ohlcv_p
+                        FOR EACH STATEMENT
+                        EXECUTE FUNCTION trigger_refresh_views();
+                    """
+                )
+            )
             logger.info("✅ Триггер для автоматического обновления создан")
 
             await session.commit()

@@ -36,18 +36,24 @@ async def migrate_monitoring_metrics() -> None:
                     error_message TEXT,
                     additional_info JSONB
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_migration_logs_migration_id
-                ON migration_logs (migration_id);
-
-                CREATE INDEX IF NOT EXISTS idx_migration_logs_started_at
-                ON migration_logs (started_at);
-
-                CREATE INDEX IF NOT EXISTS idx_migration_logs_operation
-                ON migration_logs (operation);
             """
             )
             await session.execute(migration_logs_q)
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_migration_logs_migration_id ON migration_logs (migration_id);"
+                )
+            )
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_migration_logs_started_at ON migration_logs (started_at);"
+                )
+            )
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_migration_logs_operation ON migration_logs (operation);"
+                )
+            )
             logger.info("✅ Таблица логов миграций создана")
 
             # 2. Таблица для логов блокировок
@@ -66,18 +72,24 @@ async def migrate_monitoring_metrics() -> None:
                     process_id INTEGER,
                     session_id INTEGER
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_lock_logs_detected_at
-                ON lock_logs (detected_at);
-
-                CREATE INDEX IF NOT EXISTS idx_lock_logs_granted
-                ON lock_logs (granted);
-
-                CREATE INDEX IF NOT EXISTS idx_lock_logs_duration
-                ON lock_logs (duration_ms);
             """
             )
             await session.execute(lock_logs_q)
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_lock_logs_detected_at ON lock_logs (detected_at);"
+                )
+            )
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_lock_logs_granted ON lock_logs (granted);"
+                )
+            )
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_lock_logs_duration ON lock_logs (duration_ms);"
+                )
+            )
             logger.info("✅ Таблица логов блокировок создана")
 
             # 3. Таблица для метрик производительности
@@ -93,18 +105,24 @@ async def migrate_monitoring_metrics() -> None:
                     tags JSONB,
                     description TEXT
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_performance_metrics_collected_at
-                ON performance_metrics (collected_at);
-
-                CREATE INDEX IF NOT EXISTS idx_performance_metrics_name
-                ON performance_metrics (metric_name);
-
-                CREATE INDEX IF NOT EXISTS idx_performance_metrics_tags
-                ON performance_metrics USING GIN (tags);
             """
             )
             await session.execute(performance_metrics_q)
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_performance_metrics_collected_at ON performance_metrics (collected_at);"
+                )
+            )
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_performance_metrics_name ON performance_metrics (metric_name);"
+                )
+            )
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_performance_metrics_tags ON performance_metrics USING GIN (tags);"
+                )
+            )
             logger.info("✅ Таблица метрик производительности создана")
 
             # 4. Таблица для алертов
@@ -122,21 +140,29 @@ async def migrate_monitoring_metrics() -> None:
                     resolved_by VARCHAR(100),
                     metadata JSONB
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_alerts_created_at
-                ON alerts (created_at);
-
-                CREATE INDEX IF NOT EXISTS idx_alerts_type
-                ON alerts (alert_type);
-
-                CREATE INDEX IF NOT EXISTS idx_alerts_severity
-                ON alerts (severity);
-
-                CREATE INDEX IF NOT EXISTS idx_alerts_resolved
-                ON alerts (resolved_at);
             """
             )
             await session.execute(alerts_q)
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts (created_at);"
+                )
+            )
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts (alert_type);"
+                )
+            )
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_alerts_severity ON alerts (severity);"
+                )
+            )
+            await session.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_alerts_resolved ON alerts (resolved_at);"
+                )
+            )
             logger.info("✅ Таблица алертов создана")
 
             # 5. Функция для сбора метрик
@@ -311,7 +337,7 @@ async def migrate_monitoring_metrics() -> None:
                 CREATE OR REPLACE VIEW prometheus_metrics AS
                 SELECT
                     'db_migration_duration_seconds' as metric_name,
-                    migration_id as labels,
+                    id as labels,
                     duration_ms / 1000.0 as value,
                     NOW() as timestamp
                 FROM schema_migrations
@@ -371,13 +397,12 @@ async def migrate_monitoring_metrics() -> None:
                                 'value', metric_value,
                                 'unit', metric_unit,
                                 'description', description
-                            )
+                            ) ORDER BY collected_at DESC
                         )
                     )
                     INTO result
                     FROM performance_metrics
-                    WHERE collected_at >= NOW() - INTERVAL '1 hour'
-                    ORDER BY collected_at DESC;
+                    WHERE collected_at >= NOW() - INTERVAL '1 hour';
 
                     RETURN result;
                 END;
@@ -422,15 +447,24 @@ async def migrate_monitoring_metrics() -> None:
                     RETURN NEW;
                 END;
                 $$ LANGUAGE plpgsql;
-
-                DROP TRIGGER IF EXISTS trigger_log_migration_changes ON schema_migrations;
-                CREATE TRIGGER trigger_log_migration_changes
-                    AFTER INSERT OR UPDATE ON schema_migrations
-                    FOR EACH ROW
-                    EXECUTE FUNCTION log_migration_changes();
             """
             )
             await session.execute(migration_trigger_q)
+            await session.execute(
+                text(
+                    "DROP TRIGGER IF EXISTS trigger_log_migration_changes ON schema_migrations;"
+                )
+            )
+            await session.execute(
+                text(
+                    """
+                    CREATE TRIGGER trigger_log_migration_changes
+                        AFTER INSERT OR UPDATE ON schema_migrations
+                        FOR EACH ROW
+                        EXECUTE FUNCTION log_migration_changes();
+                    """
+                )
+            )
             logger.info("✅ Триггер для логирования миграций создан")
 
             await session.commit()
