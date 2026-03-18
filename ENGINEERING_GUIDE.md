@@ -59,6 +59,8 @@ Each stage has a single responsibility and communicates with the next via a type
 
 ## 2. Architectural Principles
 
+> **Theoretical foundation:** See [`ARCHITECTURE_GUIDE.md`](./ARCHITECTURE_GUIDE.md) for the complete set of Clean Architecture principles, SOLID, component cohesion/coupling rules, key patterns, and anti-patterns. This section defines **how those principles apply to PKLPO specifically**.
+
 ### Clean Architecture (Robert C. Martin)
 
 The system is organized in concentric layers. Inner layers know nothing about outer layers. Outer layers depend on inner layers through **interfaces (ports)**, never through concrete implementations.
@@ -635,5 +637,5 @@ Establish `docs/adr/` directory. Write retroactive ADRs for:
 
 ---
 
-*Last updated: 2026-03-06*
-*Related documents: `TARGET_ARCHITECTURE.md`, `ARCHITECTURE.md`, `CLAUDE.md`, `ROADMAP.md`, `src/FEATURES_DEPENDENCIES.md`*
+*Last updated: 2026-03-17*
+*Related documents: `ARCHITECTURE_GUIDE.md` (principles), `TARGET_ARCHITECTURE.md`, `CLAUDE.md`, `ROADMAP.md`, `src/FEATURES_DEPENDENCIES.md`*

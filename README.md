@@ -354,6 +354,7 @@ Features → Context → Triggers → Consensus → Integration
 - `pipeline` - полный pipeline обработки
 - `migrate` - миграции БД
 - `swap-sync` - синхронизация SWAP данных
+- `indicators-partitions` - preview/apply maintenance для `indicators_p`
 
 **Документация:** [src/cli/main.py](src/cli/main.py)
 
@@ -461,6 +462,16 @@ python src/db/reports_cli.py status
 
 # Проверка здоровья системы
 python src/db/reports_cli.py health
+```
+
+#### Partition maintenance
+
+```bash
+# Preview по умолчанию: без изменения схемы
+python -m src.cli.main indicators-partitions
+
+# Явное применение maintenance и валидация horizon
+python -m src.cli.main indicators-partitions --apply --validate
 ```
 
 #### Синхронизация данных
@@ -588,6 +599,7 @@ pre-commit run --all-files
 
 - DAG для расчета индикаторов
 - DAG для синхронизации данных
+- DAG для maintenance monthly partitions `indicators_p`
 - Smoke-валидация результатов
 - Метрики и алерты
 

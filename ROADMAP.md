@@ -64,46 +64,6 @@
 - ✅ Все внешние клиенты используют стандартную retry policy.
 - ✅ CI зеленый по lint/type/test.
 
-### Фаза 1. Data & Ingest Hardening (2-3 недели) — ✅ DONE (100%)
-Цель: надежный и измеримый data pipeline.
-
-Задачи:
-- ✅ **SLO/SLA freshness monitoring**
-  - ✅ Thresholds (`quality.py`: warn=5min, critical=15min) + `check_freshness()` реализованы
-  - ✅ Persisting в `ops.data_quality_metrics` через `QualityMetricsRepository`
-  - ✅ DAG gate в `okx_swap_ohlcv_sync_v2.py` (пропуск если lag < threshold)
-  - ✅ Dashboard для визуализации freshness метрик (`ops/monitoring/grafana/dashboards/data_quality.json`)
-  - ✅ Автоматические alerts (Slack/email) при freshness violations (`quality_alerts.py` + Grafana alert rules)
-
-- ✅ **Метрики качества данных (holes/fill-rate/coverage)**
-  - ✅ `check_fill_rate()` — funding_rate, open_interest, L2 (warn=95%, critical=80%)
-  - ✅ `check_coverage_1m()` — покрытие market_data_ext vs OHLCV (warn=90%, critical=70%)
-  - ✅ `check_smoke_10m()` — детектирование gaps (min 8 баров за 10 мин)
-  - ✅ Smoke validation task в DAG после синхронизации
-  - ✅ `check_duplicates_1m()` — явная duplicate-rate метрика (warn=0.01%, critical=0.1%)
-  - ✅ `quality_pipeline` task в DAG: запускает все checks + dispatch_quality_alerts
-
-- ✅ **Idempotency и дедупликация** (`symbol, timeframe, timestamp`)
-  - ✅ Бизнес-ключ + `INSERT ... ON CONFLICT DO UPDATE` с COALESCE policy (`upsert_builder.py`)
-  - ✅ Watermark-based incremental sync (`sync_state.py`)
-  - ✅ Защита от overwrite NULL over non-NULL
-
-- ✅ **Batch strategy оптимизация**
-  - ✅ Per-timeframe adaptive limits: 1m=15000 bars, 5m=10000, 1D=1000 (`features_calc_short.py`)
-  - ✅ Mode-based throughput: fast/slow/ext/bootstrap режимы
-  - ✅ Per-TF adaptive timeouts (10 min для 1m, 4 min для 1H)
-  - ✅ Динамический runtime batch-size (`DynamicBatchPolicy` в `src/candles/domain/batch_policy.py`, opt-in via `dynamic_batch_size=True`)
-
-- ✅ **[LIBRARY] Заменить `sync_swap_candles.py` на `ccxt`**
-  - ✅ `CcxtOKXAdapter` (`src/candles/ccxt_okx_adapter.py`) — полное покрытие OKX
-  - ✅ Legacy HTTP-код удалён
-  - Что остаётся кастомным: логика UPSERT в PostgreSQL, батч-сохранение
-
-Гейт:
-- ✅ Достигаются target freshness и data-quality thresholds (thresholds заданы; enforcement через DAG + Grafana alerts).
-- ✅ Нет неидемпотентных повторных запусков.
-
-**Закрыта: 2026-03-06**
 
 ### Фаза 2. Features & Performance (2-4 недели) — ✅ DONE (100%)
 Цель: ускорить вычисление и управляемость фичей.
