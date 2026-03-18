@@ -4,9 +4,10 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from src.candles.ports import CandleRepositoryPort
+if TYPE_CHECKING:
+    from src.candles.ports import InstrumentCatalogQueryPort
 
 PRIORITY_SYMBOLS = ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
 
@@ -20,7 +21,6 @@ def resolve_instruments_cache_file(cache_dir: Path | None = None) -> Path:
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
     except Exception:
-        # Fallback when target directory cannot be created.
         target_dir = Path(tempfile.gettempdir())
         target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir / "instruments_list.json"
@@ -28,7 +28,7 @@ def resolve_instruments_cache_file(cache_dir: Path | None = None) -> Path:
 
 async def refresh_instruments_list(
     *,
-    repository: CandleRepositoryPort,
+    repository: InstrumentCatalogQueryPort,
     logger: Any,
     cache_dir: Path | None = None,
 ) -> list[str]:
@@ -50,8 +50,8 @@ async def refresh_instruments_list(
             logger.warning("Failed to load current cached list: %s", exc)
 
     logger.info("Loading swap symbols and instrument counters from repository")
-    counts = await repository.fetch_instrument_counts()
-    db_symbols = await repository.fetch_swap_usdt_symbols()
+    counts = await repository.get_instrument_counts()
+    db_symbols = await repository.list_swap_symbols()
 
     logger.info("All instruments in DB: %s", int(counts.get("all", 0)))
     logger.info("SWAP instruments in DB: %s", int(counts.get("swap", 0)))

@@ -48,6 +48,12 @@ def build_market_data_adapter(
     cfg = config or {}
     adapter_name = resolve_adapter_name(cfg)
     if adapter_name == "legacy":
+        import warnings
+        warnings.warn(
+            "Legacy adapter path is deprecated, use ccxt adapter",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         factory = cfg.get("legacy_adapter_factory")
         if callable(factory):
             return factory()

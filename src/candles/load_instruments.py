@@ -149,7 +149,7 @@ async def load_instruments() -> None:
         total_new = 0
         total_updated = 0
 
-        async with build_market_data_adapter({"adapter": "legacy"}) as client:
+        async with build_market_data_adapter() as client:
             for inst_type in inst_types:
                 try:
                     logger.info("Loading %s instruments...", inst_type)

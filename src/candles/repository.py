@@ -10,7 +10,7 @@ from src.utils.session_utils import get_db_session
 
 
 class SwapCandlesRepository:
-    async def upsert_swap_candles(
+    async def upsert_candles(
         self,
         *,
         symbol: str,
@@ -107,7 +107,7 @@ class SwapCandlesRepository:
 
         return len(rows)
 
-    async def fetch_swap_usdt_symbols(self) -> list[str]:
+    async def list_swap_symbols(self) -> list[str]:
         async with get_db_session() as session:
             result = await session.execute(
                 select(Instrument.symbol).where(
@@ -118,7 +118,27 @@ class SwapCandlesRepository:
             symbols = [row[0] for row in result.fetchall()]
         return sorted(symbols)
 
-    async def fetch_instrument_counts(self) -> dict[str, int]:
+    async def get_latest_timestamp(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+    ) -> int | None:
+        async with get_db_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    SELECT MAX(timestamp)
+                    FROM swap_ohlcv_p
+                    WHERE symbol = :symbol AND timeframe = :timeframe
+                    """
+                ),
+                {"symbol": symbol, "timeframe": timeframe},
+            )
+            latest_ts = result.scalar()
+        return int(latest_ts) if latest_ts is not None else None
+
+    async def get_instrument_counts(self) -> dict[str, int]:
         async with get_db_session() as session:
             result = await session.execute(
                 text(
@@ -139,8 +159,9 @@ class SwapCandlesRepository:
             "usdt": int((row[2] if row else 0) or 0),
         }
 
-    async def fetch_today_fill_stats(
-        self, start_timestamp_ms: int
+    async def get_fill_stats(
+        self,
+        start_timestamp_ms: int,
     ) -> dict[str, int | float]:
         async with get_db_session() as session:
             q_total = await session.execute(
@@ -183,3 +204,38 @@ class SwapCandlesRepository:
             "funding_rate_fill_pct": funding_rate_fill_pct,
             "open_interest_fill_pct": open_interest_fill_pct,
         }
+
+    async def upsert_swap_candles(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        candles: list[dict[str, Any]],
+        additional_data: dict[str, Any],
+    ) -> int:
+        return await self.upsert_candles(
+            symbol=symbol,
+            timeframe=timeframe,
+            candles=candles,
+            additional_data=additional_data,
+        )
+
+    async def fetch_swap_usdt_symbols(self) -> list[str]:
+        return await self.list_swap_symbols()
+
+    async def fetch_latest_timestamp_ms(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+    ) -> int | None:
+        return await self.get_latest_timestamp(symbol=symbol, timeframe=timeframe)
+
+    async def fetch_instrument_counts(self) -> dict[str, int]:
+        return await self.get_instrument_counts()
+
+    async def fetch_today_fill_stats(
+        self,
+        start_timestamp_ms: int,
+    ) -> dict[str, int | float]:
+        return await self.get_fill_stats(start_timestamp_ms)

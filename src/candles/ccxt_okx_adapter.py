@@ -112,6 +112,30 @@ class CcxtOKXAdapter:
             for r in rows
         ]
 
+    async def get_instruments(self, inst_type: str = "SWAP") -> list[dict[str, Any]]:
+        ccxt_type_map = {"SWAP": "swap", "SPOT": "spot", "FUTURES": "future"}
+        target = ccxt_type_map.get(inst_type.upper(), inst_type.lower())
+        results = []
+        for mkt in self._exchange.markets.values():
+            if mkt.get("type") != target or mkt.get("quote") != "USDT":
+                continue
+            info = mkt.get("info", {})
+            results.append({
+                "instId": info.get("instId", mkt.get("id")),
+                "instType": inst_type.upper(),
+                "baseCcy": mkt.get("base"),
+                "quoteCcy": mkt.get("quote"),
+                "settleCcy": info.get("settleCcy"),
+                "ctType": info.get("ctType"),
+                "ctVal": info.get("ctVal"),
+                "state": info.get("state"),
+                "listTime": info.get("listTime"),
+                "minSz": info.get("minSz"),
+                "maxSz": info.get("maxSz"),
+                "minNotional": info.get("minNotional"),
+            })
+        return results
+
     async def get_funding_rates(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
         out: dict[str, dict[str, Any]] = {}
         for inst_id in symbols:

@@ -15,12 +15,12 @@ from src.candles.candles_cli_service import (
     fetch_symbol_details,
 )
 from src.candles.infrastructure.adapters import build_market_data_adapter
+from src.candles.interfaces.swap_sync import sync_swap_candles
 from src.candles.parity_check import (
     ParityGate,
     evaluate_parity_gate,
     run_adapter_parity_check,
 )
-from src.candles.sync_swap_candles import sync_swap_candles
 
 
 async def sync_all_swap(
@@ -348,3 +348,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
