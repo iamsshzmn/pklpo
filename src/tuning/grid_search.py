@@ -15,7 +15,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from src.backtest.evaluate import SignalEvaluator
 from src.database import get_async_session
-from src.logging_config import setup_logging
+from src.logging import setup_logging
 from src.signals.calculator import SignalCalculator
 from src.signals.config import save_config
 

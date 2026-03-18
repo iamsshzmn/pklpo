@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import text
 
 from ..database import get_async_session
+from ..models import INDICATORS_TABLE_NAME
 from ..mtf.integrator import MTFSignalData, mtf_integrator
 from .compute import ScoreResult, ScoringEngine
 
@@ -207,9 +208,9 @@ class MTFEnhancedScoringEngine(ScoringEngine):
                 # Получаем последний timestamp для символа
                 async for session in get_async_session():
                     query = text(
-                        """
-                        SELECT MAX(ts) as latest_ts
-                        FROM indicators
+                        f"""
+                        SELECT MAX(timestamp) as latest_ts
+                        FROM {INDICATORS_TABLE_NAME}
                         WHERE symbol = :symbol AND timeframe = :timeframe
                     """
                     )

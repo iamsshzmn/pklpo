@@ -9,6 +9,8 @@ from datetime import UTC
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models import INDICATORS_TABLE_NAME
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,9 +32,9 @@ async def get_symbols_timeframes_optimized(
         if symbol:
             # Для конкретного символа
             query = text(
-                """
+                f"""
                 SELECT DISTINCT symbol, timeframe, COUNT(*) as record_count
-                FROM indicators
+                FROM {INDICATORS_TABLE_NAME}
                 WHERE symbol = :symbol
                 GROUP BY symbol, timeframe
                 HAVING COUNT(*) >= :min_records
@@ -45,9 +47,9 @@ async def get_symbols_timeframes_optimized(
         else:
             # Для всех символов с фильтром по количеству записей
             query = text(
-                """
+                f"""
                 SELECT DISTINCT symbol, timeframe, COUNT(*) as record_count
-                FROM indicators
+                FROM {INDICATORS_TABLE_NAME}
                 GROUP BY symbol, timeframe
                 HAVING COUNT(*) >= :min_records
                 ORDER BY symbol, timeframe
@@ -95,11 +97,11 @@ async def get_recent_symbols_timeframes(
     try:
         if symbol:
             query = text(
-                """
+                f"""
                 SELECT DISTINCT symbol, timeframe
-                FROM indicators
+                FROM {INDICATORS_TABLE_NAME}
                 WHERE symbol = :symbol
-                AND ts >= EXTRACT(EPOCH FROM NOW() - INTERVAL ':hours_back hours')
+                AND timestamp >= EXTRACT(EPOCH FROM NOW() - (:hours_back * INTERVAL '1 hour')) * 1000
                 ORDER BY symbol, timeframe
             """
             )
@@ -108,10 +110,10 @@ async def get_recent_symbols_timeframes(
             )
         else:
             query = text(
-                """
+                f"""
                 SELECT DISTINCT symbol, timeframe
-                FROM indicators
-                WHERE ts >= EXTRACT(EPOCH FROM NOW() - INTERVAL ':hours_back hours')
+                FROM {INDICATORS_TABLE_NAME}
+                WHERE timestamp >= EXTRACT(EPOCH FROM NOW() - (:hours_back * INTERVAL '1 hour')) * 1000
                 ORDER BY symbol, timeframe
             """
             )
@@ -166,9 +168,9 @@ async def validate_data_availability(
         if symbol and timeframe:
             # Конкретный символ и таймфрейм
             query = text(
-                """
-                SELECT COUNT(*) as count, MAX(ts) as latest_ts
-                FROM indicators
+                f"""
+                SELECT COUNT(*) as count, MAX(timestamp) as latest_ts
+                FROM {INDICATORS_TABLE_NAME}
                 WHERE symbol = :symbol AND timeframe = :timeframe
             """
             )
@@ -195,9 +197,9 @@ async def validate_data_availability(
         elif symbol:
             # Конкретный символ, все таймфреймы
             query = text(
-                """
-                SELECT timeframe, COUNT(*) as count, MAX(ts) as latest_ts
-                FROM indicators
+                f"""
+                SELECT timeframe, COUNT(*) as count, MAX(timestamp) as latest_ts
+                FROM {INDICATORS_TABLE_NAME}
                 WHERE symbol = :symbol
                 GROUP BY timeframe
                 ORDER BY timeframe
@@ -224,12 +226,12 @@ async def validate_data_availability(
         else:
             # Все символы и таймфреймы
             query = text(
-                """
+                f"""
                 SELECT COUNT(DISTINCT symbol) as symbols_count,
                        COUNT(DISTINCT timeframe) as timeframes_count,
                        COUNT(*) as total_records,
-                       MAX(ts) as latest_ts
-                FROM indicators
+                       MAX(timestamp) as latest_ts
+                FROM {INDICATORS_TABLE_NAME}
             """
             )
             result = await session.execute(query)
@@ -247,7 +249,7 @@ async def validate_data_availability(
                 )
             else:
                 validation_result["missing_data"].append(
-                    "Нет данных в таблице indicators"
+                    f"Нет данных в таблице {INDICATORS_TABLE_NAME}"
                 )
 
         # Проверяем свежесть данных
@@ -255,7 +257,7 @@ async def validate_data_availability(
             from datetime import datetime
 
             latest_dt = datetime.fromtimestamp(
-                validation_result["latest_timestamp"], tz=UTC
+                validation_result["latest_timestamp"] / 1000, tz=UTC
             )
             now_dt = datetime.now(UTC)
             age_hours = (now_dt - latest_dt).total_seconds() / 3600
@@ -307,14 +309,14 @@ async def get_processing_stats(
     try:
         if symbol:
             query = text(
-                """
+                f"""
                 SELECT
                     timeframe,
                     COUNT(*) as records_count,
-                    MIN(ts) as earliest_ts,
-                    MAX(ts) as latest_ts,
-                    COUNT(DISTINCT DATE(to_timestamp(ts))) as days_count
-                FROM indicators
+                    MIN(timestamp) as earliest_ts,
+                    MAX(timestamp) as latest_ts,
+                    COUNT(DISTINCT DATE(to_timestamp(timestamp / 1000.0))) as days_count
+                FROM {INDICATORS_TABLE_NAME}
                 WHERE symbol = :symbol
                 GROUP BY timeframe
                 ORDER BY timeframe
@@ -323,15 +325,15 @@ async def get_processing_stats(
             result = await session.execute(query, {"symbol": symbol})
         else:
             query = text(
-                """
+                f"""
                 SELECT
                     symbol,
                     timeframe,
                     COUNT(*) as records_count,
-                    MIN(ts) as earliest_ts,
-                    MAX(ts) as latest_ts,
-                    COUNT(DISTINCT DATE(to_timestamp(ts))) as days_count
-                FROM indicators
+                    MIN(timestamp) as earliest_ts,
+                    MAX(timestamp) as latest_ts,
+                    COUNT(DISTINCT DATE(to_timestamp(timestamp / 1000.0))) as days_count
+                FROM {INDICATORS_TABLE_NAME}
                 GROUP BY symbol, timeframe
                 ORDER BY symbol, timeframe
             """

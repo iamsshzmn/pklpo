@@ -48,10 +48,12 @@ except Exception:  # pragma: no cover - optional progress dependency
 
 from src.features import compute_features
 from src.features.infrastructure.database import (
+    ensure_columns_exist,
     insert_indicators as infra_insert_indicators,
 )
 from src.features.specs import FEATURE_SPECS
 from src.logging import get_features_logger, log_features_summary
+from src.models import INDICATORS_TABLE_NAME
 from src.utils.session_utils import get_db_session
 
 logger = get_features_logger()
@@ -591,7 +593,7 @@ async def _refill_null_indicators(
         query = text(
             f"""
             SELECT DISTINCT i.timestamp
-            FROM indicators i
+            FROM {INDICATORS_TABLE_NAME} i
             INNER JOIN swap_ohlcv_p o ON
                 i.symbol = o.symbol AND
                 i.timeframe = o.timeframe AND
@@ -710,7 +712,7 @@ async def _refill_null_indicators(
                     # Column name is safe because it was validated above.
                     update_query = text(
                         f"""
-                        UPDATE indicators
+                        UPDATE {INDICATORS_TABLE_NAME}
                         SET {ind} = :value
                         WHERE symbol = :symbol
                             AND timeframe = :timeframe
@@ -895,6 +897,8 @@ async def _process_symbol_timeframe(
                 ind_df["ts"] = (
                     features_df["timestamp"].astype("int64") // 1000
                 ).astype("int64")
+            indicator_cols = [c for c in ind_df.columns if c not in {"ts", "symbol", "timeframe", "timestamp"}]
+            await ensure_columns_exist(session, INDICATORS_TABLE_NAME, indicator_cols)
             saved_count = await infra_insert_indicators(
                 session, ind_df, symbol, timeframe
             )
@@ -1011,9 +1015,9 @@ async def _get_ohlcv_data(
         else:
             # Incremental mode: start from max_ts - warmup_offset.
             max_ts_query = text(
-                """
+                f"""
                 SELECT MAX(timestamp) as max_ts
-                FROM indicators
+                FROM {INDICATORS_TABLE_NAME}
                 WHERE symbol = :symbol AND timeframe = :timeframe
             """
             )
@@ -1145,7 +1149,7 @@ async def _save_features_to_db(
         # Prepare rows for persistence.
         saved_count = 0
         logger.info(
-            f"Starting save to indicators for {symbol} {timeframe}, bars={len(df_ohlcv)}"
+            f"Starting save to {INDICATORS_TABLE_NAME} for {symbol} {timeframe}, bars={len(df_ohlcv)}"
         )
 
         # DEBUG: detailed features_df diagnostics.
@@ -1505,7 +1509,7 @@ async def _save_features_to_db(
 
                     insert_query = text(
                         f"""
-                        INSERT INTO indicators (
+                        INSERT INTO {INDICATORS_TABLE_NAME} (
                             {', '.join(columns)}
                         ) VALUES (
                             {', '.join(values)}

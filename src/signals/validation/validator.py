@@ -12,7 +12,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from src.market_meta.api import get_instrument_info
+from src.candles.api import get_instrument_info
 from src.signals.models import Decision, SignalCandidate, SignalConfig, ValidationResult
 
 logger = logging.getLogger(__name__)

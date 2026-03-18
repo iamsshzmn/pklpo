@@ -1,7 +1,7 @@
 import json
 import logging
 
-from src.candles.sync_swap_candles import sync_swap_candles
+from src.candles.interfaces.swap_sync import sync_swap_candles
 
 logger = logging.getLogger(__name__)
 
@@ -35,3 +35,4 @@ async def handle(args):
     logger.info(
         f"📊 Символов: {stats['total_symbols']}, Свечей: {stats['total_candles_synced']:,}, Ошибок: {stats['errors_count']}"
     )
+

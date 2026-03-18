@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 
 from src.database import get_async_session
-from src.logging_config import setup_logging
+from src.logging import setup_logging
 
 from .metrics import calc_metrics
 

@@ -19,7 +19,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from sqlalchemy import text
 
 from src.database import get_async_session
-from src.logging_config import setup_logging
+from src.logging import setup_logging
 from src.positions.calculator import PositionCalculator
 
 setup_logging("positions.log")

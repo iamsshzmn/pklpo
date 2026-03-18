@@ -9,15 +9,28 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_async_session
-from src.models import CombinationResult, Indicator
+from src.models import INDICATORS_TABLE_NAME, CombinationResult, Indicator
 
 from .models import ScoreResult as ScoreResultModel
 
 logger = logging.getLogger(__name__)
+
+INDICATOR_ATTR_ALIASES = {
+    "rsi14": "rsi_14",
+    "adx14": "adx_14",
+    "ema12": "ema_12",
+    "ema21": "ema_21",
+    "ema26": "ema_26",
+    "ema50": "ema_50",
+    "ema200": "ema_200",
+    "sma50": "sma_50",
+    "sma200": "sma_200",
+    "atr14": "atr_14",
+}
 
 
 @dataclass
@@ -139,11 +152,17 @@ class ScoringEngine:
     ) -> tuple[dict | None, dict | None]:
         """Получает последние данные индикаторов и комбинаций"""
         try:
+            if Indicator.__tablename__ != INDICATORS_TABLE_NAME:
+                logger.warning(
+                    "Indicator ORM is routed to %s instead of %s",
+                    Indicator.__tablename__,
+                    INDICATORS_TABLE_NAME,
+                )
             # Получаем данные индикаторов
             indicator_query = select(Indicator).where(
                 Indicator.symbol == symbol,
                 Indicator.timeframe == timeframe,
-                Indicator.ts == ts,
+                Indicator.timestamp == ts,
             )
             indicator_result = await session.execute(indicator_query)
             indicator_row = indicator_result.scalar_one_or_none()
@@ -151,7 +170,10 @@ class ScoringEngine:
             if not indicator_row:
                 return None, None
 
-            indicator_data = self._extract_indicator_data(indicator_row)
+            close_price = await self._fetch_close_price(session, symbol, timeframe, ts)
+            indicator_data = self._extract_indicator_data(
+                indicator_row, close_price=close_price
+            )
             combination_data = await self._extract_combination_data(
                 session, symbol, timeframe, ts
             )
@@ -162,12 +184,38 @@ class ScoringEngine:
             logger.error(f"Ошибка при получении данных: {e}")
             return None, None
 
-    def _extract_indicator_data(self, indicator_row) -> dict[str, Any]:
+    async def _fetch_close_price(
+        self, session: AsyncSession, symbol: str, timeframe: str, ts: int
+    ) -> float | None:
+        result = await session.execute(
+            text(
+                """
+                SELECT close
+                FROM swap_ohlcv_p
+                WHERE symbol = :symbol
+                  AND timeframe = :timeframe
+                  AND timestamp = :timestamp
+                LIMIT 1
+                """
+            ),
+            {"symbol": symbol, "timeframe": timeframe, "timestamp": ts},
+        )
+        close_value = result.scalar_one_or_none()
+        return float(close_value) if close_value is not None else None
+
+    def _read_indicator_attr(self, indicator_row, indicator_name: str) -> float | None:
+        attr_name = INDICATOR_ATTR_ALIASES.get(indicator_name, indicator_name)
+        if not hasattr(indicator_row, attr_name):
+            return None
+        value = getattr(indicator_row, attr_name)
+        return float(value) if value is not None else None
+
+    def _extract_indicator_data(
+        self, indicator_row, *, close_price: float | None
+    ) -> dict[str, Any]:
         """Извлекает данные индикаторов из строки БД"""
         # Базовые данные
-        data = {
-            "close": float(indicator_row.close) if indicator_row.close else None,
-        }
+        data = {"close": close_price}
 
         # Осцилляторы
         osc_indicators = [
@@ -179,16 +227,12 @@ class ScoringEngine:
             "macd_histogram",
         ]
         for indicator in osc_indicators:
-            if hasattr(indicator_row, indicator):
-                value = getattr(indicator_row, indicator)
-                data[indicator] = float(value) if value is not None else None
+            data[indicator] = self._read_indicator_attr(indicator_row, indicator)
 
         # Трендовые индикаторы
         trend_indicators = ["adx14", "adx_pos_di", "adx_neg_di"]
         for indicator in trend_indicators:
-            if hasattr(indicator_row, indicator):
-                value = getattr(indicator_row, indicator)
-                data[indicator] = float(value) if value is not None else None
+            data[indicator] = self._read_indicator_attr(indicator_row, indicator)
 
         # Moving Averages
         ma_indicators = [
@@ -208,9 +252,7 @@ class ScoringEngine:
             "ema_233",
         ]
         for indicator in ma_indicators:
-            if hasattr(indicator_row, indicator):
-                value = getattr(indicator_row, indicator)
-                data[indicator] = float(value) if value is not None else None
+            data[indicator] = self._read_indicator_attr(indicator_row, indicator)
 
         # Волатильность
         vol_indicators = [
@@ -223,9 +265,7 @@ class ScoringEngine:
             "atr14",
         ]
         for indicator in vol_indicators:
-            if hasattr(indicator_row, indicator):
-                value = getattr(indicator_row, indicator)
-                data[indicator] = float(value) if value is not None else None
+            data[indicator] = self._read_indicator_attr(indicator_row, indicator)
 
         # Объемные индикаторы
         volume_indicators = [
@@ -238,9 +278,7 @@ class ScoringEngine:
             "volume_sma20",
         ]
         for indicator in volume_indicators:
-            if hasattr(indicator_row, indicator):
-                value = getattr(indicator_row, indicator)
-                data[indicator] = float(value) if value is not None else None
+            data[indicator] = self._read_indicator_attr(indicator_row, indicator)
 
         # Ichimoku
         ichimoku_indicators = [
@@ -251,9 +289,7 @@ class ScoringEngine:
             "ichimoku_chikou",
         ]
         for indicator in ichimoku_indicators:
-            if hasattr(indicator_row, indicator):
-                value = getattr(indicator_row, indicator)
-                data[indicator] = float(value) if value is not None else None
+            data[indicator] = self._read_indicator_attr(indicator_row, indicator)
 
         return data
 

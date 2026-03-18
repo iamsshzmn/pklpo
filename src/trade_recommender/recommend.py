@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_async_session
-from src.models import Indicator
+from src.models import INDICATORS_TABLE_NAME, Indicator
 from src.scoring_engine.models import ScoreResult
 
 from .position_model import calculate_position
@@ -89,8 +89,14 @@ async def get_indicators_data(
 ) -> dict | None:
     """Получает данные индикаторов для расчёта позиции"""
     try:
+        if Indicator.__tablename__ != INDICATORS_TABLE_NAME:
+            logger.warning(
+                "Indicator ORM is routed to %s instead of %s",
+                Indicator.__tablename__,
+                INDICATORS_TABLE_NAME,
+            )
         # Используем JOIN для получения OHLCV данных из swap_ohlcv_p
-        from src.db.models import SwapOhlcvP
+        from src.models import SwapOhlcvP
 
         query = (
             select(Indicator, SwapOhlcvP)
@@ -121,13 +127,13 @@ async def get_indicators_data(
             logger.warning(f"Close цена отсутствует: {symbol} {timeframe} {ts}")
             return None
 
-        if indicator.atr14 is None:
+        if indicator.atr_14 is None:
             logger.warning(f"ATR14 отсутствует: {symbol} {timeframe} {ts}")
             return None
 
         return {
             "close": float(ohlcv.close),
-            "atr14": float(indicator.atr14),
+            "atr14": float(indicator.atr_14),
             "open": float(ohlcv.open) if ohlcv.open else None,
             "high": float(ohlcv.high) if ohlcv.high else None,
             "low": float(ohlcv.low) if ohlcv.low else None,

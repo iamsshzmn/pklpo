@@ -265,7 +265,7 @@ async def api_call():
 from src.utils.safe_logging import log_database_operation, log_api_request
 
 # Логирование операций БД
-log_database_operation("SELECT", "indicators", symbol="BTC-USDT")
+log_database_operation("SELECT", "indicators_p", symbol="BTC-USDT")
 
 # Логирование API запросов
 log_api_request("GET", "/api/instruments", status_code=200)
@@ -344,18 +344,18 @@ from src.utils.query_optimizer import create_query_optimizer
 # Анализ производительности запросов
 optimizer = create_query_optimizer(session)
 plan = await optimizer.analyze_query_plan(
-    "SELECT * FROM indicators WHERE symbol = :symbol",
+    "SELECT * FROM indicators_p WHERE symbol = :symbol",
     {"symbol": "BTC-USDT"}
 )
 
 # Бенчмарк запросов
 benchmark = await optimizer.benchmark_query(
-    "SELECT * FROM indicators WHERE symbol = :symbol",
+    "SELECT * FROM indicators_p WHERE symbol = :symbol",
     {"symbol": "BTC-USDT"}
 )
 
 # Предложение индексов
-suggestions = await optimizer.suggest_indexes("indicators")
+suggestions = await optimizer.suggest_indexes("indicators_p")
 ```
 
 ### Query Caching

@@ -3,6 +3,8 @@ import plotly.graph_objs as go
 import psycopg2
 from dash import Dash, Input, Output, dcc, html
 
+from src.models import INDICATORS_TABLE_NAME
+
 # --- Настройки подключения ---
 conn = psycopg2.connect(
     dbname="pklpo",
@@ -97,9 +99,12 @@ def update_graph(symbol, timeframe, table):
         return go.Figure(data=data, layout=layout)
 
     if table == "indicators":
-        query = "SELECT * FROM indicators WHERE symbol = %s AND timeframe = %s ORDER BY ts ASC"
+        query = (
+            f"SELECT * FROM {INDICATORS_TABLE_NAME} "
+            "WHERE symbol = %s AND timeframe = %s ORDER BY timestamp ASC"
+        )
         df = pd.read_sql(query, conn, params=(symbol, timeframe))
-        df["ts"] = pd.to_datetime(df["ts"], unit="ms")
+        df["ts"] = pd.to_datetime(df["timestamp"], unit="ms")
         # Визуализируем close + несколько индикаторов (например, MACD, RSI)
         data = [
             go.Scatter(x=df["ts"], y=df["close"], name="Close", line={"color": "black"})

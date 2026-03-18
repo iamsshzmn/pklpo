@@ -11,6 +11,8 @@ from typing import Any
 
 import psutil
 
+from src.models import INDICATORS_TABLE_NAME
+
 from .collector import MetricsCollector, MetricType, metrics_collector
 
 logger = logging.getLogger(__name__)
@@ -250,7 +252,7 @@ class MetricsMonitor:
         """Отслеживает метрики базы данных"""
         try:
             # Количество записей в таблицах
-            tables = ["ohlcv", "indicators", "signals", "signals_detailed"]
+            tables = ["ohlcv", INDICATORS_TABLE_NAME, "signals", "signals_detailed"]
 
             for table in tables:
                 try:

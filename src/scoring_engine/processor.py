@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tqdm import tqdm
 
 from src.database import get_async_session
+from src.models import INDICATORS_TABLE_NAME
 
 from .compute import ScoringEngine
 
@@ -87,19 +88,19 @@ class ScoringProcessor:
         try:
             # Ищем записи с данными индикаторов и комбинаций, но без score
             query = text(
-                """
-                SELECT DISTINCT i.symbol, i.timeframe, i.ts
-                FROM indicators i
+                f"""
+                SELECT DISTINCT i.symbol, i.timeframe, i.timestamp
+                FROM {INDICATORS_TABLE_NAME} i
                 INNER JOIN combination_results c ON
                     i.symbol = c.symbol AND
                     i.timeframe = c.timeframe AND
-                    i.ts = c.ts
+                    i.timestamp = c.ts
                 LEFT JOIN score_results s ON
                     i.symbol = s.symbol AND
                     i.timeframe = s.timeframe AND
-                    i.ts = s.ts
+                    i.timestamp = s.ts
                 WHERE s.id IS NULL
-                ORDER BY i.ts DESC
+                ORDER BY i.timestamp DESC
             """
             )
 
@@ -426,23 +427,23 @@ class ScoringProcessor:
             try:
                 # Формируем запрос для конкретного символа
                 base_query = f"""
-                    SELECT DISTINCT i.symbol, i.timeframe, i.ts
-                    FROM indicators i
+                    SELECT DISTINCT i.symbol, i.timeframe, i.timestamp
+                    FROM {INDICATORS_TABLE_NAME} i
                     INNER JOIN combination_results c ON
                         i.symbol = c.symbol AND
                         i.timeframe = c.timeframe AND
-                        i.ts = c.ts
+                        i.timestamp = c.ts
                     LEFT JOIN score_results s ON
                         i.symbol = s.symbol AND
                         i.timeframe = s.timeframe AND
-                        i.ts = s.ts
+                        i.timestamp = s.ts
                     WHERE i.symbol = '{symbol}' AND s.id IS NULL
                 """
 
                 if timeframe:
                     base_query += f" AND i.timeframe = '{timeframe}'"
 
-                base_query += " ORDER BY i.ts DESC"
+                base_query += " ORDER BY i.timestamp DESC"
 
                 result = await session.execute(text(base_query))
                 records = result.fetchall()
@@ -492,7 +493,7 @@ class ScoringProcessor:
             try:
                 # Общая статистика
                 total_indicators = await session.execute(
-                    text("SELECT COUNT(*) FROM indicators")
+                    text(f"SELECT COUNT(*) FROM {INDICATORS_TABLE_NAME}")
                 )
                 total_combinations = await session.execute(
                     text("SELECT COUNT(*) FROM combination_results")

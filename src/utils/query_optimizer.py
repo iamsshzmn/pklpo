@@ -10,6 +10,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models import INDICATORS_TABLE_NAME
+
 logger = logging.getLogger(__name__)
 
 
@@ -139,20 +141,20 @@ async def optimize_common_queries(session: AsyncSession) -> dict[str, Any]:
     common_queries = [
         {
             "name": "get_symbols",
-            "query": "SELECT DISTINCT symbol FROM indicators",
+            "query": f"SELECT DISTINCT symbol FROM {INDICATORS_TABLE_NAME}",
             "params": {},
         },
         {
             "name": "get_timeframes",
-            "query": "SELECT DISTINCT timeframe FROM indicators WHERE symbol = :symbol",
+            "query": f"SELECT DISTINCT timeframe FROM {INDICATORS_TABLE_NAME} WHERE symbol = :symbol",
             "params": {"symbol": "BTC-USDT"},
         },
         {
             "name": "get_latest_indicators",
-            "query": """
-                SELECT * FROM indicators
+            "query": f"""
+                SELECT * FROM {INDICATORS_TABLE_NAME}
                 WHERE symbol = :symbol AND timeframe = :timeframe
-                ORDER BY ts DESC LIMIT 100
+                ORDER BY timestamp DESC LIMIT 100
             """,
             "params": {"symbol": "BTC-USDT", "timeframe": "1m"},
         },

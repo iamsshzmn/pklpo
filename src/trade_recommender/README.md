@@ -154,7 +154,7 @@ print(рекомендация)
 
 ### Входные данные:
 - **score_results** - торговые сигналы для анализа
-- **indicators** - данные индикаторов (цена закрытия, волатильность)
+- **indicators_p** - данные индикаторов (цена закрытия, волатильность)
 
 ### Выходные данные:
 - **trade_recommendations** - готовые торговые рекомендации
@@ -169,9 +169,9 @@ SELECT * FROM score_results WHERE id = 4815;
 
 ### Посмотреть индикаторы:
 ```sql
-SELECT symbol, timeframe, ts, close, atr14
-FROM indicators
-WHERE symbol = 'XRP-USDT' AND timeframe = '1h' AND ts = 1703127600;
+SELECT symbol, timeframe, timestamp, close, atr_14
+FROM indicators_p
+WHERE symbol = 'XRP-USDT' AND timeframe = '1h' AND timestamp = 1703127600000;
 ```
 
 ### Посмотреть рекомендации:

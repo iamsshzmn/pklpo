@@ -10,6 +10,26 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
+INDICATORS_TABLE_NAME = "indicators_p"
+
+
+class SwapOhlcvP(Base):
+    __tablename__ = "swap_ohlcv_p"
+
+    symbol = Column(String(50), primary_key=True)
+    timeframe = Column(String(20), primary_key=True)
+    timestamp = Column(BigInteger, primary_key=True)  # milliseconds
+    open = Column(Numeric(20, 8), nullable=False)
+    high = Column(Numeric(20, 8), nullable=False)
+    low = Column(Numeric(20, 8), nullable=False)
+    close = Column(Numeric(20, 8), nullable=False)
+    volume = Column(Numeric(30, 8), nullable=False)
+    vol_ccy = Column(Numeric(30, 8), nullable=True)
+    vol_usd = Column(Numeric(30, 8), nullable=True)
+    funding_rate = Column(Numeric(10, 8), nullable=True)
+    open_interest = Column(Numeric(30, 8), nullable=True)
+    fetched_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=True)
 
 
 class Instrument(Base):
@@ -62,7 +82,7 @@ class OHLCV(Base):
 
 
 class Indicator(Base):
-    __tablename__ = "indicators"
+    __tablename__ = INDICATORS_TABLE_NAME
     symbol = Column(String, primary_key=True)
     timeframe = Column(String, primary_key=True)
     timestamp = Column(BigInteger, primary_key=True)  # timestamp в миллисекундах

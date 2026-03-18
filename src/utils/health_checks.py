@@ -8,10 +8,29 @@ import time
 
 from sqlalchemy import text
 
-from src.okx.market import OKXMarket
+from src.models import INDICATORS_TABLE_NAME
 from src.utils.session_utils import get_db_session
 
 logger = logging.getLogger(__name__)
+
+
+async def _is_partitioned_table(session, table_name: str) -> bool:
+    result = await session.execute(
+        text(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_partitioned_table pt
+                JOIN pg_class c ON c.oid = pt.partrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                  AND c.relname = :table_name
+            )
+            """
+        ),
+        {"table_name": table_name},
+    )
+    return bool(result.scalar())
 
 
 class HealthCheckResult:
@@ -27,7 +46,7 @@ class HealthCheckResult:
         self.timestamp = time.time()
 
     def __str__(self) -> str:
-        status_str = "✅" if self.status else "❌"
+        status_str = "OK" if self.status else "FAIL"
         return f"{status_str} {self.name}: {self.message}"
 
     def to_dict(self) -> dict:
@@ -81,7 +100,6 @@ class HealthChecker:
                     result.details["execution_time"] = execution_time
                     results.append(result)
                 else:
-                    # Если функция вернула bool, создаем результат
                     status = bool(result)
                     message = "OK" if status else "Failed"
                     health_result = HealthCheckResult(
@@ -93,7 +111,7 @@ class HealthChecker:
                     results.append(health_result)
 
             except Exception as e:
-                logger.error(f"Ошибка в health check {name}: {e}")
+                logger.error("Ошибка в health check %s: %s", name, e)
                 results.append(
                     HealthCheckResult(
                         name=name,
@@ -118,7 +136,6 @@ class HealthChecker:
         return all(result.status for result in results)
 
 
-# Функции health checks
 async def check_database_connection() -> HealthCheckResult:
     """
     Проверяет подключение к базе данных
@@ -128,7 +145,6 @@ async def check_database_connection() -> HealthCheckResult:
     """
     try:
         async with get_db_session() as session:
-            # Выполняем простой запрос
             result = await session.execute(text("SELECT 1"))
             value = result.scalar()
 
@@ -162,34 +178,67 @@ async def check_database_tables() -> HealthCheckResult:
     Returns:
         HealthCheckResult: Результат проверки
     """
-    required_tables = ["instruments", "ohlcv", "indicators", "signals"]
-    missing_tables = []
+    required_table_groups = {
+        "instruments": ["instruments"],
+        "market_candles": ["swap_ohlcv_p", "ohlcv_p", "ohlcv"],
+        "features": [INDICATORS_TABLE_NAME],
+        "market_meta": ["market_data_ext"],
+        "market_selection": [
+            "market_scores_tf",
+            "market_universe",
+            "market_universe_versions",
+            "market_regime_history",
+        ],
+    }
+    missing_groups = []
 
     try:
         async with get_db_session() as session:
-            for table in required_tables:
-                try:
-                    result = await session.execute(
-                        text(f"SELECT COUNT(*) FROM {table} LIMIT 1")
-                    )
-                    count = result.scalar()
-                    logger.debug(f"Table {table}: {count} records")
-                except Exception as e:
-                    missing_tables.append(table)
-                    logger.warning(f"Table {table} check failed: {e}")
+            for group_name, tables in required_table_groups.items():
+                group_ok = False
+                last_error: Exception | None = None
 
-            if not missing_tables:
+                for table in tables:
+                    try:
+                        if table == "swap_ohlcv_p" and not await _is_partitioned_table(
+                            session, table
+                        ):
+                            last_error = RuntimeError(
+                                "swap_ohlcv_p is present but not partitioned"
+                            )
+                            continue
+                        result = await session.execute(
+                            text(f"SELECT COUNT(*) FROM {table} LIMIT 1")
+                        )
+                        count = result.scalar()
+                        logger.debug("Table %s: %s records", table, count)
+                        group_ok = True
+                        break
+                    except Exception as e:
+                        last_error = e
+
+                if not group_ok:
+                    missing_groups.append(group_name)
+                    if last_error is not None:
+                        logger.warning(
+                            "Table group %s check failed for %s: %s",
+                            group_name,
+                            tables,
+                            last_error,
+                        )
+
+            if not missing_groups:
                 return HealthCheckResult(
                     name="Database Tables",
                     status=True,
-                    message="All required tables are accessible",
-                    details={"tables_checked": len(required_tables)},
+                    message="All required table groups are accessible",
+                    details={"table_groups_checked": len(required_table_groups)},
                 )
             return HealthCheckResult(
                 name="Database Tables",
                 status=False,
-                message=f"Missing or inaccessible tables: {', '.join(missing_tables)}",
-                details={"missing_tables": missing_tables},
+                message=f"Missing or inaccessible table groups: {', '.join(missing_groups)}",
+                details={"missing_groups": missing_groups},
             )
 
     except Exception as e:
@@ -210,16 +259,28 @@ async def check_database_data_freshness() -> HealthCheckResult:
     """
     try:
         async with get_db_session() as session:
-            # Проверяем последние данные OHLCV
-            result = await session.execute(text("SELECT MAX(ts) FROM ohlcv"))
-            latest_ohlcv = result.scalar()
+            latest_ohlcv = None
+            for query in (
+                "SELECT MAX(timestamp) FROM swap_ohlcv_p",
+                "SELECT MAX(timestamp) FROM ohlcv_p",
+                "SELECT MAX(ts) FROM ohlcv",
+            ):
+                try:
+                    result = await session.execute(text(query))
+                    latest_ohlcv = result.scalar()
+                    if latest_ohlcv is not None:
+                        break
+                except Exception as e:
+                    logger.debug("Freshness query failed for '%s': %s", query, e)
+                    continue
 
-            # Проверяем последние данные indicators
-            result = await session.execute(text("SELECT MAX(ts) FROM indicators"))
+            result = await session.execute(
+                text(f"SELECT MAX(timestamp) FROM {INDICATORS_TABLE_NAME}")
+            )
             latest_indicators = result.scalar()
 
-            current_time = int(time.time() * 1000)  # Текущее время в миллисекундах
-            max_age_hours = 24  # Максимальный возраст данных в часах
+            current_time = int(time.time() * 1000)
+            max_age_hours = 24
             max_age_ms = max_age_hours * 60 * 60 * 1000
 
             issues = []
@@ -234,11 +295,11 @@ async def check_database_data_freshness() -> HealthCheckResult:
                 issues.append("No OHLCV data found")
 
             if latest_indicators:
-                # Индикаторы используют timestamp в секундах, а не миллисекундах
-                age_indicators = (current_time // 1000) - latest_indicators
-                if age_indicators > (max_age_hours * 60 * 60):
+                age_indicators = current_time - latest_indicators
+                if age_indicators > max_age_ms:
                     issues.append(
-                        f"Indicators data is {age_indicators // (60 * 60)} hours old"
+                        "Indicators data is "
+                        f"{age_indicators // (60 * 60 * 1000)} hours old"
                     )
             else:
                 issues.append("No indicators data found")
@@ -283,8 +344,9 @@ async def check_okx_api() -> HealthCheckResult:
         HealthCheckResult: Результат проверки
     """
     try:
+        from src.candles.infrastructure import OKXMarket
+
         async with OKXMarket() as client:
-            # Выполняем простой запрос к API
             instruments = await client.get_instruments("SPOT")
 
             if instruments and len(instruments) > 0:
@@ -320,14 +382,11 @@ async def check_system_resources() -> HealthCheckResult:
     try:
         import psutil
 
-        # Проверяем использование памяти
         memory = psutil.virtual_memory()
         memory_percent = memory.percent
 
-        # Проверяем использование CPU
         cpu_percent = psutil.cpu_percent(interval=1)
 
-        # Проверяем диск
         disk = psutil.disk_usage("/")
         disk_percent = disk.percent
 
@@ -381,10 +440,7 @@ async def check_system_resources() -> HealthCheckResult:
         )
 
 
-# Создаем глобальный экземпляр health checker
 health_checker = HealthChecker()
-
-# Добавляем стандартные проверки
 health_checker.add_check("Database Connection", check_database_connection)
 health_checker.add_check("Database Tables", check_database_tables)
 health_checker.add_check("Data Freshness", check_database_data_freshness)
@@ -414,8 +470,8 @@ async def print_health_report() -> None:
     results = await health_checker.run_all_checks()
     overall_status = health_checker.get_overall_status(results)
 
-    print("\n🏥 HEALTH CHECK REPORT")
-    print(f"Overall Status: {'✅ HEALTHY' if overall_status else '❌ UNHEALTHY'}")
+    print("\nHEALTH CHECK REPORT")
+    print(f"Overall Status: {'HEALTHY' if overall_status else 'UNHEALTHY'}")
     print(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("-" * 50)
 

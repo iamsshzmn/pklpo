@@ -126,7 +126,7 @@ pip install dash plotly pandas psycopg2-binary
 
 ### Поддерживаемые таблицы:
 - **ohlcv**: данные OHLCV (Open, High, Low, Close, Volume)
-- **indicators**: технические индикаторы
+- **indicators_p**: технические индикаторы
 - **indicator_combinations**: комбинации индикаторов
 
 ### Структура запросов:
@@ -138,9 +138,9 @@ WHERE symbol = %s AND timeframe = %s
 ORDER BY ts ASC
 
 -- Индикаторы
-SELECT * FROM indicators
+SELECT * FROM indicators_p
 WHERE symbol = %s AND timeframe = %s
-ORDER BY ts ASC
+ORDER BY timestamp ASC
 
 -- Комбинации
 SELECT * FROM indicator_combinations

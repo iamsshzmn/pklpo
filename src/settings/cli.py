@@ -11,7 +11,7 @@ from pathlib import Path
 # Добавляем корневую директорию в путь для импортов
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from src.logging_config import setup_logging
+from src.logging import setup_logging
 
 from .defaults import DefaultSettings
 from .manager import UserSettingsManager
