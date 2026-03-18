@@ -36,6 +36,7 @@ def create_parser() -> argparse.ArgumentParser:
         bars as cmd_bars,
         cleanup as cmd_cleanup,
         features as cmd_features,
+        indicators_partitions as cmd_indicators_partitions,
         label as cmd_label,
         metrics as cmd_metrics,
         migrate as cmd_migrate,
@@ -44,7 +45,7 @@ def create_parser() -> argparse.ArgumentParser:
         train as cmd_train,
         update_list as cmd_update_list,
     )
-    from src.market_selection.cli import commands as cmd_market_selection
+    from src.market_selection.interfaces import commands as cmd_market_selection
 
     # from src.cli.commands import mtf as cmd_mtf
     # from src.cli.commands import mtf_migrate as cmd_mtf_migrate
@@ -64,6 +65,7 @@ def create_parser() -> argparse.ArgumentParser:
     cmd_label.register(subparsers)
     cmd_train.register(subparsers)
     cmd_metrics.register(subparsers)
+    cmd_indicators_partitions.register(subparsers)
     # cmd_mtf.register(subparsers)
     # cmd_mtf_migrate.register(subparsers)
     # cmd_signals.register(subparsers)
