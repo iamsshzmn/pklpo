@@ -11,7 +11,6 @@ Calculates 5 metrics per (symbol, timeframe):
 
 from __future__ import annotations
 
-import logging
 from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -20,8 +19,6 @@ import numpy as np
 
 if TYPE_CHECKING:
     import pandas as pd
-
-logger = logging.getLogger(__name__)
 
 # Small constant to prevent division by zero
 EPS = 1e-12
@@ -286,49 +283,17 @@ class PairMetricsCalculator:
         ema_col = self.ema_slope_source
         ema_values = valid_df[ema_col].values
 
-        # For each bar, calculate local EMA slope over last N bars
         regimes = []
         for i in range(len(valid_df)):
-            # Use last N bars for slope, or all available if less
-            start_idx = max(0, i - self.slope_lookback_bars + 1)
-            window_ema = ema_values[start_idx : i + 1]
-
-            if len(window_ema) < 10:
-                regimes.append("NEUTRAL")
-                continue
-
-            # Linear regression slope
-            x = np.arange(len(window_ema))
-            x_mean = x.mean()
-            y_mean = window_ema.mean()
-
-            numerator = ((x - x_mean) * (window_ema - y_mean)).sum()
-            denominator = ((x - x_mean) ** 2).sum()
-
-            if denominator < EPS:
-                ema_slope = 0.0
-            else:
-                ema_slope = numerator / denominator
-
-            # Normalize slope by close price
-            close_median = valid_df["close"].iloc[start_idx : i + 1].median()
-            ema_slope_norm = abs(ema_slope) / (close_median + EPS)
-
-            # Get current bar metrics
-            adx = valid_df["adx_14"].iloc[i]
-            atr_close = atr_close_ratio.iloc[i]
-
-            # Classify regime
-            if atr_close > atr_p80:
-                regime = "VOLATILE"
-            elif adx >= self.adx_trend_threshold and ema_slope_norm > 0.001:
-                regime = "TREND"
-            elif adx < self.adx_range_threshold and atr_close < atr_p80 * 0.5:
-                regime = "RANGE"
-            else:
-                regime = "NEUTRAL"
-
-            regimes.append(regime)
+            regimes.append(
+                self._classify_bar_regime(
+                    valid_df=valid_df,
+                    ema_values=ema_values,
+                    atr_close_ratio=atr_close_ratio,
+                    atr_p80=atr_p80,
+                    index=i,
+                )
+            )
 
         if len(regimes) < 7:
             return None
@@ -347,6 +312,52 @@ class PairMetricsCalculator:
         stability = max(0.0, min(1.0, stability))
 
         return float(stability)
+
+    def _classify_bar_regime(
+        self,
+        valid_df: pd.DataFrame,
+        ema_values: np.ndarray,
+        atr_close_ratio: pd.Series,
+        atr_p80: float,
+        index: int,
+    ) -> str:
+        """Classify a single bar into a local regime for stability scoring."""
+        start_idx = max(0, index - self.slope_lookback_bars + 1)
+        window_ema = ema_values[start_idx : index + 1]
+
+        if len(window_ema) < 10:
+            return "NEUTRAL"
+
+        ema_slope_norm = self._calc_window_ema_slope_norm(valid_df, window_ema, start_idx, index)
+        adx = valid_df["adx_14"].iloc[index]
+        atr_close = atr_close_ratio.iloc[index]
+
+        if atr_close > atr_p80:
+            return "VOLATILE"
+        if adx >= self.adx_trend_threshold and ema_slope_norm > 0.001:
+            return "TREND"
+        if adx < self.adx_range_threshold and atr_close < atr_p80 * 0.5:
+            return "RANGE"
+        return "NEUTRAL"
+
+    def _calc_window_ema_slope_norm(
+        self,
+        valid_df: pd.DataFrame,
+        window_ema: np.ndarray,
+        start_idx: int,
+        end_idx: int,
+    ) -> float:
+        """Compute normalized EMA slope for a rolling stability window."""
+        x = np.arange(len(window_ema))
+        x_mean = x.mean()
+        y_mean = window_ema.mean()
+
+        numerator = ((x - x_mean) * (window_ema - y_mean)).sum()
+        denominator = ((x - x_mean) ** 2).sum()
+        ema_slope = 0.0 if denominator < EPS else numerator / denominator
+
+        close_median = valid_df["close"].iloc[start_idx : end_idx + 1].median()
+        return abs(ema_slope) / (close_median + EPS)
 
     def _calc_liquidity(self, df: pd.DataFrame) -> float | None:
         """
@@ -375,144 +386,3 @@ class PairMetricsCalculator:
         liq = vol_median / (cv + 1.0)
 
         return liq
-
-
-# SQL queries for bulk calculation (executed in database)
-PAIR_METRICS_SQL = """
-WITH ohlcv_window AS (
-    SELECT
-        symbol,
-        timeframe,
-        timestamp,
-        close,
-        volume,
-        LAG(close) OVER (PARTITION BY symbol ORDER BY timestamp) as prev_close
-    FROM swap_ohlcv_p
-    WHERE timeframe = :tf
-      AND timestamp BETWEEN :ts_start AND :ts_eval
-),
-indicators_window AS (
-    SELECT
-        symbol,
-        timeframe,
-        timestamp,
-        atr_14,
-        adx_14,
-        {ema_col} as ema
-    FROM indicators
-    WHERE timeframe = :tf
-      AND timestamp BETWEEN :ts_start AND :ts_eval
-),
-joined AS (
-    SELECT
-        o.symbol,
-        o.timestamp,
-        o.close,
-        o.volume,
-        o.prev_close,
-        i.atr_14,
-        i.adx_14,
-        i.ema
-    FROM ohlcv_window o
-    JOIN indicators_window i
-        ON o.symbol = i.symbol
-        AND o.timeframe = i.timeframe
-        AND o.timestamp = i.timestamp
-    WHERE o.close IS NOT NULL AND o.close > 0
-)
-SELECT
-    symbol,
-
-    -- (1) Volatility: median(atr_14 / close)
-    PERCENTILE_CONT(0.5) WITHIN GROUP (
-        ORDER BY atr_14 / NULLIF(close, 0)
-    ) as vol_raw,
-
-    -- (2) Trend Quality components
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY adx_14) / 100.0 as adx_norm,
-
-    -- (3) Noise: std(|log_return|) / median(|log_return|)
-    STDDEV(ABS(LN(close / NULLIF(prev_close, 0)))) / (
-        NULLIF(
-            PERCENTILE_CONT(0.5) WITHIN GROUP (
-                ORDER BY ABS(LN(close / NULLIF(prev_close, 0)))
-            ),
-            0
-        ) + 1e-12
-    ) as noise_raw,
-
-    -- (4) Stability: 1 - cv(adx_14)
-    1.0 - (
-        STDDEV(adx_14) / (NULLIF(AVG(adx_14), 0) + 1e-12)
-    ) as stability_raw,
-
-    -- (5) Liquidity: median(volume) / (cv(volume) + 1)
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY volume) / (
-        STDDEV(volume) / (NULLIF(AVG(volume), 0) + 1e-12) + 1
-    ) as liq_raw,
-
-    -- Quality gate data
-    COUNT(*) as valid_bars,
-    COUNT(*) FILTER (
-        WHERE atr_14 IS NOT NULL
-        AND adx_14 IS NOT NULL
-        AND ema IS NOT NULL
-    ) as feature_bars,
-
-    -- Max timestamp for lag calculation
-    MAX(timestamp) as max_ts
-
-FROM joined
-GROUP BY symbol
-HAVING COUNT(*) >= :min_bars
-"""
-
-QUALITY_GATE_SQL = """
-WITH ohlcv_data AS (
-    SELECT
-        symbol,
-        timeframe,
-        timestamp,
-        close,
-        volume,
-        LAG(timestamp) OVER (PARTITION BY symbol ORDER BY timestamp) as prev_ts
-    FROM swap_ohlcv_p
-    WHERE timeframe = :tf
-      AND timestamp BETWEEN :ts_start AND :ts_eval
-),
-indicators_data AS (
-    SELECT
-        symbol,
-        timeframe,
-        MAX(timestamp) as max_indicator_ts,
-        COUNT(*) FILTER (WHERE atr_14 IS NOT NULL AND adx_14 IS NOT NULL) as feature_bars
-    FROM indicators
-    WHERE timeframe = :tf
-      AND timestamp BETWEEN :ts_start AND :ts_eval
-    GROUP BY symbol, timeframe
-),
-gaps AS (
-    SELECT
-        symbol,
-        COUNT(*) as total_bars,
-        COUNT(*) FILTER (WHERE prev_ts IS NOT NULL AND (timestamp - prev_ts) > :gap_threshold) as gaps_count,
-        MAX(timestamp) as max_ohlcv_ts,
-        SUM(volume) > 0 as has_volume
-    FROM ohlcv_data
-    GROUP BY symbol
-)
-SELECT
-    g.symbol,
-    :tf as timeframe,
-    g.total_bars as valid_bars,
-    :expected_bars as expected_bars,
-    g.gaps_count,
-    GREATEST(
-        (:ts_eval - COALESCE(g.max_ohlcv_ts, 0)) / 1000,
-        (:ts_eval - COALESCE(i.max_indicator_ts, 0)) / 1000
-    )::INTEGER as data_lag_seconds,
-    g.has_volume as volume_present,
-    COALESCE(i.feature_bars, 0) as feature_bars
-FROM gaps g
-LEFT JOIN indicators_data i ON g.symbol = i.symbol
-"""

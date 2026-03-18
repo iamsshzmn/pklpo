@@ -375,3 +375,43 @@ def record_pipeline_metrics(
     )
 
     get_metrics().record_pipeline_run(metrics)
+
+
+class MarketSelectionMonitoring:
+    """Adapter exposing monitoring through an application port."""
+
+    def record_error(self, error_type: str, message: str) -> None:
+        get_metrics().record_error(error_type, message)
+
+    def record_pipeline_metrics(
+        self,
+        *,
+        ts_version: int,
+        ts_eval: int,
+        success: bool,
+        status: str,
+        universe_size: int,
+        execution_time_seconds: float,
+        global_regime: str | None = None,
+        regime_strength: float = 0.0,
+        regime_stale: bool = False,
+        eligible_counts: dict[str, int] | None = None,
+        total_symbols: int = 0,
+        error_message: str | None = None,
+        reason_flags: list[str] | None = None,
+    ) -> None:
+        record_pipeline_metrics(
+            ts_version=ts_version,
+            ts_eval=ts_eval,
+            success=success,
+            status=status,
+            universe_size=universe_size,
+            execution_time_seconds=execution_time_seconds,
+            global_regime=global_regime,
+            regime_strength=regime_strength,
+            regime_stale=regime_stale,
+            eligible_counts=eligible_counts,
+            total_symbols=total_symbols,
+            error_message=error_message,
+            reason_flags=reason_flags,
+        )

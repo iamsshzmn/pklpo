@@ -10,7 +10,6 @@ Handles:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -19,12 +18,9 @@ import numpy as np
 if TYPE_CHECKING:
     import pandas as pd
 
-    from src.market_selection.config import MarketSelectionConfig
-
+from .config import ScoringConfig
 from .quality_gate import ReasonFlag
 from .regime import RegimeType
-
-logger = logging.getLogger(__name__)
 
 EPS = 1e-12
 
@@ -116,9 +112,8 @@ class ScoringEngine:
     5. Aggregate across TFs for final score
     """
 
-    def __init__(self, config: MarketSelectionConfig):
+    def __init__(self, config: ScoringConfig):
         self.config = config
-        self.scoring_config = config.scoring
 
     def normalize_metrics(
         self,
@@ -144,10 +139,10 @@ class ScoringEngine:
             return df
 
         # Determine winsorize percentiles
-        if n_eligible < self.scoring_config.small_universe_threshold:
-            p_low, p_high = self.scoring_config.winsorize_small_universe
+        if n_eligible < self.config.small_universe_threshold:
+            p_low, p_high = self.config.winsorize_small_universe
         else:
-            p_low, p_high = self.scoring_config.winsorize_percentiles
+            p_low, p_high = self.config.winsorize_percentiles
 
         # Metric columns and their scoring direction
         # For noise: lower is better, so we invert
@@ -179,7 +174,7 @@ class ScoringEngine:
             values = values.clip(lower=low_val, upper=high_val)
 
             # Percentile rank normalization
-            if n_eligible < self.scoring_config.fallback_zscore_threshold:
+            if n_eligible < self.config.fallback_zscore_threshold:
                 # Fallback to z-score → sigmoid for very small universes
                 scores = self._zscore_sigmoid_normalize(values)
             else:
@@ -192,7 +187,6 @@ class ScoringEngine:
 
             df[score_col] = scores.fillna(0.0)
 
-        logger.debug(f"Normalized {n_eligible} symbols for {timeframe}")
         return df
 
     def _zscore_sigmoid_normalize(self, values: pd.Series) -> pd.Series:
@@ -224,8 +218,8 @@ class ScoringEngine:
 
         Returns normalized weights (sum = 1.0)
         """
-        base = self.scoring_config.base_weights.copy()
-        deltas = self.scoring_config.regime_deltas.get(regime.value, {})
+        base = self.config.base_weights.copy()
+        deltas = self.config.regime_deltas.get(regime.value, {})
 
         # Apply deltas
         adjusted = {}
@@ -319,9 +313,9 @@ class ScoringEngine:
         Returns:
             List of FinalScore objects, sorted by score descending
         """
-        tf_weights = self.scoring_config.tf_weights
-        missing_penalty = self.scoring_config.missing_senior_penalty
-        junior_penalty = self.scoring_config.missing_junior_penalty
+        tf_weights = self.config.tf_weights
+        missing_penalty = self.config.missing_senior_penalty
+        junior_penalty = self.config.missing_junior_penalty
 
         # Collect all symbols
         all_symbols = set()
@@ -401,7 +395,7 @@ class ScoringEngine:
 
             # VOLATILE regime: filter low liquidity
             if regime == RegimeType.VOLATILE:
-                liq_threshold = self.scoring_config.volatile_min_liq_score
+                liq_threshold = self.config.volatile_min_liq_score
                 # We'd need liq_score here - for now use score_4h as proxy
                 # In practice, this check happens before aggregation
 
@@ -449,17 +443,12 @@ class ScoringEngine:
 
         Returns list of symbols to exclude.
         """
-        threshold = self.scoring_config.volatile_min_liq_score
+        threshold = self.config.volatile_min_liq_score
         excluded = []
 
         for score in scores:
             liq = liq_scores.get(score.symbol, 0.0)
             if liq < threshold:
                 excluded.append(score.symbol)
-
-        if excluded:
-            logger.info(
-                f"VOLATILE filter: excluding {len(excluded)} symbols with liq < {threshold}"
-            )
 
         return excluded

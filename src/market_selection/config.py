@@ -330,21 +330,3 @@ class MarketSelectionConfig(BaseModel):
             tf,
             {"fill_min": 0.95, "gap_max": 0.02, "lag_max_min": 60},
         )
-
-
-# Singleton instance
-_config: MarketSelectionConfig | None = None
-
-
-def get_config() -> MarketSelectionConfig:
-    """Get or create the singleton config instance."""
-    global _config
-    if _config is None:
-        _config = MarketSelectionConfig()
-    return _config
-
-
-def set_config(config: MarketSelectionConfig) -> None:
-    """Set the singleton config instance (for testing)."""
-    global _config
-    _config = config

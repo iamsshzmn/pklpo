@@ -10,19 +10,13 @@ Manages the trading universe:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from src.market_selection.config import MarketSelectionConfig
-
+from .config import UniverseConfig
 from .quality_gate import ReasonFlag
 from .regime import GlobalRegime
 from .scoring import FinalScore
-
-logger = logging.getLogger(__name__)
 
 
 class UniverseStatus(str, Enum):
@@ -162,9 +156,8 @@ class UniverseManager:
     - White/black list support
     """
 
-    def __init__(self, config: MarketSelectionConfig):
+    def __init__(self, config: UniverseConfig):
         self.config = config
-        self.universe_config = config.universe
 
     def select_universe(
         self,
@@ -193,11 +186,11 @@ class UniverseManager:
         blacklist = blacklist or set()
         global_flags: list[ReasonFlag] = []
 
-        top_n = self.universe_config.top_n
-        buffer = self.universe_config.buffer
-        std_7d_max = self.universe_config.score_std_7d_max
-        std_30d_max = self.universe_config.score_std_30d_max
-        min_history_days = self.universe_config.min_history_days
+        top_n = self.config.top_n
+        buffer = self.config.buffer
+        std_7d_max = self.config.score_std_7d_max
+        std_30d_max = self.config.score_std_30d_max
+        min_history_days = self.config.min_history_days
 
         # Filter blacklisted
         candidates = [s for s in final_scores if s.symbol not in blacklist]
@@ -282,11 +275,6 @@ class UniverseManager:
         for i, entry in enumerate(selected):
             entry.rank = i + 1
 
-        logger.info(
-            f"Selected universe: {len(selected)} symbols "
-            f"(top_n={top_n}, buffer={buffer})"
-        )
-
         return selected, global_flags
 
     def _calculate_stability(
@@ -355,7 +343,7 @@ class UniverseManager:
 
         Returns True if > 30% of symbols are missing 1H or 4H data.
         """
-        threshold = self.universe_config.systemic_senior_outage_threshold
+        threshold = self.config.systemic_senior_outage_threshold
 
         if total_symbols == 0:
             return True
@@ -367,10 +355,6 @@ class UniverseManager:
         missing_4h_pct = 1.0 - (eligible_4h / total_symbols)
 
         if missing_1h_pct > threshold or missing_4h_pct > threshold:
-            logger.warning(
-                f"Systemic senior TF outage detected: "
-                f"1H missing {missing_1h_pct:.1%}, 4H missing {missing_4h_pct:.1%}"
-            )
             return True
 
         return False
@@ -384,8 +368,8 @@ class UniverseManager:
 
         Returns (should_fallback, reason)
         """
-        hard_min = self.universe_config.min_universe_hard
-        soft_min = self.universe_config.min_universe_soft
+        hard_min = self.config.min_universe_hard
+        soft_min = self.config.min_universe_soft
 
         if universe_size < hard_min:
             return True, f"universe_size ({universe_size}) < hard_min ({hard_min})"

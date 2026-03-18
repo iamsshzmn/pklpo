@@ -10,15 +10,10 @@ Checks data quality per (symbol, timeframe) before scoring:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from src.market_selection.config import MarketSelectionConfig
-
-logger = logging.getLogger(__name__)
+from .config import QualityGateConfig
 
 
 class ReasonFlag(str, Enum):
@@ -104,7 +99,7 @@ class DataQualityGate:
     - reason_flags: specific issues found
     """
 
-    def __init__(self, config: MarketSelectionConfig):
+    def __init__(self, config: QualityGateConfig):
         self.config = config
 
     def evaluate(
@@ -159,7 +154,7 @@ class DataQualityGate:
             reason_flags.append(ReasonFlag.HIGH_GAPS)
 
         # Check warmup
-        warmup_min = self.config.quality.warmup_min_bars
+        warmup_min = self.config.warmup_min_bars
         if valid_bars < warmup_min:
             if ReasonFlag.INSUFFICIENT_WARMUP not in reason_flags:
                 reason_flags.append(ReasonFlag.INSUFFICIENT_WARMUP)
@@ -260,7 +255,7 @@ class DataQualityGate:
             return 0
 
         tf_bar_ms = self.config.get_tf_bar_ms(timeframe)
-        gap_threshold = tf_bar_ms * self.config.quality.gap_threshold_multiplier
+        gap_threshold = tf_bar_ms * self.config.gap_threshold_multiplier
 
         gaps_count = 0
         for i in range(1, len(timestamps)):

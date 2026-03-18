@@ -19,10 +19,238 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.models import INDICATORS_TABLE_NAME
+
 if TYPE_CHECKING:
     from src.market_selection.config import MarketSelectionConfig
 
 logger = logging.getLogger(__name__)
+
+RESOLVE_TS_EVAL_SQL = f"""
+SELECT LEAST(
+    (SELECT MAX(timestamp) FROM swap_ohlcv_p WHERE timeframe = :tf),
+    (SELECT MAX(timestamp) FROM {INDICATORS_TABLE_NAME} WHERE timeframe = :tf)
+) as max_ts
+"""
+
+VALIDATE_SHORT_FEATURES_SQL = f"""
+SELECT column_name
+FROM information_schema.columns
+WHERE table_name = '{INDICATORS_TABLE_NAME}'
+"""
+
+QUALITY_DATA_SQL = f"""
+WITH ohlcv_data AS (
+    SELECT
+        symbol,
+        timestamp,
+        volume,
+        LAG(timestamp) OVER (PARTITION BY symbol ORDER BY timestamp) as prev_ts
+    FROM swap_ohlcv_p
+    WHERE timeframe = :tf
+      AND timestamp BETWEEN :ts_start AND :ts_eval
+),
+indicators_data AS (
+    SELECT
+        symbol,
+        MAX(timestamp) as max_indicator_ts,
+        COUNT(*) FILTER (
+            WHERE atr_14 IS NOT NULL AND adx_14 IS NOT NULL
+        ) as feature_bars
+    FROM {INDICATORS_TABLE_NAME}
+    WHERE timeframe = :tf
+      AND timestamp BETWEEN :ts_start AND :ts_eval
+    GROUP BY symbol
+),
+gaps AS (
+    SELECT
+        symbol,
+        COUNT(*) as total_bars,
+        COUNT(*) FILTER (
+            WHERE prev_ts IS NOT NULL
+            AND (timestamp - prev_ts) > :gap_threshold
+        ) as gaps_count,
+        MAX(timestamp) as max_ohlcv_ts,
+        SUM(volume) > 0 as has_volume
+    FROM ohlcv_data
+    GROUP BY symbol
+)
+SELECT
+    g.symbol,
+    g.total_bars as valid_bars,
+    g.gaps_count,
+    GREATEST(g.max_ohlcv_ts, COALESCE(i.max_indicator_ts, 0)) as max_ts,
+    COALESCE(i.feature_bars, 0) as feature_bars,
+    g.has_volume
+FROM gaps g
+LEFT JOIN indicators_data i ON g.symbol = i.symbol
+"""
+
+PAIR_METRICS_DATA_SQL_TEMPLATE = f"""
+WITH ohlcv AS (
+    SELECT
+        symbol,
+        timestamp,
+        close,
+        volume,
+        LAG(close) OVER (PARTITION BY symbol ORDER BY timestamp) as prev_close
+    FROM swap_ohlcv_p
+    WHERE timeframe = :tf
+      AND timestamp BETWEEN :ts_start AND :ts_eval
+),
+indicators AS (
+    SELECT
+        symbol,
+        timestamp,
+        atr_14,
+        adx_14,
+        {{ema_col}} as ema
+    FROM {INDICATORS_TABLE_NAME}
+    WHERE timeframe = :tf
+      AND timestamp BETWEEN :ts_start AND :ts_eval
+)
+SELECT
+    o.symbol,
+    o.timestamp,
+    o.close,
+    o.volume,
+    o.prev_close,
+    i.atr_14,
+    i.adx_14,
+    i.ema
+FROM ohlcv o
+JOIN indicators i
+    ON o.symbol = i.symbol AND o.timestamp = i.timestamp
+WHERE o.close > 0
+ORDER BY o.symbol, o.timestamp
+"""
+
+BASKET_SELECTION_SQL = """
+SELECT
+    symbol,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY volume) as volume_median
+FROM swap_ohlcv_p
+WHERE timeframe = :tf
+  AND timestamp BETWEEN :ts_start AND :ts_eval
+GROUP BY symbol
+HAVING COUNT(*) >= :min_bars
+ORDER BY volume_median DESC
+"""
+
+REGIME_METRICS_SQL_TEMPLATE = f"""
+WITH ohlcv AS (
+    SELECT symbol, timestamp, close, volume
+    FROM swap_ohlcv_p
+    WHERE timeframe = :tf
+      AND timestamp BETWEEN :ts_start AND :ts_eval
+      AND symbol = ANY(:symbols)
+),
+indicators AS (
+    SELECT symbol, timestamp, adx_14, atr_14, {{ema_col}} as ema
+    FROM {INDICATORS_TABLE_NAME}
+    WHERE timeframe = :tf
+      AND timestamp BETWEEN :ts_start AND :ts_eval
+      AND symbol = ANY(:symbols)
+),
+joined AS (
+    SELECT
+        o.symbol,
+        o.timestamp,
+        o.close,
+        o.volume,
+        i.adx_14,
+        i.atr_14 / NULLIF(o.close, 0) as atr_close_ratio,
+        i.ema
+    FROM ohlcv o
+    JOIN indicators i ON o.symbol = i.symbol AND o.timestamp = i.timestamp
+    WHERE o.close > 0 AND i.ema IS NOT NULL
+)
+SELECT
+    symbol,
+    timestamp,
+    adx_14,
+    atr_close_ratio,
+    ema,
+    close,
+    volume
+FROM joined
+ORDER BY symbol, timestamp
+"""
+
+ATR_PERCENTILE_SQL = f"""
+SELECT PERCENTILE_CONT(:pct / 100.0) WITHIN GROUP (
+    ORDER BY i.atr_14 / NULLIF(o.close, 0)
+) as atr_pct
+FROM swap_ohlcv_p o
+JOIN {INDICATORS_TABLE_NAME} i
+    ON o.symbol = i.symbol
+    AND o.timeframe = i.timeframe
+    AND o.timestamp = i.timestamp
+WHERE o.timeframe = :tf
+  AND o.timestamp BETWEEN :ts_start AND :ts_eval
+  AND o.close > 0
+"""
+
+PREVIOUS_UNIVERSE_SQL = """
+SELECT mu.symbol
+FROM market_universe mu
+JOIN market_universe_versions muv ON mu.ts_version = muv.ts_version
+WHERE muv.status = 'published'
+ORDER BY muv.ts_version DESC
+LIMIT 1
+"""
+
+SCORE_HISTORY_SQL_TEMPLATE = """
+SELECT symbol, final_score
+FROM market_universe mu
+JOIN market_universe_versions muv ON mu.ts_version = muv.ts_version
+WHERE muv.status = 'published'
+  AND symbol = ANY(:symbols)
+  AND muv.created_at > NOW() - INTERVAL ':days days'
+ORDER BY muv.ts_version DESC
+"""
+
+LAST_PUBLISHED_VERSION_SQL = """
+SELECT ts_version
+FROM market_universe_versions
+WHERE status = 'published'
+ORDER BY ts_version DESC
+LIMIT 1
+"""
+
+LAST_VALID_REGIME_SQL = """
+SELECT
+    ts_eval,
+    global_regime,
+    global_strength,
+    regime_confidence,
+    regime_1d,
+    regime_1d_strength,
+    regime_4h,
+    regime_4h_strength,
+    regime_1h,
+    regime_1h_strength,
+    basket_size,
+    basket_symbols,
+    basket_adx_median,
+    basket_atr_close_median,
+    basket_ema_slope_median
+FROM market_regime_history
+WHERE is_stale = false
+ORDER BY ts_eval DESC
+LIMIT 1
+"""
+
+CHECK_REGIME_TF_LAG_SQL = f"""
+SELECT MAX(timestamp) as max_ts
+FROM (
+    SELECT timestamp FROM swap_ohlcv_p
+    WHERE timeframe = :tf AND timestamp BETWEEN :ts_start AND :ts_eval
+    UNION ALL
+    SELECT timestamp FROM {INDICATORS_TABLE_NAME}
+    WHERE timeframe = :tf AND timestamp BETWEEN :ts_start AND :ts_eval
+) combined
+"""
 
 
 class MarketSelectionDB:
@@ -42,12 +270,7 @@ class MarketSelectionDB:
 
         Returns minimum of the two to ensure data consistency.
         """
-        query = text("""
-            SELECT LEAST(
-                (SELECT MAX(timestamp) FROM swap_ohlcv_p WHERE timeframe = :tf),
-                (SELECT MAX(timestamp) FROM indicators WHERE timeframe = :tf)
-            ) as max_ts
-        """)
+        query = text(RESOLVE_TS_EVAL_SQL)
         result = await self.session.execute(query, {"tf": timeframe})
         row = result.fetchone()
         return row[0] if row and row[0] else None
@@ -79,11 +302,7 @@ class MarketSelectionDB:
 
         Returns (is_valid, missing_features)
         """
-        query = text("""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = 'indicators'
-        """)
+        query = text(VALIDATE_SHORT_FEATURES_SQL)
         result = await self.session.execute(query)
         existing_columns = {row[0] for row in result.fetchall()}
 
@@ -114,52 +333,7 @@ class MarketSelectionDB:
         tf_bar_ms = self.config.get_tf_bar_ms(timeframe)
         gap_threshold = tf_bar_ms * self.config.quality.gap_threshold_multiplier
 
-        query = text("""
-            WITH ohlcv_data AS (
-                SELECT
-                    symbol,
-                    timestamp,
-                    volume,
-                    LAG(timestamp) OVER (PARTITION BY symbol ORDER BY timestamp) as prev_ts
-                FROM swap_ohlcv_p
-                WHERE timeframe = :tf
-                  AND timestamp BETWEEN :ts_start AND :ts_eval
-            ),
-            indicators_data AS (
-                SELECT
-                    symbol,
-                    MAX(timestamp) as max_indicator_ts,
-                    COUNT(*) FILTER (
-                        WHERE atr_14 IS NOT NULL AND adx_14 IS NOT NULL
-                    ) as feature_bars
-                FROM indicators
-                WHERE timeframe = :tf
-                  AND timestamp BETWEEN :ts_start AND :ts_eval
-                GROUP BY symbol
-            ),
-            gaps AS (
-                SELECT
-                    symbol,
-                    COUNT(*) as total_bars,
-                    COUNT(*) FILTER (
-                        WHERE prev_ts IS NOT NULL
-                        AND (timestamp - prev_ts) > :gap_threshold
-                    ) as gaps_count,
-                    MAX(timestamp) as max_ohlcv_ts,
-                    SUM(volume) > 0 as has_volume
-                FROM ohlcv_data
-                GROUP BY symbol
-            )
-            SELECT
-                g.symbol,
-                g.total_bars as valid_bars,
-                g.gaps_count,
-                GREATEST(g.max_ohlcv_ts, COALESCE(i.max_indicator_ts, 0)) as max_ts,
-                COALESCE(i.feature_bars, 0) as feature_bars,
-                g.has_volume
-            FROM gaps g
-            LEFT JOIN indicators_data i ON g.symbol = i.symbol
-        """)
+        query = text(QUALITY_DATA_SQL)
 
         result = await self.session.execute(
             query,
@@ -195,44 +369,7 @@ class MarketSelectionDB:
         ts_start = ts_eval - (window_days * 24 * 60 * 60 * 1000)
         ema_col = self.config.regime.ema_slope_source
 
-        query = text(f"""
-            WITH ohlcv AS (
-                SELECT
-                    symbol,
-                    timestamp,
-                    close,
-                    volume,
-                    LAG(close) OVER (PARTITION BY symbol ORDER BY timestamp) as prev_close
-                FROM swap_ohlcv_p
-                WHERE timeframe = :tf
-                  AND timestamp BETWEEN :ts_start AND :ts_eval
-            ),
-            indicators AS (
-                SELECT
-                    symbol,
-                    timestamp,
-                    atr_14,
-                    adx_14,
-                    {ema_col} as ema
-                FROM indicators
-                WHERE timeframe = :tf
-                  AND timestamp BETWEEN :ts_start AND :ts_eval
-            )
-            SELECT
-                o.symbol,
-                o.timestamp,
-                o.close,
-                o.volume,
-                o.prev_close,
-                i.atr_14,
-                i.adx_14,
-                i.ema
-            FROM ohlcv o
-            JOIN indicators i
-                ON o.symbol = i.symbol AND o.timestamp = i.timestamp
-            WHERE o.close > 0
-            ORDER BY o.symbol, o.timestamp
-        """)
+        query = text(PAIR_METRICS_DATA_SQL_TEMPLATE.format(ema_col=ema_col))
 
         result = await self.session.execute(
             query,
@@ -267,17 +404,7 @@ class MarketSelectionDB:
         ts_start = ts_eval - (window_days * 24 * 60 * 60 * 1000)
         min_bars = self.config.quality.warmup_min_bars // 2  # More relaxed for basket
 
-        query = text("""
-            SELECT
-                symbol,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY volume) as volume_median
-            FROM swap_ohlcv_p
-            WHERE timeframe = :tf
-              AND timestamp BETWEEN :ts_start AND :ts_eval
-            GROUP BY symbol
-            HAVING COUNT(*) >= :min_bars
-            ORDER BY volume_median DESC
-        """)
+        query = text(BASKET_SELECTION_SQL)
 
         result = await self.session.execute(
             query,
@@ -311,45 +438,7 @@ class MarketSelectionDB:
         slope_lookback = self.config.regime.slope_lookback_bars
 
         # Fetch all bars for slope calculation
-        query = text(f"""
-            WITH ohlcv AS (
-                SELECT symbol, timestamp, close, volume
-                FROM swap_ohlcv_p
-                WHERE timeframe = :tf
-                  AND timestamp BETWEEN :ts_start AND :ts_eval
-                  AND symbol = ANY(:symbols)
-            ),
-            indicators AS (
-                SELECT symbol, timestamp, adx_14, atr_14, {ema_col} as ema
-                FROM indicators
-                WHERE timeframe = :tf
-                  AND timestamp BETWEEN :ts_start AND :ts_eval
-                  AND symbol = ANY(:symbols)
-            ),
-            joined AS (
-                SELECT
-                    o.symbol,
-                    o.timestamp,
-                    o.close,
-                    o.volume,
-                    i.adx_14,
-                    i.atr_14 / NULLIF(o.close, 0) as atr_close_ratio,
-                    i.ema
-                FROM ohlcv o
-                JOIN indicators i ON o.symbol = i.symbol AND o.timestamp = i.timestamp
-                WHERE o.close > 0 AND i.ema IS NOT NULL
-            )
-            SELECT
-                symbol,
-                timestamp,
-                adx_14,
-                atr_close_ratio,
-                ema,
-                close,
-                volume
-            FROM joined
-            ORDER BY symbol, timestamp
-        """)
+        query = text(REGIME_METRICS_SQL_TEMPLATE.format(ema_col=ema_col))
 
         result = await self.session.execute(
             query,
@@ -423,19 +512,7 @@ class MarketSelectionDB:
         window_days = self.config.regime_windows_days.get(timeframe, 60)
         ts_start = ts_eval - (window_days * 24 * 60 * 60 * 1000)
 
-        query = text("""
-            SELECT PERCENTILE_CONT(:pct / 100.0) WITHIN GROUP (
-                ORDER BY i.atr_14 / NULLIF(o.close, 0)
-            ) as atr_pct
-            FROM swap_ohlcv_p o
-            JOIN indicators i
-                ON o.symbol = i.symbol
-                AND o.timeframe = i.timeframe
-                AND o.timestamp = i.timestamp
-            WHERE o.timeframe = :tf
-              AND o.timestamp BETWEEN :ts_start AND :ts_eval
-              AND o.close > 0
-        """)
+        query = text(ATR_PERCENTILE_SQL)
 
         result = await self.session.execute(
             query,
@@ -449,14 +526,7 @@ class MarketSelectionDB:
         """
         Fetch symbols from the most recent published universe.
         """
-        query = text("""
-            SELECT mu.symbol
-            FROM market_universe mu
-            JOIN market_universe_versions muv ON mu.ts_version = muv.ts_version
-            WHERE muv.status = 'published'
-            ORDER BY muv.ts_version DESC
-            LIMIT 1
-        """)
+        query = text(PREVIOUS_UNIVERSE_SQL)
 
         result = await self.session.execute(query)
         rows = result.fetchall()
@@ -472,15 +542,7 @@ class MarketSelectionDB:
 
         Returns Dict[symbol -> list of scores, newest first]
         """
-        query = text("""
-            SELECT symbol, final_score
-            FROM market_universe mu
-            JOIN market_universe_versions muv ON mu.ts_version = muv.ts_version
-            WHERE muv.status = 'published'
-              AND symbol = ANY(:symbols)
-              AND muv.created_at > NOW() - INTERVAL ':days days'
-            ORDER BY muv.ts_version DESC
-        """.replace(":days", str(days)))
+        query = text(SCORE_HISTORY_SQL_TEMPLATE.replace(":days", str(days)))
 
         result = await self.session.execute(query, {"symbols": symbols})
         rows = result.fetchall()
@@ -494,13 +556,7 @@ class MarketSelectionDB:
 
     async def get_last_published_version(self) -> int | None:
         """Get ts_version of last published universe."""
-        query = text("""
-            SELECT ts_version
-            FROM market_universe_versions
-            WHERE status = 'published'
-            ORDER BY ts_version DESC
-            LIMIT 1
-        """)
+        query = text(LAST_PUBLISHED_VERSION_SQL)
 
         result = await self.session.execute(query)
         row = result.fetchone()
@@ -512,28 +568,7 @@ class MarketSelectionDB:
 
         Returns dict with regime data or None if no history.
         """
-        query = text("""
-            SELECT
-                ts_eval,
-                global_regime,
-                global_strength,
-                regime_confidence,
-                regime_1d,
-                regime_1d_strength,
-                regime_4h,
-                regime_4h_strength,
-                regime_1h,
-                regime_1h_strength,
-                basket_size,
-                basket_symbols,
-                basket_adx_median,
-                basket_atr_close_median,
-                basket_ema_slope_median
-            FROM market_regime_history
-            WHERE is_stale = false
-            ORDER BY ts_eval DESC
-            LIMIT 1
-        """)
+        query = text(LAST_VALID_REGIME_SQL)
 
         result = await self.session.execute(query)
         row = result.fetchone()
@@ -572,16 +607,7 @@ class MarketSelectionDB:
         window_days = self.config.regime_windows_days.get(timeframe, 60)
         ts_start = ts_eval - (window_days * 24 * 60 * 60 * 1000)
 
-        query = text("""
-            SELECT MAX(timestamp) as max_ts
-            FROM (
-                SELECT timestamp FROM swap_ohlcv_p
-                WHERE timeframe = :tf AND timestamp BETWEEN :ts_start AND :ts_eval
-                UNION ALL
-                SELECT timestamp FROM indicators
-                WHERE timeframe = :tf AND timestamp BETWEEN :ts_start AND :ts_eval
-            ) combined
-        """)
+        query = text(CHECK_REGIME_TF_LAG_SQL)
 
         result = await self.session.execute(
             query,

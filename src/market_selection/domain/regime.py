@@ -10,7 +10,6 @@ Determines overall market state using basket of top-K symbols by volume:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -20,9 +19,7 @@ import numpy as np
 if TYPE_CHECKING:
     import pandas as pd
 
-    from src.market_selection.config import MarketSelectionConfig
-
-logger = logging.getLogger(__name__)
+from .config import RegimeClassifierConfig
 
 EPS = 1e-12
 
@@ -102,9 +99,8 @@ class RegimeClassifier:
     5. Aggregate across TFs with weights
     """
 
-    def __init__(self, config: MarketSelectionConfig):
+    def __init__(self, config: RegimeClassifierConfig):
         self.config = config
-        self.regime_config = config.regime
 
     def select_basket(
         self,
@@ -120,7 +116,7 @@ class RegimeClassifier:
         Returns:
             List of top-K symbols
         """
-        k = self.regime_config.basket_k
+        k = self.config.basket_k
 
         if len(volume_data) <= k:
             return volume_data["symbol"].tolist()
@@ -152,7 +148,7 @@ class RegimeClassifier:
             strength = min(1.0, atr_close_ratio / atr_p80) if atr_p80 > 0 else 0.8
 
         # TREND check
-        elif adx_median >= self.regime_config.adx_trend_threshold:
+        elif adx_median >= self.config.adx_trend_threshold:
             if ema_slope > 0:
                 regime = RegimeType.TREND_UP
             else:
@@ -160,9 +156,9 @@ class RegimeClassifier:
             strength = min(1.0, adx_median / 100.0)
 
         # RANGE check
-        elif adx_median < self.regime_config.adx_range_threshold:
+        elif adx_median < self.config.adx_range_threshold:
             regime = RegimeType.RANGE
-            strength = 1.0 - (adx_median / self.regime_config.adx_range_threshold)
+            strength = 1.0 - (adx_median / self.config.adx_range_threshold)
 
         # Default to RANGE with medium strength
         else:
@@ -227,7 +223,7 @@ class RegimeClassifier:
         2. Calculate weighted direction score
         3. Threshold direction_score for TREND_UP/DOWN/RANGE
         """
-        weights = self.regime_config.tf_weights
+        weights = self.config.tf_weights
 
         direction_score = 0.0
         volatile_flag = False
@@ -258,10 +254,10 @@ class RegimeClassifier:
         if volatile_flag:
             final_regime = RegimeType.VOLATILE
             confidence = 0.7
-        elif direction_score >= self.regime_config.trend_up_threshold:
+        elif direction_score >= self.config.trend_up_threshold:
             final_regime = RegimeType.TREND_UP
             confidence = min(1.0, abs(direction_score) / 0.5)
-        elif direction_score <= self.regime_config.trend_down_threshold:
+        elif direction_score <= self.config.trend_down_threshold:
             final_regime = RegimeType.TREND_DOWN
             confidence = min(1.0, abs(direction_score) / 0.5)
         else:
@@ -345,84 +341,3 @@ class RegimeClassifier:
                 global_regime.basket_ema_slope_median = float(basket_df["ema_slope"].median())
 
         return global_regime
-
-
-# SQL queries for regime calculation
-BASKET_SELECTION_SQL = """
-SELECT
-    symbol,
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY volume) as volume_median
-FROM swap_ohlcv_p
-WHERE timeframe = :tf
-  AND timestamp BETWEEN :ts_start AND :ts_eval
-GROUP BY symbol
-HAVING COUNT(*) >= :min_bars
-ORDER BY volume_median DESC
-LIMIT :basket_k
-"""
-
-REGIME_METRICS_SQL = """
-WITH ohlcv AS (
-    SELECT
-        symbol,
-        timestamp,
-        close,
-        volume
-    FROM swap_ohlcv_p
-    WHERE timeframe = :tf
-      AND timestamp BETWEEN :ts_start AND :ts_eval
-      AND symbol = ANY(:basket_symbols)
-),
-indicators AS (
-    SELECT
-        symbol,
-        timestamp,
-        adx_14,
-        atr_14,
-        {ema_col} as ema
-    FROM indicators
-    WHERE timeframe = :tf
-      AND timestamp BETWEEN :ts_start AND :ts_eval
-      AND symbol = ANY(:basket_symbols)
-),
-joined AS (
-    SELECT
-        o.symbol,
-        o.timestamp,
-        o.close,
-        o.volume,
-        i.adx_14,
-        i.atr_14 / NULLIF(o.close, 0) as atr_close_ratio,
-        i.ema
-    FROM ohlcv o
-    JOIN indicators i
-        ON o.symbol = i.symbol AND o.timestamp = i.timestamp
-    WHERE o.close > 0
-)
-SELECT
-    symbol,
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY adx_14) as adx_median,
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY atr_close_ratio) as atr_close_ratio,
-    REGR_SLOPE(ema, EXTRACT(EPOCH FROM to_timestamp(timestamp/1000))) as ema_slope,
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY volume) as volume_median
-FROM joined
-GROUP BY symbol
-"""
-
-ATR_PERCENTILE_SQL = """
-SELECT
-    PERCENTILE_CONT(0.8) WITHIN GROUP (
-        ORDER BY atr_14 / NULLIF(close, 0)
-    ) as atr_p80
-FROM (
-    SELECT o.close, i.atr_14
-    FROM swap_ohlcv_p o
-    JOIN indicators i
-        ON o.symbol = i.symbol
-        AND o.timeframe = i.timeframe
-        AND o.timestamp = i.timestamp
-    WHERE o.timeframe = :tf
-      AND o.timestamp BETWEEN :ts_start AND :ts_eval
-      AND o.close > 0
-) sub
-"""

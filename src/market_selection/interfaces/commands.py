@@ -95,8 +95,10 @@ async def _run_pipeline(top_n: int, dry_run: bool) -> dict:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from src.database import get_async_engine
-    from src.market_selection.application.pipeline import MarketSelectionPipeline
     from src.market_selection.config import MarketSelectionConfig
+    from src.market_selection.infrastructure.factory import (
+        build_market_selection_pipeline,
+    )
 
     config = MarketSelectionConfig()
     config.universe.top_n = top_n
@@ -104,7 +106,7 @@ async def _run_pipeline(top_n: int, dry_run: bool) -> dict:
     engine = get_async_engine()
 
     async with AsyncSession(engine) as session:
-        pipeline = MarketSelectionPipeline(session, config)
+        pipeline = build_market_selection_pipeline(session, config)
 
         if dry_run:
             # Just compute ts_eval and regime
