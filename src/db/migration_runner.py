@@ -1,7 +1,7 @@
 import logging
 import time
 
-from sqlalchemy import text
+from sqlalchemy import exc as sa_exc, text
 
 from src.db.migration_registry import get_migrations
 from src.db.migration_reports import (
@@ -12,6 +12,18 @@ from src.db.schema_validation import validate_schema_expectations
 from src.utils.session_utils import get_db_session
 
 logger = logging.getLogger(__name__)
+
+
+def _is_missing_migration_logs_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "migration_logs" in message and "does not exist" in message
+
+
+async def _drop_broken_migration_logging_trigger(session) -> None:
+    await session.execute(
+        text("DROP TRIGGER IF EXISTS trigger_log_migration_changes ON schema_migrations")
+    )
+    await session.commit()
 
 
 async def _object_exists(query: str, params: dict[str, object]) -> bool:
@@ -124,6 +136,24 @@ async def _column_is_wide_numeric(table_name: str, column_name: str) -> bool:
         )
 
 
+async def _column_is_timestamptz(table_name: str, column_name: str) -> bool:
+    async with get_db_session() as session:
+        res = await session.execute(
+            text(
+                """
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = :table_name
+                  AND column_name = :column_name
+                """
+            ),
+            {"table_name": table_name, "column_name": column_name},
+        )
+        row = res.fetchone()
+        return bool(row and row[0] == "timestamp with time zone")
+
+
 async def _is_effectively_applied(migration_id: str) -> bool:
     detectors: dict[str, callable] = {
         "150_data_cleanup": lambda: _index_exists("idx_ohlcv_p_symbol_timeframe"),
@@ -141,11 +171,18 @@ async def _is_effectively_applied(migration_id: str) -> bool:
         "270_swap_ohlcv_partitioned": lambda: _partitioned_table_exists(
             "swap_ohlcv_p"
         ),
+        "290_swap_ohlcv_timestamptz": lambda: _swap_ohlcv_timestamp_columns_are_timestamptz(),
     }
     detector = detectors.get(migration_id)
     if detector is None:
         return False
     return await detector()
+
+
+async def _swap_ohlcv_timestamp_columns_are_timestamptz() -> bool:
+    fetched_at_ok = await _column_is_timestamptz("swap_ohlcv_p", "fetched_at")
+    created_at_ok = await _column_is_timestamptz("swap_ohlcv_p", "created_at")
+    return fetched_at_ok and created_at_ok
 
 
 async def reconcile_applied_migrations() -> list[str]:
@@ -200,19 +237,29 @@ async def _record_status(
                 error = EXCLUDED.error
             """
         )
-        await session.execute(
-            q,
-            {
-                "id": migration_id,
-                "name": name,
-                "applied_at": int(time.time()),
-                "duration_ms": duration_ms,
-                "status": status,
-                "attempt": attempt,
-                "error": error,
-            },
-        )
-        await session.commit()
+        params = {
+            "id": migration_id,
+            "name": name,
+            "applied_at": int(time.time()),
+            "duration_ms": duration_ms,
+            "status": status,
+            "attempt": attempt,
+            "error": error,
+        }
+        try:
+            await session.execute(q, params)
+            await session.commit()
+        except sa_exc.DBAPIError as exc:
+            if not _is_missing_migration_logs_error(exc):
+                raise
+            logger.warning(
+                "schema_migrations trigger references missing migration_logs; "
+                "dropping trigger and retrying status write"
+            )
+            await session.rollback()
+            await _drop_broken_migration_logging_trigger(session)
+            await session.execute(q, params)
+            await session.commit()
 
 
 async def run_all(dry_run: bool = False) -> None:
@@ -239,48 +286,48 @@ async def run_all(dry_run: bool = False) -> None:
 
     for m in migrations:
         if m.id != "000_base_migrations_table" and await _already_applied(m.id):
-            logger.info(f"⏭️ Пропущена миграция {m.id} ({m.name}) — уже применена")
+            logger.info(f"Skipped migration {m.id} ({m.name}) — already applied")
             continue
-        logger.info(f"📦 Миграция {m.id}: {m.name}")
+        logger.info(f"Migration {m.id}: {m.name}")
         started = time.time()
         if dry_run:
             await _record_status(
                 m.id, m.name, "planned", started, error=None, attempt=0
             )
-            logger.info(f"📝 DRY-RUN: {m.id} ({m.name}) запланирована")
+            logger.info(f"DRY-RUN: {m.id} ({m.name}) planned")
             continue
         try:
             await m.func()
             duration_ms = int((time.time() - started) * 1000)
             await _record_status(m.id, m.name, "applied", started)
-            logger.info(f"✅ Применена {m.id} ({m.name})")
+            logger.info(f"Applied {m.id} ({m.name})")
 
-            # Генерируем отчёт о миграции
+            # Generate migration report
             try:
                 report = await generate_migration_report(
                     m.id, duration_ms, save_file=True
                 )
                 report.print_summary()
             except Exception as report_error:
-                logger.warning(f"⚠️ Не удалось сгенерировать отчёт: {report_error}")
+                logger.warning(f"Failed to generate report: {report_error}")
 
         except Exception as e:
             await _record_status(m.id, m.name, "failed", started, error=str(e))
-            logger.error(f"❌ Ошибка миграции {m.id}: {e}")
+            logger.error(f"Migration error {m.id}: {e}")
             raise
 
     # Post-validation
     try:
         await validate_schema_expectations()
     except Exception as e:
-        logger.warning(f"⚠️ Post-validation skipped: {e}")
+        logger.warning(f"Post-validation skipped: {e}")
 
-    # Генерируем отчёт о состоянии системы
+    # Generate system health report
     try:
         health_report = await generate_system_health_report()
         if health_report.get("overall_status") == "healthy":
-            logger.info("🏥 Система в хорошем состоянии")
+            logger.info("System is healthy")
         else:
-            logger.warning("⚠️ Система требует внимания")
+            logger.warning("System needs attention")
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось сгенерировать отчёт о состоянии: {e}")
+        logger.warning(f"Failed to generate health report: {e}")

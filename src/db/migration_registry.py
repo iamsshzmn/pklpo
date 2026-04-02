@@ -75,6 +75,9 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_recreate_swap_ohlcv_partitioned import (
         migrate_recreate_swap_ohlcv_partitioned,
     )
+    from src.db.migrations.migrate_swap_ohlcv_timestamps_timestamptz import (
+        migrate_swap_ohlcv_timestamps_timestamptz,
+    )
     from src.migrate_create_instruments import run_migrations as mig_instruments
 
     return [
@@ -187,5 +190,10 @@ def get_migrations() -> list[Migration]:
             "280_ops_data_quality_metrics",
             "create ops schema and ops.data_quality_metrics table",
             migrate_create_ops_data_quality_metrics,
+        ),
+        Migration(
+            "290_swap_ohlcv_timestamptz",
+            "normalize swap_ohlcv_p fetched_at/created_at to timestamptz",
+            migrate_swap_ohlcv_timestamps_timestamptz,
         ),
     ]

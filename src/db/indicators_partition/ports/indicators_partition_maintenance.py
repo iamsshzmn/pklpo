@@ -8,12 +8,15 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
-class MonthPartitionSpec:
+class PartitionSpec:
     start: datetime
     end: datetime
     start_ts: int
     end_ts: int
     name: str
+
+
+MonthPartitionSpec = PartitionSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,7 +32,7 @@ class IndicatorsPartitionMaintenancePort(Protocol):
 
     async def get_partition_coverage(
         self,
-        partitions: tuple[MonthPartitionSpec, ...],
+        partitions: tuple[PartitionSpec, ...],
     ) -> PartitionCoverageSnapshot: ...
 
-    async def ensure_partition(self, partition: MonthPartitionSpec) -> bool: ...
+    async def ensure_partition(self, partition: PartitionSpec) -> bool: ...

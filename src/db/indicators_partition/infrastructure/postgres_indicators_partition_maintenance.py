@@ -1,15 +1,16 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
-from ..application.indicators_partition_maintenance import PARENT_TABLE
+from src.features.storage_contract import IndicatorStorageContract
+
 from ..ports import (
     IndicatorsPartitionMaintenancePort,
-    MonthPartitionSpec,
     PartitionCoverageSnapshot,
+    PartitionSpec,
 )
 
 if TYPE_CHECKING:
@@ -25,10 +26,26 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
         self._session = session
 
     async def ensure_parent_exists(self) -> None:
+        if await self._parent_exists() and not await self._parent_is_partitioned():
+            row_count = await self._parent_row_count()
+            if row_count:
+                raise RuntimeError(
+                    "Partition maintenance prerequisite failed: indicators_p exists "
+                    f"as a non-partitioned table with {row_count} rows"
+                )
+            logger.warning(
+                "dropping empty non-partitioned %s so it can be recreated as a "
+                "partitioned parent",
+                IndicatorStorageContract.table_name,
+            )
+            await self._session.execute(
+                text(f"DROP TABLE {IndicatorStorageContract.table_name} CASCADE")
+            )
+
         await self._session.execute(
             text(
                 f"""
-                CREATE TABLE IF NOT EXISTS {PARENT_TABLE} (
+                CREATE TABLE IF NOT EXISTS {IndicatorStorageContract.table_name} (
                     symbol TEXT NOT NULL,
                     timeframe TEXT NOT NULL,
                     timestamp BIGINT NOT NULL,
@@ -52,7 +69,7 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
             col_name = col_ddl.split()[0]
             await self._session.execute(
                 text(
-                    f"ALTER TABLE {PARENT_TABLE} ADD COLUMN IF NOT EXISTS {col_name} "
+                    f"ALTER TABLE {IndicatorStorageContract.table_name} ADD COLUMN IF NOT EXISTS {col_name} "
                     + col_ddl.split(None, 1)[1]
                 )
             )
@@ -70,7 +87,7 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
                   AND c.contype IN ('p', 'u')
                 """
             ),
-            {"table_name": PARENT_TABLE},
+            {"table_name": IndicatorStorageContract.table_name},
         )
         definitions = [row[0] for row in result.fetchall()]
         normalized = [
@@ -92,7 +109,7 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
 
     async def get_partition_coverage(
         self,
-        partitions: tuple[MonthPartitionSpec, ...],
+        partitions: tuple[PartitionSpec, ...],
     ) -> PartitionCoverageSnapshot:
         present = [
             partition.name
@@ -101,7 +118,7 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
         ]
         return PartitionCoverageSnapshot(present_partitions=tuple(present))
 
-    async def ensure_partition(self, partition: MonthPartitionSpec) -> bool:
+    async def ensure_partition(self, partition: PartitionSpec) -> bool:
         if await self._partition_exists(partition.name):
             return False
 
@@ -109,7 +126,7 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
             text(
                 f"""
                 CREATE TABLE IF NOT EXISTS {partition.name}
-                PARTITION OF {PARENT_TABLE}
+                PARTITION OF {IndicatorStorageContract.table_name}
                 FOR VALUES FROM ({partition.start_ts}) TO ({partition.end_ts});
                 """
             )
@@ -132,6 +149,36 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
         )
         logger.info("created indicators partition %s", partition.name)
         return True
+
+    async def _parent_exists(self) -> bool:
+        result = await self._session.execute(
+            text("SELECT to_regclass(:table_name) IS NOT NULL"),
+            {"table_name": f"public.{IndicatorStorageContract.table_name}"},
+        )
+        return bool(result.scalar())
+
+    async def _parent_is_partitioned(self) -> bool:
+        result = await self._session.execute(
+            text(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM pg_partitioned_table pt
+                    JOIN pg_class c ON c.oid = pt.partrelid
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = 'public' AND c.relname = :table_name
+                )
+                """
+            ),
+            {"table_name": IndicatorStorageContract.table_name},
+        )
+        return bool(result.scalar())
+
+    async def _parent_row_count(self) -> int:
+        result = await self._session.execute(
+            text(f"SELECT COUNT(*) FROM {IndicatorStorageContract.table_name}")
+        )
+        return int(result.scalar() or 0)
 
     async def _partition_exists(self, partition_name: str) -> bool:
         result = await self._session.execute(

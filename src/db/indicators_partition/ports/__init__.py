@@ -4,10 +4,12 @@ from .indicators_partition_maintenance import (
     IndicatorsPartitionMaintenancePort,
     MonthPartitionSpec,
     PartitionCoverageSnapshot,
+    PartitionSpec,
 )
 
 __all__ = [
     "IndicatorsPartitionMaintenancePort",
     "MonthPartitionSpec",
     "PartitionCoverageSnapshot",
+    "PartitionSpec",
 ]

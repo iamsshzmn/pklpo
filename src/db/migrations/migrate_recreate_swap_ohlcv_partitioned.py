@@ -7,6 +7,26 @@ from src.utils.session_utils import get_db_session
 
 logger = logging.getLogger(__name__)
 
+CREATE_PARTITIONED_SWAP_OHLCV_PARENT_SQL = """
+CREATE TABLE swap_ohlcv_p (
+    symbol VARCHAR(50) NOT NULL,
+    timeframe VARCHAR(20) NOT NULL,
+    timestamp BIGINT NOT NULL,
+    open DECIMAL(20,8) NOT NULL,
+    high DECIMAL(20,8) NOT NULL,
+    low DECIMAL(20,8) NOT NULL,
+    close DECIMAL(20,8) NOT NULL,
+    volume DECIMAL(30,8) NOT NULL,
+    vol_ccy DECIMAL(30,8),
+    vol_usd DECIMAL(30,8),
+    funding_rate DECIMAL(10,8),
+    open_interest DECIMAL(30,8),
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (symbol, timeframe, timestamp)
+) PARTITION BY RANGE (timestamp);
+"""
+
 
 def _month_start(year: int, month: int) -> datetime:
     return datetime(year, month, 1, tzinfo=UTC)
@@ -49,29 +69,7 @@ async def _is_partitioned_table(session, table_name: str) -> bool:
 
 
 async def _create_parent_table(session) -> None:
-    await session.execute(
-        text(
-            """
-            CREATE TABLE swap_ohlcv_p (
-                symbol VARCHAR(50) NOT NULL,
-                timeframe VARCHAR(20) NOT NULL,
-                timestamp BIGINT NOT NULL,
-                open DECIMAL(20,8) NOT NULL,
-                high DECIMAL(20,8) NOT NULL,
-                low DECIMAL(20,8) NOT NULL,
-                close DECIMAL(20,8) NOT NULL,
-                volume DECIMAL(30,8) NOT NULL,
-                vol_ccy DECIMAL(30,8),
-                vol_usd DECIMAL(30,8),
-                funding_rate DECIMAL(10,8),
-                open_interest DECIMAL(30,8),
-                fetched_at TIMESTAMP DEFAULT NOW(),
-                created_at TIMESTAMP DEFAULT NOW(),
-                PRIMARY KEY (symbol, timeframe, timestamp)
-            ) PARTITION BY RANGE (timestamp);
-            """
-        )
-    )
+    await session.execute(text(CREATE_PARTITIONED_SWAP_OHLCV_PARENT_SQL))
 
     await session.execute(
         text(
@@ -145,14 +143,15 @@ async def _recreate_cleanup_trigger_if_possible(session) -> None:
         return
 
     await session.execute(
+        text("DROP TRIGGER IF EXISTS trigger_cleanup_swap_data ON swap_ohlcv_p")
+    )
+    await session.execute(
         text(
             """
-            DROP TRIGGER IF EXISTS trigger_cleanup_swap_data ON swap_ohlcv_p;
-
             CREATE TRIGGER trigger_cleanup_swap_data
             AFTER INSERT ON swap_ohlcv_p
             FOR EACH ROW
-            EXECUTE FUNCTION trigger_cleanup_old_data();
+            EXECUTE FUNCTION trigger_cleanup_old_data()
             """
         )
     )

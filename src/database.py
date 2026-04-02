@@ -8,14 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 try:
     from sqlalchemy.ext.asyncio import async_sessionmaker
 except ImportError:
-    # Fallback для старых версий SQLAlchemy (< 2.0)
+    # Fallback for older SQLAlchemy versions (< 2.0)
     # mypy: ignore-errors
     from typing import Any as TypingAny
 
     from sqlalchemy.orm import sessionmaker
 
     class AsyncSessionMaker:
-        """Fallback для async_sessionmaker в старых версиях SQLAlchemy"""
+        """Fallback for async_sessionmaker in older SQLAlchemy versions"""
 
         def __init__(self, bind=None, **kwargs: TypingAny):
             self.bind = bind
@@ -31,71 +31,70 @@ from src.config.env_validator import check_required_env_vars, get_database_url
 
 load_dotenv()
 
-# Проверяем обязательные переменные окружения
+# Check required environment variables
 missing_vars = check_required_env_vars()
 if missing_vars:
     raise ValueError(
-        f"Необходимо установить переменные окружения: {', '.join(missing_vars)}"
+        f"Required environment variables not set: {', '.join(missing_vars)}"
     )
 
-# Получаем URL базы данных через валидатор
+# Get database URL via validator
 DATABASE_URL = get_database_url()
 
-# Заменяем localhost на 127.0.0.1 для избежания проблем с IPv6 на Windows
+# Replace localhost with 127.0.0.1 to avoid IPv6 issues on Windows
 if "localhost" in DATABASE_URL.lower() and "127.0.0.1" not in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("localhost", "127.0.0.1").replace(
         "LOCALHOST", "127.0.0.1"
     )
 
-# Определяем, нужно ли использовать SSL
-# Проверяем явную переменную окружения
+# Determine whether to use SSL
+# Check explicit environment variable
 database_ssl_env = os.getenv("DATABASE_SSL", "").lower()
 if database_ssl_env in ("true", "1", "require", "yes"):
     use_ssl = True
 elif database_ssl_env in ("false", "0", "disable", "no"):
     use_ssl = False
 else:
-    # По умолчанию: SSL только для внешних подключений
-    # Для localhost и Docker-имен (без точки в имени хоста) SSL отключаем
+    # Default: SSL only for external connections
+    # For localhost and Docker names (no dots in hostname) disable SSL
     url_lower = DATABASE_URL.lower()
     is_localhost = "localhost" in url_lower or "127.0.0.1" in url_lower
 
-    # Извлекаем хост из URL (часть между @ и :)
+    # Extract host from URL (part between @ and :)
     try:
         host_part = url_lower.split("@")[-1].split(":")[0].split("/")[0]
-        # Если хост содержит точку (кроме localhost), это внешний хост - нужен SSL
-        # Docker-имена обычно без точек (например, pklpo_db)
+        # If host contains a dot (except localhost), it's external - need SSL
+        # Docker names usually have no dots (e.g. pklpo_db)
         has_dot_in_host = "." in host_part and not is_localhost
         use_ssl = has_dot_in_host
     except Exception:
-        # В случае ошибки парсинга отключаем SSL для безопасности
+        # On parse error, disable SSL for safety
         use_ssl = False
 
-# Настройка connection pooling с таймаутами для asyncpg
+# Connection pooling with timeouts for asyncpg
 connect_args: dict[str, Any] = {
-    "timeout": 30,  # Таймаут подключения (секунды)
-    "command_timeout": 30,  # Таймаут выполнения команд (секунды)
+    "timeout": 30,  # Connection timeout (seconds)
+    "command_timeout": 30,  # Command execution timeout (seconds)
     "server_settings": {
         "application_name": "pklpo",
     },
 }
 
-# Для asyncpg: 'disable' отключает SSL, 'require' включает
-# Используем строку 'disable' вместо False для совместимости
+# For asyncpg: 'disable' disables SSL, 'require' enables it
 if use_ssl:
     connect_args["ssl"] = "require"
 else:
-    connect_args["ssl"] = "disable"  # 'disable' отключает SSL
+    connect_args["ssl"] = "disable"
 
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     future=True,
-    pool_size=5,  # Уменьшаем размер пула для локальной разработки
+    pool_size=5,
     max_overflow=10,
-    pool_pre_ping=False,  # Отключаем pre_ping на Windows для избежания проблем
-    pool_recycle=3600,
-    pool_timeout=15,  # Таймаут получения соединения из пула (секунды)
+    pool_pre_ping=True,
+    pool_recycle=1800,
+    pool_timeout=15,  # Pool checkout timeout (seconds)
     connect_args=connect_args,
 )
 
@@ -108,7 +107,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
-    """Генератор для dependency injection в FastAPI"""
+    """Async session generator for dependency injection."""
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -120,11 +119,20 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def create_session() -> AsyncSession:
-    """Создает новую сессию для прямого использования"""
+    """Create a new session for direct use."""
     session: AsyncSession = AsyncSessionLocal()
     return session
 
 
 def get_async_engine():
-    """Возвращает async engine для использования в CLI."""
+    """Return the async engine for CLI usage."""
     return engine
+
+
+async def reset_pool() -> None:
+    """Dispose all pooled connections and force reconnect on next checkout.
+
+    Call this when connection_invalidated is detected to ensure stale
+    connections are purged from the pool before retry attempts.
+    """
+    await engine.dispose()
