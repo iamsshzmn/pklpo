@@ -23,6 +23,7 @@ async def run_indicators_partition_maintenance(
     months_ahead: int = DEFAULT_MONTHS_AHEAD,
     reference_dt: datetime | None = None,
     require_parent_pk: bool = True,
+    repair_parent_schema: bool = True,
 ) -> dict[str, object]:
     async with get_db_session() as session:
         adapter = PostgresIndicatorsPartitionMaintenanceAdapter(session)
@@ -32,6 +33,7 @@ async def run_indicators_partition_maintenance(
             months_ahead=months_ahead,
             reference_dt=reference_dt,
             require_parent_pk=require_parent_pk,
+            repair_parent_schema=repair_parent_schema,
         )
     return result.to_dict()
 

@@ -24,6 +24,9 @@ class FakeMaintenancePort:
     async def ensure_parent_exists(self) -> None:
         self.calls.append("ensure_parent_exists")
 
+    async def ensure_parent_schema(self) -> None:
+        self.calls.append("ensure_parent_schema")
+
     async def assert_parent_upsert_constraint(self) -> None:
         self.calls.append("assert_parent_upsert_constraint")
 
@@ -89,6 +92,7 @@ async def test_ensure_partition_window_creates_only_missing_partitions() -> None
 
     assert port.calls == [
         "ensure_parent_exists",
+        "ensure_parent_schema",
         "assert_parent_upsert_constraint",
     ]
     assert result.existing_partitions == [specs[0].name]
@@ -195,5 +199,6 @@ async def test_use_case_accepts_alternative_partition_policy() -> None:
         reference_dt=datetime(2026, 3, 18, tzinfo=UTC),
     )
 
+    assert port.calls[:2] == ["ensure_parent_exists", "ensure_parent_schema"]
     assert result.existing_partitions == [specs[0].name]
     assert result.created_partitions == [specs[1].name]

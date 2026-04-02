@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from src.features.storage_contract import IndicatorStorageContract
 
-from ..ports import (
-    IndicatorsPartitionMaintenancePort,
-    PartitionCoverageSnapshot,
-    PartitionSpec,
-)
 from .partition_policy import (
     DEFAULT_PARTITION_POLICY,
     PartitionPolicy,
     normalize_reference_dt,
 )
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from ..ports import (
+        IndicatorsPartitionMaintenancePort,
+        PartitionCoverageSnapshot,
+        PartitionSpec,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +104,7 @@ class EnsureIndicatorsPartitionWindow:
         months_ahead: int = DEFAULT_MONTHS_AHEAD,
         reference_dt: datetime | None = None,
         require_parent_pk: bool = True,
+        repair_parent_schema: bool = True,
     ) -> PartitionMaintenanceResult:
         reference = normalize_reference_dt(reference_dt)
         specs = self._policy.build_window(
@@ -109,6 +114,8 @@ class EnsureIndicatorsPartitionWindow:
         )
 
         await self._maintenance.ensure_parent_exists()
+        if repair_parent_schema:
+            await self._maintenance.ensure_parent_schema()
         if require_parent_pk:
             await self._maintenance.assert_parent_upsert_constraint()
 

@@ -19,6 +19,9 @@ def get_migrations() -> list[Migration]:
         run_data_constraints_migration,
     )
     from src.db.migrations.migrate_add_data_retention import migrate_add_data_retention
+    from src.db.migrations.migrate_add_indicators_parent_service_columns import (
+        migrate_add_indicators_parent_service_columns,
+    )
     from src.db.migrations.migrate_add_operational_reliability import (
         run_operational_reliability_migration,
     )
@@ -195,5 +198,10 @@ def get_migrations() -> list[Migration]:
             "290_swap_ohlcv_timestamptz",
             "normalize swap_ohlcv_p fetched_at/created_at to timestamptz",
             migrate_swap_ohlcv_timestamps_timestamptz,
+        ),
+        Migration(
+            "300_indicators_parent_service_columns",
+            "ensure indicators_p runtime service columns exist",
+            migrate_add_indicators_parent_service_columns,
         ),
     ]

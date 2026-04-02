@@ -58,7 +58,10 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
                 """
             )
         )
-        # Add non-NUMERIC columns to existing table if they were created without them
+
+    async def ensure_parent_schema(self) -> None:
+        await self.ensure_parent_exists()
+        # Reconcile additive service columns outside the hot runtime path.
         for col_ddl in (
             "calculated_at TIMESTAMPTZ",
             "data_status VARCHAR(10) DEFAULT 'ok'",
@@ -75,6 +78,16 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
             )
 
     async def assert_parent_upsert_constraint(self) -> None:
+        if not await self._parent_exists():
+            raise RuntimeError(
+                "Partition maintenance prerequisite failed: "
+                "indicators_p does not exist; run DB migrations/bootstrap first"
+            )
+        if not await self._parent_is_partitioned():
+            raise RuntimeError(
+                "Partition maintenance prerequisite failed: "
+                "indicators_p exists but is not a partitioned parent table"
+            )
         result = await self._session.execute(
             text(
                 """
