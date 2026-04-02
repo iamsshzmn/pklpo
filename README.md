@@ -1,689 +1,368 @@
-# PKLPO - Quantitative Trading System
+# PKLPO
 
-**Версия:** 0.2.0 | **Статус:** Production Ready
+PKLPO — это Python 3.11-репозиторий для загрузки рыночных данных по OKX swap, сохранения их в PostgreSQL, расчета технических индикаторов, обслуживания партиционированного хранилища и отбора торгового market universe для downstream quant-процессов.
 
-Комплексная система для количественной торговли криптовалютами с поддержкой расчета технических индикаторов, мультитаймфрейм анализа, генерации сигналов, управления рисками и бэктестинга.
+Этот README описывает репозиторий в его текущем состоянии. Он предназначен для инженеров, работающих с живым кодом, а не с историческими схемами или планируемыми подсистемами.
 
----
+## Назначение
 
-## Содержание
+Текущий репозиторий существует для поддержки конкретного конвейера от данных к отбору рынков:
 
-- [Обзор](#обзор)
-- [Архитектура](#архитектура)
-- [Основные модули](#основные-модули)
-- [Быстрый старт](#быстрый-старт)
-- [CLI интерфейс](#cli-интерфейс)
-- [Конфигурация](#конфигурация)
-- [Разработка](#разработка)
+1. Применение и сопровождение схемы PostgreSQL.
+2. Загрузка и обновление метаданных инструментов.
+3. Синхронизация OKX swap OHLCV в `swap_ohlcv_p`.
+4. Расчет индикаторов в `indicators_p`.
+5. Обслуживание месячных партиций `indicators_p`.
+6. Построение scored market universe в `market_selection_*`.
+7. Поддержка связанных quant-процессов: dollar bars, labeling, training и backtest metrics.
 
----
+## Граница ответственности
 
-## Обзор
+Этот репозиторий владеет:
 
-PKLPO (Quantitative Trading System) - это enterprise-система для автоматизированной торговли криптовалютами, построенная на принципах Clean Architecture. Система обеспечивает полный цикл от получения данных с биржи до генерации торговых сигналов и управления позициями.
+- схемой PostgreSQL и процессом миграций в `src/db/`
+- загрузкой инструментов и свечей OKX swap в `src/candles/`
+- расчетом индикаторов и их сохранением в `src/features/`
+- отбором рынков и сохранением regime-данных в `src/market_selection/`
+- orchestration через Airflow DAG в `ops/airflow/dags/`
+- quant-утилитами на основном CLI: `build-bars`, `label`, `train`, `metrics`
 
-### Ключевые возможности
+Этот репозиторий сейчас не владеет:
 
-- ✅ **500+ технических индикаторов** - расчет с онлайн/офлайн паритетом
-- ✅ **Мультитаймфрейм анализ** - контекстный анализ на множественных таймфреймах
-- ✅ **Генерация сигналов** - автоматическая генерация торговых рекомендаций
-- ✅ **Управление рисками** - расчет размеров позиций и лимитов
-- ✅ **Бэктестинг** - оценка стратегий на исторических данных
-- ✅ **Комбинации индикаторов** - анализ корреляций и взаимодействий
-- ✅ **Airflow интеграция** - оркестрация и планирование задач
-- ✅ **Production Ready** - качественные gates, метрики, мониторинг
+- исполнением сделок в реальном времени
+- OMS / broker connectivity
+- полным end-to-end production path для каждого пакета в `src/`
+- root CLI-путем для `mtf`, `signals` или `risk`, хотя эти пакеты есть в дереве
 
-### Pipeline обработки данных
+## Роль в системе
 
-```text
-[Ingest] → [Data QA] → [Market Store] → [Features] → [MTF] → [Consensus] → [Signals]
-                                                                              ↓
-                                                                        [Backtest]
-                                                                              ↓
-[Signals] → [Risk] → [OMS] → [Position Store] → [Monitoring]
+Активный поток на уровне репозитория ориентирован на хранение:
+
+- upstream-системы поставляют рыночные данные и runtime-инфраструктуру
+- этот репозиторий нормализует, сохраняет, обогащает и оценивает эти данные
+- downstream-потребители читают таблицы PostgreSQL или запускают research/ML-команды поверх них
+
+```mermaid
+graph TD
+    OKX[OKX API]
+    ENV[Env vars / .env]
+    AF[Airflow DAGs]
+    CLI[python -m src.cli.main]
+    DB[(PostgreSQL)]
+
+    CANDLES[src/candles]
+    FEATURES[src/features]
+    PARTS[src/db/indicators_partition]
+    MSEL[src/market_selection]
+    QUANT[src/core + src/ml + src/backtest]
+
+    ENV --> CLI
+    ENV --> AF
+    CLI --> CANDLES
+    CLI --> FEATURES
+    CLI --> PARTS
+    CLI --> MSEL
+    CLI --> QUANT
+    AF --> CANDLES
+    AF --> FEATURES
+    AF --> PARTS
+    AF --> MSEL
+    OKX --> CANDLES
+    CANDLES --> DB
+    FEATURES --> DB
+    PARTS --> DB
+    MSEL --> DB
+    QUANT --> DB
 ```
 
----
+## Текущий поток данных верхнего уровня
 
-## Архитектура
+```mermaid
+flowchart LR
+    A[DB migrations] --> B[instruments table]
+    B --> C[OKX swap sync]
+    C --> D[swap_ohlcv_p]
+    D --> E[features / indicators]
+    E --> F[indicators_p]
+    F --> G[market selection]
+    G --> H[market_scores_tf]
+    G --> I[market_universe]
+    G --> J[market_universe_versions]
+    G --> K[market_regime_history]
 
-### Общая архитектура системы
-
-Система построена по принципам Clean Architecture с четким разделением на слои:
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                    CLI / API Layer                          │
-│  src/cli/commands/                                          │
-│  - features, mtf, signals, risk, pipeline                   │
-└─────────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│              Application Layer                               │
-│  - Оркестрация процессов                                    │
-│  - Бизнес-логика                                            │
-│  - Валидация и обработка данных                             │
-└─────────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│                  Domain Layer                                │
-│  - Бизнес-правила                                           │
-│  - Спецификации и протоколы                                 │
-│  - Модели данных                                            │
-└─────────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────────┐
-│            Infrastructure Layer                              │
-│  - Database (PostgreSQL)                                    │
-│  - External APIs (OKX)                                       │
-│  - File I/O                                                 │
-│  - Monitoring & Logging                                      │
-└─────────────────────────────────────────────────────────────┘
+    D --> L[build-bars]
+    D --> M[label]
+    D --> N[train]
+    O[RunContext + backtest artifacts] --> P[metrics show]
 ```
 
-### Основные принципы
+## Плановый поток
 
-1. **Single Source of Truth** - данные хранятся в одном месте
-2. **Идемпотентность** - все операции безопасны для повторного выполнения
-3. **No Look-Ahead Bias** - расчеты только после закрытия бара
-4. **Версионирование** - все артефакты версионируются
-5. **Разделение контуров** - Research изолирован от Live
-6. **Observability** - метрики и логи по умолчанию
+Основной плановый операционный путь задается через Airflow DAG.
 
----
+```mermaid
+sequenceDiagram
+    participant Airflow as Airflow
+    participant Sync as okx_swap_ohlcv_sync_v2
+    participant Candles as src/candles
+    participant FeaturesShort as features_calc_short
+    participant Features as src/features
+    participant MarketSel as market_selection
+    participant DB as PostgreSQL
 
-## Основные модули
+    Airflow->>Sync: every 5 minutes
+    Sync->>Candles: refresh metadata + swap sync + smoke validate + quality checks
+    Candles->>DB: upsert swap_ohlcv_p / instruments
 
-### 1. Features - Расчет технических индикаторов
+    Airflow->>FeaturesShort: every 15 minutes
+    FeaturesShort->>Features: run_features_calc_short()
+    Features->>DB: upsert indicators_p
 
-**Модуль:** `src/features/`
-
-Система расчета 500+ технических индикаторов с поддержкой онлайн/офлайн паритета.
-
-**Основные компоненты:**
-
-- `core.py` - главный API `compute_features()`
-- `specs.py` - спецификации индикаторов
-- `group_calculation.py` - групповой расчет без look-ahead
-- `indicator_groups/` - 10 групп индикаторов (MA, Oscillators, Volatility, Volume, Trend, Candles, Squeeze, Statistics, Performance)
-- `infrastructure/` - работа с БД, реестр индикаторов, персистентность
-
-**Логика работы:**
-
-1. Загрузка OHLCV данных из БД
-2. Последовательный расчет по группам индикаторов
-3. Волатильностная нормализация (опционально)
-4. Quality gates валидация
-5. Сохранение в БД через UPSERT
-
-**Документация:** [src/features/README.md](src/features/README.md)
-
-### 2. Features Combinations - Анализ комбинаций
-
-**Модуль:** `src/features_combinations/`
-
-Анализ корреляций и взаимодействий между индикаторами, генерация торговых рекомендаций.
-
-**Основные компоненты:**
-
-- `calculator.py` - калькулятор комбинаций
-- `analyzer.py` - анализатор сигналов
-- `recommendations.py` - генератор рекомендаций
-- `performance.py` - анализатор производительности
-- `registry.py` - реестр комбинаций (пары, трио, квартеты)
-
-**Логика работы:**
-
-1. Загрузка данных индикаторов
-2. Расчет корреляционной матрицы
-3. Анализ сигналов каждого индикатора
-4. Расчет силы сигнала (согласованность)
-5. Генерация торговых рекомендаций
-
-**Документация:** [src/features_combinations/README.md](src/features_combinations/README.md)
-
-### 3. MTF - Мультитаймфрейм анализ
-
-**Модуль:** `src/mtf/`
-
-Система анализа рынка на множественных таймфреймах с контекстным определением режимов.
-
-**Pipeline обработки:**
-
-```text
-Features → Context → Triggers → Consensus → Integration
+    Airflow->>MarketSel: every 4 hours
+    MarketSel->>DB: read indicators_p + market history
+    MarketSel->>DB: upsert market_selection_* tables
+    MarketSel-->>Airflow: optionally trigger features_calc
 ```
 
-**Основные компоненты:**
-
-- `context/` - определение режимов рынка
-- `triggers/` - генерация триггеров разворота
-- `consensus/` - взвешенная агрегация сигналов
-- `pipeline/` - оркестрация обработки
-- `integration/` - подключение к внешним системам
-- `control/` - управление системой
-
-**Логика работы:**
-
-1. Загрузка индикаторов для разных таймфреймов
-2. Определение контекста (режим рынка на старшем ТФ)
-3. Генерация триггеров (события на младшем ТФ)
-4. Взвешенная агрегация (Consensus)
-5. Сохранение результатов
-
-**Документация:** [src/mtf/README_FINAL.md](src/mtf/README_FINAL.md)
-
-### 4. Signals - Генерация торговых сигналов
-
-**Модуль:** `src/signals/`
-
-Генерация торговых сигналов на основе индикаторов и комбинаций.
-
-**Основные компоненты:**
-
-- Калькуляторы сигналов
-- Правила торговли
-- Детализированные сигналы
-- Валидация сигналов
-
-**Логика работы:**
-
-1. Загрузка индикаторов и комбинаций
-2. Применение правил торговли
-3. Генерация сигналов LONG/SHORT/FLAT
-4. Валидация и фильтрация
-5. Сохранение в БД
-
-### 5. Positions - Расчет позиций
-
-**Модуль:** `src/positions/`
-
-Расчет размеров позиций на SWAP инструментах с учетом рисков.
-
-**Основные компоненты:**
-
-- `calculator.py` - калькулятор позиций
-- `validator.py` - валидатор данных
-- `models.py` - модели данных
-
-**Логика работы:**
-
-1. Загрузка метаданных инструмента (tick/lot, MMR, fees, max L)
-2. Сбор OHLCV данных (spot и swap)
-3. Расчет индикаторов (ATR14, RSI, EMA, consensus)
-4. Проверка сигналов (consensus ≥ threshold)
-5. Определение стопа (percent или atr_mult)
-6. Расчет размера позиции (R = balance × risk_pct, Qty = R / (Stop% × P))
-7. Проверка ликвидации
-8. Формирование ордеров
-
-**Документация:** [src/positions/README.md](src/positions/README.md)
-
-### 6. Risk - Управление рисками
-
-**Модуль:** `src/risk/`
-
-Система управления рисками с расчетом лимитов и kill-switch.
-
-**Основные компоненты:**
-
-- Расчет рисков
-- Лимиты портфеля
-- Kill-switch механизмы
-- Мониторинг рисков
-
-**Логика работы:**
-
-1. Оценка текущих рисков портфеля
-2. Проверка лимитов (максимальная позиция, общий риск)
-3. Расчет допустимых размеров позиций
-4. Kill-switch при превышении лимитов
-5. Логирование и алерты
-
-### 7. Backtest - Бэктестинг
-
-**Модуль:** `src/backtest/`
-
-Оценка качества сигналов и стратегий на исторических данных.
-
-**Основные компоненты:**
-
-- `evaluate.py` - оценка сигналов
-- `metrics.py` - расчет метрик производительности
-
-**Логика работы:**
-
-1. Загрузка исторических данных
-2. Симуляция торговли по сигналам
-3. Расчет метрик (PnL, Sharpe, Sortino, Drawdown)
-4. Генерация отчетов
-
-**Документация:** [src/backtest/README.md](src/backtest/README.md)
-
-### 8. Database - Управление БД
-
-**Модуль:** `src/db/`
-
-Система управления миграциями PostgreSQL с поддержкой идемпотентности и мониторинга.
-
-**Основные компоненты:**
-
-- `migration_runner.py` - движок миграций
-- `migration_registry.py` - реестр миграций
-- `schema_validation.py` - валидация схемы
-- `migration_testing.py` - тестирование миграций
-- `monitoring_cli.py` - CLI для мониторинга
-
-**Логика работы:**
-
-1. Регистрация миграций в реестре
-2. Проверка уже примененных миграций
-3. Выполнение миграций в транзакциях
-4. Валидация схемы до/после
-5. Логирование и метрики
-
-**Документация:** [src/db/README.md](src/db/README.md)
-
-### 9. Market Meta - Метаданные рынка и валидаторы
-
-**Модуль:** `src/market_meta/`
-
-Система метаданных инструментов, валидаторов и расширенных рыночных данных для безопасной торговли.
-
-**Основные компоненты:**
-
-- **Domain Layer:**
-  - `metadata.py` - модели метаданных инструментов
-  - `validators.py` - валидаторы рыночных данных и ордеров
-  - `risk_limits.py` - управление лимитами риска
-  - `exceptions.py` - иерархия исключений
-
-- **Application Layer:**
-  - `api.py` - основной API (MarketMetaAPI)
-
-- **Infrastructure Layer:**
-  - `okx_integration.py` - интеграция с OKX API (с retry/backoff)
-  - `market.py` - OKXMarket - рыночные данные
-  - `database.py` - модели БД (MarketMeta, MarketDataExt, репозитории)
-  - `metrics.py` - сбор и экспорт метрик
-  - `data_loader.py` - загрузка расширенных данных (OI, Funding, L2)
-  - `ohlcv_aligner.py` - синхронизация с фактическими барами OHLCV
-  - `normalizer.py` - нормализация данных к границам баров
-  - `aggregator.py` - агрегация для разных таймфреймов
-  - `retention.py` - retention политика для старых данных
-
-- **CLI Layer:**
-  - `cli.py` - CLI интерфейс (21+ команд)
-
-**Основные возможности:**
-
-1. **Метаданные инструментов** - размер тика, лот, комиссии, плечо, маржа
-2. **Валидация ордеров** - проверка корректности перед отправкой
-3. **Управление рисками** - валидация размера позиции и экспозиции
-4. **Расширенные рыночные данные** - Open Interest, Funding Rates, L2 Order Book метрики
-5. **Нормализация к барам** - синхронизация с фактическими барами OHLCV
-6. **Retry/Backoff** - надежная обработка ошибок API
-7. **Кэширование** - TTL кэш для метаданных
-8. **Метрики** - сбор и экспорт метрик производительности
-
-**Логика работы:**
-
-1. Загрузка метаданных с OKX API (с retry/backoff)
-2. Кэширование метаданных с TTL
-3. Валидация ордеров перед отправкой
-4. Загрузка расширенных данных (OI, Funding, L2)
-5. Нормализация к фактическим барам OHLCV
-6. Агрегация для разных таймфреймов
-7. Сохранение в БД (market_meta, market_data_ext)
-8. Retention политика для очистки старых данных
-
-**Документация:** [src/market_meta/README.md](src/market_meta/README.md)
-
-### 10. CLI - Командный интерфейс
-
-**Модуль:** `src/cli/`
-
-Единый CLI интерфейс для всех модулей системы.
-
-**Доступные команды:**
-
-- `features` - расчет индикаторов
-- `mtf` - мультитаймфрейм анализ
-- `signals` - генерация сигналов
-- `risk` - управление рисками
-- `pipeline` - полный pipeline обработки
-- `migrate` - миграции БД
-- `swap-sync` - синхронизация SWAP данных
-- `indicators-partitions` - preview/apply maintenance для `indicators_p`
-
-**Документация:** [src/cli/main.py](src/cli/main.py)
-
-### 10. Airflow - Оркестрация
-
-**Модуль:** `ops/airflow/`
-
-Интеграция с Apache Airflow для планирования и оркестрации задач.
-
-**DAGs:**
-
-- `features_calc` - расчет индикаторов
-- `okx_swap_ohlcv_sync` - синхронизация данных
-
-**Документация:** [ops/airflow/dags/](ops/airflow/dags/)
-
----
-
-## Быстрый старт
-
-### Установка
+## Внутренняя структура
+
+Репозиторий организован по bounded context, а не как один монолитный модуль.
+
+| Путь | Текущая роль |
+|---|---|
+| `src/cli/` | Основной entrypoint и регистрация команд |
+| `src/db/` | Запуск миграций, валидация схемы, обслуживание партиций |
+| `src/candles/` | Синхронизация с OKX, каталог инструментов, quality checks, observability |
+| `src/features/` | Спецификации индикаторов, движок расчета, сохранение, freshness gating |
+| `src/market_selection/` | Scoring по таймфреймам, классификация regime, публикация universe |
+| `src/core/` | Общие quant-примитивы, например dollar bars и run context |
+| `src/ml/` | Triple-barrier labeling, validation, feature selection, metalabeling |
+| `src/backtest/` | Генерация отчетов и метрик |
+| `ops/airflow/dags/` | Плановая orchestration для sync, features, selection и обслуживания партиций |
+| `tests/` | Тесты по модулям, включая `candles`, `features`, `db`, `market_selection`, `ml`, `backtest` |
+
+## Публичные интерфейсы и контракты
+
+### Основной CLI
+
+Подтвержденный текущий entrypoint:
 
 ```bash
-# Клонирование репозитория
-git clone <repository-url>
-cd pklpo
-
-# Создание виртуального окружения
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# или
-venv\Scripts\activate  # Windows
-
-# Установка зависимостей
-pip install -r requirements.txt
+python -m src.cli.main --help
 ```
 
-### Настройка окружения
+Сейчас зарегистрированы такие top-level команды:
 
-```bash
-# Создание .env файла
-cp .env.example .env
+- `migrate`
+- `build-bars`
+- `load-instruments`
+- `swap-sync`
+- `pipeline`
+- `features`
+- `update-list`
+- `cleanup`
+- `market-selection`
+- `label`
+- `train`
+- `metrics`
+- `indicators-partitions`
 
-# Редактирование .env
-# POSTGRES_USER=your_user
-# POSTGRES_PASSWORD=your_password
-# POSTGRES_DB=your_database
-# DB_HOST=localhost
-# DB_PORT=5432
-```
+Важное замечание по границе ответственности:
 
-### Первый запуск
+- пакеты `mtf`, `signals` и `risk` существуют в `src/`, но сегодня не зарегистрированы в `src/cli/main.py`
 
-```bash
-# Применение миграций БД
-python -m src.cli.main migrate
+### Контракты хранения
 
-# Загрузка инструментов
-python -m src.cli.main update-list
+Активный путь хранения сосредоточен вокруг PostgreSQL:
 
-# Синхронизация свечей
-python -m src.cli.main swap-sync --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
+- `schema_migrations` отслеживает примененные миграции
+- `instruments` хранит каталог инструментов
+- `swap_ohlcv_p` хранит синхронизированные swap OHLCV и дополнительные поля, включая `funding_rate` и `open_interest`
+- `indicators_p` хранит рассчитанные индикаторы и служебные метаданные
+- `market_scores_tf`, `market_universe`, `market_universe_versions` и `market_regime_history` хранят результаты отбора рынков
 
-# Расчет индикаторов
-python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
-```
+### Контракты Airflow
 
----
+Активные DAG-файлы:
 
-## CLI интерфейс
+- `ops/airflow/dags/okx_swap_ohlcv_sync_v2.py`
+- `ops/airflow/dags/features_calc_short.py`
+- `ops/airflow/dags/market_selection.py`
+- `ops/airflow/dags/features_calc.py`
+- `ops/airflow/dags/indicators_partition_maintenance.py`
 
-### Основные команды
+Airflow использует connection `pklpo_db` и передает runtime-параметры через `dag_run.conf`.
 
-#### Расчет индикаторов
+## Входы и выходы
 
-```bash
-# Расчет для одного символа
-python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
+### Входы
 
-# Расчет с нормализацией
-python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1m --normalize
+- настройки БД из `.env` и переменных окружения
+- учетные данные OKX и настройки rate limit
+- аргументы CLI
+- конфигурация Airflow connection и variables
+- существующие строки в PostgreSQL для инкрементальной обработки или freshness-gated логики
 
-# Расчет конкретных индикаторов
-python -m src.cli.main features --symbols BTC-USDT-SWAP --specs rsi_14 macd atr_14
+### Выходы
 
-# Ограничение количества баров
-python -m src.cli.main features --symbols BTC-USDT-SWAP --limit 1000
-```
+- перечисленные выше таблицы в БД
+- логи в файлы и stdout
+- опциональные Prometheus / Pushgateway-метрики для части пайплайнов
+- артефакты моделей в `./artifacts` для `train`
+- выходы отчетности на основе RunContext для `metrics show`
 
-#### Полный pipeline
+## Ключевые правила и инварианты
 
-```bash
-# Запуск полного pipeline обработки
-python -m src.cli.main pipeline --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
-```
+Эти правила отражены в текущем коде и документации:
 
-#### Миграции БД
+- миграции должны быть идемпотентными и упорядочены через реестр в `src/db/migration_registry.py`
+- сохранение свечей и индикаторов использует upsert-семантику с ключом по symbol, timeframe и timestamp
+- `features_calc_short` подготавливает хранилище перед запуском, а не предполагает, что партиции уже существуют
+- market selection сохраняет versioned outputs и может откатиться на предыдущий опубликованный universe при сбое
+- CLI-команда `pipeline` содержит placeholder stages (`signals`, `scoring`, `recommendations`), которые сейчас логируются как пропущенные, а не выполняют бизнес-логику
 
-```bash
-# Применение всех миграций
-python -m src.cli.main migrate
+Важно для репозитория:
 
-# Статус миграций
-python src/db/reports_cli.py status
-
-# Проверка здоровья системы
-python src/db/reports_cli.py health
-```
-
-#### Partition maintenance
-
-```bash
-# Preview по умолчанию: без изменения схемы
-python -m src.cli.main indicators-partitions
-
-# Явное применение maintenance и валидация horizon
-python -m src.cli.main indicators-partitions --apply --validate
-```
-
-#### Синхронизация данных
-
-```bash
-# Синхронизация SWAP свечей
-python -m src.cli.main swap-sync --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
-```
-
----
+- в `src/features` и `src/candles` есть более детальные поведенческие контракты, чем видно из root CLI. При изменениях внутри bounded context сначала читайте README и тесты этого модуля.
 
 ## Конфигурация
 
-### Переменные окружения
+Конфигурация централизована в `src/config/settings.py` через вложенные settings-объекты:
+
+- `DB_*` и `POSTGRES_*` для подключения к БД
+- `OKX_*` для доступа к бирже, retry и rate limit
+- `FEATURES_*` для chunking, validation, backend, retries и normalization
+- `RISK_*`, `RETRY_*`, `CACHE_*`, `LOG_*`, `AIRFLOW_*`, `OBSERVABILITY_*`, `QUANT_*` для связанных подсистем
+
+Важная деталь реализации:
+
+- `src/database.py` валидирует обязательные env vars во время импорта и сразу создает async SQLAlchemy engine
+- на Windows и при локальной разработке `localhost` переписывается в `127.0.0.1`, чтобы избежать проблем с IPv6
+
+## Runbook
+
+Используйте только команды, подтвержденные текущим деревом.
+
+### Базовая настройка и ingest
 
 ```bash
-# База данных
-POSTGRES_USER=your_user
-POSTGRES_PASSWORD=your_password
-POSTGRES_DB=your_database
-DB_HOST=localhost
-DB_PORT=5432
-
-# OKX API (опционально)
-OKX_API_KEY=your_api_key
-OKX_SECRET_KEY=your_secret_key
-OKX_PASSPHRASE=your_passphrase
-
-# Slack уведомления (опционально)
-SLACK_WEBHOOK_URL=your_webhook_url
+python -m src.cli.main migrate
+python -m src.cli.main update-list
+python -m src.cli.main swap-sync --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
+python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
+python -m src.cli.main indicators-partitions
 ```
 
-### Структура базы данных
-
-**Основные таблицы:**
-
-- `instruments` - торговые инструменты
-- `ohlcv_p` - данные свечей (партиционированная)
-- `indicators_p` - технические индикаторы (партиционированная)
-- `signals` - базовые сигналы
-- `signals_detailed` - детализированные сигналы
-- `combination_results` - результаты комбинаций
-- `mtf_context` - контекст MTF анализа
-- `mtf_triggers` - триггеры MTF
-- `mtf_consensus` - консенсус MTF
-- `positions` - позиции
-- `schema_migrations` - история миграций
-
----
-
-## Разработка
-
-### Структура проекта
-
-```text
-pklpo/
-├── src/                    # Исходный код
-│   ├── features/           # Расчет индикаторов
-│   ├── features_combinations/  # Комбинации индикаторов
-│   ├── mtf/                # Мультитаймфрейм анализ
-│   ├── signals/            # Генерация сигналов
-│   ├── positions/          # Расчет позиций
-│   ├── risk/               # Управление рисками
-│   ├── backtest/           # Бэктестинг
-│   ├── db/                 # Миграции БД
-│   ├── cli/                # CLI интерфейс
-│   ├── candles/            # Синхронизация свечей
-│   ├── models.py           # SQLAlchemy модели
-│   └── database.py         # Конфигурация БД
-├── ops/                    # Операционные скрипты
-│   └── airflow/            # Airflow DAGs
-├── tests/                  # Тесты
-├── config/                 # Конфигурация
-├── docs/                   # Документация
-├── pyproject.toml          # Конфигурация проекта
-└── requirements.txt       # Зависимости
-```
-
-### Стандарты кода
-
-- **PEP 8** - стиль кода
-- **Black** - форматирование (line length 88)
-- **Ruff** - линтинг
-- **MyPy** - проверка типов (--strict)
-- **Pytest** - тестирование (coverage ≥85%)
-
-### Запуск тестов
+### Проверка основного CLI
 
 ```bash
-# Все тесты
+python -m src.cli.main --help
+```
+
+### Quant research-команды
+
+Эти команды есть в активном CLI, но работают как отдельные workflow, а не как часть основного планового ingest-пути:
+
+```bash
+python -m src.cli.main build-bars --symbols BTC-USDT-SWAP --dollar-value 200000
+python -m src.cli.main label --symbols BTC-USDT-SWAP
+python -m src.cli.main train --symbols BTC-USDT-SWAP
+python -m src.cli.main metrics show --run-id <uuid>
+```
+
+### Валидация и quality gates
+
+```bash
 pytest
-
-# С покрытием
-pytest --cov=src --cov-report=html
-
-# Быстрые тесты
-pytest -m "not slow"
-
-# Интеграционные тесты
-pytest -m integration
-```
-
-### Pre-commit hooks
-
-```bash
-# Установка pre-commit
-pre-commit install
-
-# Ручной запуск
+pytest -m "not slow and not integration"
+ruff check src tests
+black src tests
+mypy src
 pre-commit run --all-files
+powershell -File scripts/check_before_commit.ps1
 ```
 
----
+## Тестирование и отладка
 
-## Интеграции
+При отладке выбирайте минимальную поверхность, соответствующую подсистеме, которую вы затронули:
 
-### PostgreSQL
+- для CLI wiring начните с `python -m src.cli.main --help`
+- для проблем со схемой выполните `python -m src.cli.main migrate`, затем смотрите `src/db/`
+- для проблем синхронизации смотрите `src/candles/`, DAG `okx_swap_ohlcv_sync_v2` и таблицу `swap_ohlcv_p`
+- для проблем с индикаторами смотрите `src/features/`, команду `features`, `features_calc_short` и `indicators_p`
+- для проблем с universe смотрите `src/market_selection/`, команды `market-selection` и таблицы `market_selection_*`
 
-- Асинхронное подключение через SQLAlchemy
-- Партиционирование больших таблиц
-- Идемпотентные миграции
-- Мониторинг и метрики
+Полезные кодовые точки входа:
 
-### Airflow
+- `src/cli/main.py`
+- `src/cli/commands/features.py`
+- `src/cli/commands/swap_sync.py`
+- `src/cli/commands/indicators_partitions.py`
+- `src/market_selection/interfaces/commands.py`
+- `ops/airflow/dags/okx_swap_ohlcv_sync_v2.py`
+- `ops/airflow/dags/features_calc_short.py`
+- `ops/airflow/dags/market_selection.py`
 
-- DAG для расчета индикаторов
-- DAG для синхронизации данных
-- DAG для maintenance monthly partitions `indicators_p`
-- Smoke-валидация результатов
-- Метрики и алерты
+## Поведение при ошибках и повторы
 
-### OKX Exchange
+Текущее поведение различается по подсистемам:
 
-- REST API для получения данных
-- Rate limiting
-- Асинхронные запросы
-- Обработка ошибок и retry
+- `src/candles` использует retry/backoff и circuit-breaker-паттерны вокруг работы с биржей и БД; недоступность БД считается жесткой остановкой для sync
+- `src/features` допускает, что часть ошибок расчета может деградировать в неполные данные вместо падения всего запуска; сохранение использует retry-aware инфраструктуру upsert
+- `market_selection` сохраняет versioned outcomes и может публиковать `fallback_prev` вместо пустого universe
+- `indicators-partitions` безопасен по умолчанию: preview mode включен по умолчанию, а изменения схемы требуют явного `--apply`
+- repo-level команда `pipeline` не является полностью реализованным orchestrator для всех заявленных stages; неподдерживаемые stages сейчас логируются как пропущенные
 
----
+## Логирование и observability
 
-## Мониторинг
+Текущая observability-логика разделена по модулям:
 
-### Метрики
+- root CLI использует Python logging и поддерживает `--verbose` и `--quiet`
+- `src/candles` поддерживает структурированные quality-метрики и Prometheus-совместимые метрики; этот модуль используется в DAG `okx_swap_ohlcv_sync_v2`
+- `src/features` предоставляет Prometheus-метрики, детализированное логирование расчета/сохранения и Airflow callbacks
+- `src/market_selection` записывает run metrics и предоставляет CLI-команды для диагностики: `status`, `universe`, `regime`, `metrics`, `explain`
 
-- Производительность расчетов
-- Качество данных (fill rate, NaN ratio)
-- Размеры таблиц и индексов
-- Активные подключения
-- Блокировки БД
+Операционное замечание:
 
-### Логирование
+- Airflow DAG часто пишут логи в `/tmp/pklpo` внутри Airflow runtime
 
-- Структурированные логи
-- Ротация логов
-- Разные уровни логирования
-- Трейсинг запросов
+## Как безопасно расширять
 
-### Алерты
+### Добавить изменение схемы
 
-- Неудачные миграции
-- Длительные блокировки
-- Высокое потребление ресурсов
-- Проблемы качества данных
+1. Добавьте идемпотентную миграцию в `src/db/migrations/`.
+2. Зарегистрируйте ее в `src/db/migration_registry.py`.
+3. Проверьте через текущий путь миграций репозитория, прежде чем менять зависимый код.
 
----
+### Добавить новую возможность ingest
 
-## Документация
+1. Начинайте с `src/candles/`.
+2. Обновите соответствующий interface, application use case и infrastructure adapter.
+3. Сначала убедитесь, что данные попадают в ожидаемую таблицу, и только потом меняйте downstream-потребителей.
 
-### Архитектура и дизайн
+### Добавить новый индикатор или feature-workflow
 
-- [Architecture Overview](docs/ARCHITECTURE.md) - общая архитектура системы
-- [Data Flow](docs/DATA_FLOW.md) - pipeline обработки данных и логика
+1. Начинайте с `src/features/specs/` и `src/features/indicator_groups/`.
+2. Проверьте `src/features/README.md` на предмет контрактов групп и сохранения.
+3. Убедитесь, не нужно ли также менять схему `indicators_p` или обслуживание партиций.
 
-### Модули системы
+### Добавить новое правило market selection
 
-- [Features Module](src/features/README.md) - расчет индикаторов
-- [Features Combinations](src/features_combinations/README.md) - комбинации
-- [MTF System](src/mtf/README_FINAL.md) - мультитаймфрейм анализ
-- [Market Meta](src/market_meta/README.md) - метаданные и расширенные данные
-- [Database Migrations](src/db/README.md) - миграции БД
-- [Positions](src/positions/README.md) - расчет позиций
-- [Backtest](src/backtest/README.md) - бэктестинг
-- [Airflow DAGs](ops/airflow/dags/README_dags.md) - оркестрация
-- [Roadmap](plan/ROADMAP.md) - план развития
+1. Начинайте с `src/market_selection/domain/`.
+2. Держите изменения persistence и orchestration в `application/` и `infrastructure/`.
+3. Сохраняйте fallback- и versioning-семантику, если только вы не меняете ее намеренно.
 
----
+## Ограничения
 
-## Лицензия
+- поверхность root CLI уже, чем все дерево репозитория. Часть пакетов существует, но не подключена к `src.cli.main`
+- в репозитории есть и текущие, и похожие на legacy операционные пути; этот root README описывает только активные root CLI- и DAG-пути
+- команда `pipeline` до сих пор объявляет стадии-заглушки
+- путь через Airflow и ручной путь через CLI связаны, но не идентичны; нельзя предполагать, что у CLI-команды есть прямой плановый эквивалент без проверки DAG
+- некоторые README модулей содержат больше деталей, чем root README, и для внутренних контрактов подсистем именно они должны считаться первичным источником
 
-MIT License
+## Допущения и TODO
 
----
-
-## Agent Workspace
-
-The repo includes a shared Codex and Claude Code baseline:
-
-- `AGENTS.md` for project-wide agent rules
-- `agent_workspace/skills/` for reusable task skills
-- `agent_workspace/hooks/` for lightweight validation and safety hooks
-- `.claude/settings.json` for Claude Code hook wiring
-
-See [docs/agent-workspace.md](docs/agent-workspace.md) for setup details and extension guidance.
-
----
-
-## Поддержка
-
-Для вопросов и предложений создавайте issues в репозитории.
-
----
-
-**Версия:** 0.2.0
-**Последнее обновление:** 2025-12-18
-**Статус:** ✅ Production Ready
+- TODO: стандартизировать, является ли `swap_ohlcv_p` единственным каноническим именем OHLCV-таблицы или `ohlcv_p` все еще используется вне legacy / compatibility-path
+- TODO: решить, должна ли root-команда `pipeline` оставаться частичным orchestrator или быть сокращена до полностью реализованных стадий
+- TODO: задокументировать точную операторскую bootstrap-последовательность для Airflow вне Docker, опираясь только на актуальную поддерживаемую документацию
+- TODO: подтвердить, должны ли артефакты обучения моделей оставаться только локальными или стать first-class persisted output репозитория
