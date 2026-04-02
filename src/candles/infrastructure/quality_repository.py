@@ -34,8 +34,10 @@ class QualityMetricsRepository:
         query = """
             INSERT INTO ops.data_quality_metrics
                 (ts, check_name, severity, symbol, timeframe, value, meta)
-            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
         """
+        import json
+
         async with self._pool.acquire() as conn:
             await conn.executemany(
                 query,
@@ -47,7 +49,7 @@ class QualityMetricsRepository:
                         r.symbol,
                         r.timeframe,
                         r.value,
-                        r.meta,
+                        json.dumps(r.meta or {}),
                     )
                     for r in results
                 ],

@@ -1,12 +1,12 @@
 """
-Проверки качества данных market_data_ext.
+Quality checks for market_data_ext.
 
-Содержит:
-- check_freshness: лаг витрины (последняя свеча)
-- check_smoke_10m: smoke-тест за 10 минут
-- check_coverage_1m: покрытие относительно OHLCV
-- check_fill_rate: заполненность полей
-- check_event_freshness: свежесть событий funding/oi/l2
+Contains:
+- check_freshness: data lag (last candle)
+- check_smoke_10m: smoke test for last 10 minutes
+- check_coverage_1m: coverage relative to OHLCV
+- check_fill_rate: field fill rate
+- check_event_freshness: event freshness for funding/oi/l2
 """
 
 from typing import Protocol
@@ -37,10 +37,10 @@ async def check_freshness(
     thresholds: Thresholds = FRESHNESS_THRESHOLDS,
 ) -> list[CheckResult]:
     """
-    Проверка лага витрины: now() - max(bar_timestamp) по timeframe='1m'.
+    Check data lag: now() - max(bar_timestamp) for timeframe='1m'.
 
     Returns:
-        Список CheckResult по каждому symbol.
+        List of CheckResult per symbol.
     """
     query = """
         SELECT
@@ -78,10 +78,10 @@ async def check_smoke_10m(
     min_rows: int = 8,
 ) -> list[CheckResult]:
     """
-    Smoke-тест: за последние 10 минут должно быть минимум min_rows строк.
+    Smoke test: at least min_rows rows expected in the last 10 minutes.
 
     Returns:
-        Список CheckResult только для проблемных symbols (rows < min_rows).
+        List of CheckResult for symbols with rows < min_rows.
     """
     query = """
         WITH recent AS (
@@ -122,10 +122,10 @@ async def check_coverage_1m(
     thresholds: Thresholds = COVERAGE_THRESHOLDS,
 ) -> list[CheckResult]:
     """
-    Покрытие market_data_ext относительно OHLCV за последние N минут.
+    Coverage of market_data_ext relative to OHLCV for last N minutes.
 
     Returns:
-        Список CheckResult по каждому symbol.
+        List of CheckResult per symbol.
     """
     query = """
         WITH bars AS (
@@ -181,10 +181,10 @@ async def check_fill_rate(
     window_hours: int = 6,
 ) -> list[CheckResult]:
     """
-    Заполненность полей funding_rate, open_interest, l2 за последние N часов.
+    Fill rate for funding_rate, open_interest, l2 fields over last N hours.
 
     Returns:
-        Список CheckResult (3 записи на symbol: funding, oi, l2).
+        List of CheckResult (3 entries per symbol: funding, oi, l2).
     """
     query = """
         SELECT
@@ -255,10 +255,10 @@ async def check_event_freshness(
     window_hours: int = 6,
 ) -> list[CheckResult]:
     """
-    Свежесть событий: funding_ts, oi_ts, l2_ts.
+    Event freshness: funding_ts, oi_ts, l2_ts.
 
     Returns:
-        Список CheckResult (3 записи на symbol).
+        List of CheckResult (3 entries per symbol).
     """
     query = """
         SELECT
@@ -322,10 +322,10 @@ async def check_duplicates_1m(
     thresholds: Thresholds = DUPLICATE_RATE_THRESHOLDS,
 ) -> list[CheckResult]:
     """
-    Duplicate-rate метрика по symbol за окно N минут.
+    Duplicate-rate metric per symbol over N-minute window.
 
     Returns:
-        Список CheckResult по каждому symbol.
+        List of CheckResult per symbol.
     """
     query = """
         WITH grouped AS (
@@ -378,19 +378,20 @@ async def check_duplicates_1m(
 
 
 async def run_all_checks(pool: QueryPoolPort) -> QualityReport:
-    """Запустить все проверки и вернуть агрегированный отчет."""
+    """Run all checks and return aggregated report."""
     report = QualityReport()
 
-    # День 1: freshness + smoke
+    # Phase 1: freshness + smoke
     report.extend(await check_freshness(pool))
     report.extend(await check_smoke_10m(pool))
 
-    # День 2: coverage
+    # Phase 2: coverage
     report.extend(await check_coverage_1m(pool))
 
-    # День 3: fill-rate + event freshness
+    # Phase 3: fill-rate + duplicates
+    # check_event_freshness skipped: market_data_ext does not have
+    # funding_ts / oi_ts / l2_ts columns (schema not finalized).
     report.extend(await check_fill_rate(pool))
-    report.extend(await check_event_freshness(pool))
     report.extend(await check_duplicates_1m(pool))
 
     return report

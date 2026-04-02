@@ -1,20 +1,89 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import asyncio
 import logging
 import random
+import socket
 import time
+import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from sqlalchemy import exc as sa_exc
 
 from ...domain.timeframes import TF_TO_MS
-from .dto import SyncJobRequest, SyncJobResult
-from .policy import RetryPolicy
-from .ports import CandleStorePort, InstrumentCatalogPort, MarketDataPort
+from ...observability.metrics import ReservoirSampling
+from .dto import SyncJobRequest, SyncJobResult, SyncRun, SyncRunStatus
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEFRAMES = tuple(TF_TO_MS.keys())
+
+if TYPE_CHECKING:
+    from .policy import RetryPolicy
+    from .ports import (
+        CandleStorePort,
+        InstrumentCatalogPort,
+        MarketDataPort,
+        TelemetryPort,
+    )
+
+try:
+    import asyncpg
+except ImportError:  # pragma: no cover
+    asyncpg = None
+
+
+class DatabaseUnavailableError(RuntimeError):
+    """Raised when the candle store is unavailable at run level."""
+
+
+def _iter_exception_chain(error: BaseException) -> list[BaseException]:
+    chain: list[BaseException] = []
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        chain.append(current)
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return chain
+
+
+def _is_db_outage_error(error: BaseException) -> bool:
+    transient_messages = (
+        "connection is closed",
+        "connect call failed",
+        "name or service not known",
+        "temporary failure in name resolution",
+        "connection refused",
+        "database connection invalidated",
+    )
+    transient_errnos = {111, -2, 11001}
+
+    for current in _iter_exception_chain(error):
+        if isinstance(current, (ConnectionError, ConnectionRefusedError, socket.gaierror)):
+            return True
+        if isinstance(current, (sa_exc.OperationalError, sa_exc.InterfaceError)):
+            return True
+        if isinstance(current, sa_exc.DBAPIError) and current.connection_invalidated:
+            return True
+        if asyncpg is not None and isinstance(
+            current,
+            (
+                asyncpg.PostgresConnectionError,
+                asyncpg.ConnectionDoesNotExistError,
+                asyncpg.InterfaceError,
+            ),
+        ):
+            return True
+        if isinstance(current, OSError):
+            if getattr(current, "errno", None) in transient_errnos:
+                return True
+            if any(marker in str(current).lower() for marker in transient_messages):
+                return True
+        if any(marker in str(current).lower() for marker in transient_messages):
+            return True
+    return False
 
 
 class RefreshInstrumentCatalogUseCase:
@@ -49,8 +118,10 @@ class _AdditionalDataLoader:
             if self._is_rate_limited(str(exc)):
                 self._stats["funding"]["rate_limit"] += 1
                 self._stats["funding"]["retries"] += 1
+                logger.warning("Funding rate fetch rate-limited for %s: %s", symbol, exc)
             else:
                 self._stats["funding"]["errors"] += 1
+                logger.warning("Funding rate fetch failed for %s: %s", symbol, exc)
 
         try:
             open_interest = await self._market_data.fetch_open_interest([symbol])
@@ -61,13 +132,58 @@ class _AdditionalDataLoader:
             if self._is_rate_limited(str(exc)):
                 self._stats["open_interest"]["rate_limit"] += 1
                 self._stats["open_interest"]["retries"] += 1
+                logger.warning("Open interest fetch rate-limited for %s: %s", symbol, exc)
             else:
                 self._stats["open_interest"]["errors"] += 1
+                logger.warning("Open interest fetch failed for %s: %s", symbol, exc)
 
         return out
 
     def snapshot_stats(self) -> dict[str, dict[str, float]]:
         return {endpoint: values.copy() for endpoint, values in self._stats.items()}
+
+
+class _SyncStats:
+    """Thread-safe sync run statistics with bounded memory."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self.endpoint_stats: dict[str, dict[str, float]] = {
+            "candles": {"ok": 0, "retries": 0, "rate_limit": 0},
+        }
+        self.db_write_latencies = ReservoirSampling(max_size=1000)
+        self.db_write_batch_sizes = ReservoirSampling(max_size=1000)
+
+    async def record_fetch_ok(self) -> None:
+        async with self._lock:
+            self.endpoint_stats["candles"]["ok"] += 1
+
+    async def record_fetch_retry(self, rate_limited: bool = False) -> None:
+        async with self._lock:
+            self.endpoint_stats["candles"]["retries"] += 1
+            if rate_limited:
+                self.endpoint_stats["candles"]["rate_limit"] += 1
+
+    async def record_db_write(self, latency_sec: float, batch_size: int) -> None:
+        async with self._lock:
+            self.db_write_latencies.add(latency_sec)
+            self.db_write_batch_sizes.add(batch_size)
+
+    def merge_extra_data_stats(self, extra_stats: dict[str, dict[str, float]]) -> None:
+        self.endpoint_stats.update(extra_stats)
+
+    def db_write_summary(self) -> dict[str, float | int]:
+        lats = self.db_write_latencies
+        batches = self.db_write_batch_sizes
+        return {
+            "writes_count": lats.count,
+            "latency_avg_ms": round(lats.mean() * 1000, 3),
+            "latency_p95_ms": round(lats.percentile(95) * 1000, 3),
+            "batch_size_avg": round(batches.mean(), 2),
+            "batch_size_max": (
+                max(batches._samples) if batches._samples else 0
+            ),
+        }
 
 
 class RunCandleSyncUseCase:
@@ -78,20 +194,23 @@ class RunCandleSyncUseCase:
         candle_store: CandleStorePort,
         instrument_catalog: InstrumentCatalogPort,
         retry_policy: RetryPolicy,
+        telemetry: TelemetryPort | None = None,
     ) -> None:
         self._market_data = market_data
         self._candle_store = candle_store
         self._instrument_catalog = instrument_catalog
         self._retry_policy = retry_policy
+        self._telemetry = telemetry
         self._last_api_latency_ms: float = 0.0
 
-    @staticmethod
-    def _percentile(values: list[float], pct: float) -> float:
-        if not values:
-            return 0.0
-        ordered = sorted(values)
-        index = int(round((len(ordered) - 1) * pct))
-        return ordered[index]
+    async def _ensure_candle_store_ready(self) -> None:
+        probe_timestamp_ms = int(datetime.now(UTC).timestamp() * 1000)
+        try:
+            await self._candle_store.get_fill_stats(probe_timestamp_ms)
+        except Exception as exc:
+            if _is_db_outage_error(exc):
+                raise DatabaseUnavailableError("database_unavailable") from exc
+            raise
 
     async def _resolve_symbols(self, requested_symbols: tuple[str, ...]) -> list[str]:
         if requested_symbols:
@@ -107,6 +226,33 @@ class RunCandleSyncUseCase:
 
         return await self._instrument_catalog.list_symbols()
 
+    async def _filter_supported_symbols(self, symbols: list[str]) -> list[str]:
+        if not symbols:
+            return []
+
+        try:
+            instruments = await self._market_data.fetch_instruments("SWAP")
+        except Exception as exc:
+            logger.warning("Failed to refresh supported SWAP instrument set: %s", exc)
+            return symbols
+
+        supported = {item.get("instId") for item in instruments if item.get("instId")}
+        if not supported:
+            logger.warning(
+                "Market adapter returned empty SWAP instrument set; using unfiltered symbol list"
+            )
+            return symbols
+
+        filtered = [symbol for symbol in symbols if symbol in supported]
+        skipped = sorted(set(symbols) - set(filtered))
+        if skipped:
+            logger.warning(
+                "Skipping %s unsupported/delisted symbols before sync: %s",
+                len(skipped),
+                skipped[:20],
+            )
+        return filtered
+
     async def _sync_bar(
         self,
         *,
@@ -115,9 +261,7 @@ class RunCandleSyncUseCase:
         before: str | None,
         latest_stored_ts: int | None,
         extra_data_loader: _AdditionalDataLoader | None,
-        endpoint_stats: dict[str, dict[str, float]],
-        db_write_latencies_sec: list[float],
-        db_write_batch_sizes: list[int],
+        stats: _SyncStats,
     ) -> tuple[int, str | None]:
         attempts = 0
         delay = self._retry_policy.initial_delay()
@@ -132,7 +276,7 @@ class RunCandleSyncUseCase:
                     before=before,
                 )
                 self._last_api_latency_ms = (time.perf_counter() - started) * 1000
-                endpoint_stats["candles"]["ok"] += 1
+                await stats.record_fetch_ok()
                 break
             except Exception as exc:
                 message = str(exc)
@@ -142,9 +286,18 @@ class RunCandleSyncUseCase:
                 ):
                     raise
                 attempts += 1
-                if self._retry_policy.is_rate_limited(message):
-                    endpoint_stats["candles"]["rate_limit"] += 1
-                endpoint_stats["candles"]["retries"] += 1
+                await stats.record_fetch_retry(
+                    rate_limited=self._retry_policy.is_rate_limited(message),
+                )
+                if self._telemetry is not None:
+                    self._telemetry.event(
+                        "fetch_retried",
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        attempt=attempts,
+                        rate_limited=self._retry_policy.is_rate_limited(message),
+                        error=message,
+                    )
                 await asyncio.sleep(self._retry_policy.next_sleep(delay))
                 delay = self._retry_policy.bump_delay(delay)
 
@@ -162,14 +315,28 @@ class RunCandleSyncUseCase:
             additional_data = await extra_data_loader.fetch_for_symbol(symbol)
 
         db_started = time.perf_counter()
-        saved_count = await self._candle_store.upsert_candles(
-            symbol=symbol,
-            timeframe=timeframe,
-            candles=candles,
-            additional_data=additional_data,
+        try:
+            saved_count = await self._candle_store.upsert_candles(
+                symbol=symbol,
+                timeframe=timeframe,
+                candles=candles,
+                additional_data=additional_data,
+            )
+        except Exception as exc:
+            if self._telemetry is not None:
+                self._telemetry.event(
+                    "upsert_failed",
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    error=str(exc),
+                )
+            if _is_db_outage_error(exc):
+                raise DatabaseUnavailableError("database_unavailable") from exc
+            raise
+        await stats.record_db_write(
+            latency_sec=time.perf_counter() - db_started,
+            batch_size=len(candles),
         )
-        db_write_latencies_sec.append(time.perf_counter() - db_started)
-        db_write_batch_sizes.append(len(candles))
         return saved_count, last_ts
 
     async def _sync_symbol(
@@ -178,19 +345,22 @@ class RunCandleSyncUseCase:
         symbol: str,
         timeframes: tuple[str, ...],
         extra_data_loader: _AdditionalDataLoader | None,
-        endpoint_stats: dict[str, dict[str, float]],
-        db_write_latencies_sec: list[float],
-        db_write_batch_sizes: list[int],
+        stats: _SyncStats,
     ) -> dict[str, int]:
-        stats: dict[str, int] = {}
+        per_tf: dict[str, int] = {}
 
         for timeframe in timeframes:
             total = 0
             before: str | None = None
-            latest_stored_ts = await self._candle_store.get_latest_timestamp(
-                symbol=symbol,
-                timeframe=timeframe,
-            )
+            try:
+                latest_stored_ts = await self._candle_store.get_latest_timestamp(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                )
+            except Exception as exc:
+                if _is_db_outage_error(exc):
+                    raise DatabaseUnavailableError("database_unavailable") from exc
+                raise
             while True:
                 try:
                     count, last_ts = await self._sync_bar(
@@ -199,9 +369,7 @@ class RunCandleSyncUseCase:
                         before=before,
                         latest_stored_ts=latest_stored_ts,
                         extra_data_loader=extra_data_loader,
-                        endpoint_stats=endpoint_stats,
-                        db_write_latencies_sec=db_write_latencies_sec,
-                        db_write_batch_sizes=db_write_batch_sizes,
+                        stats=stats,
                     )
                 except Exception as exc:
                     if "51000" in str(exc) and "Parameter bar error" in str(exc):
@@ -209,25 +377,21 @@ class RunCandleSyncUseCase:
                     else:
                         raise
                 total += count
-                if latest_stored_ts is not None and last_ts is not None:
-                    if int(last_ts) <= latest_stored_ts:
-                        break
+                if latest_stored_ts is not None and last_ts is not None and int(last_ts) <= latest_stored_ts:
+                    break
                 if count < self._retry_policy.request_limit() or not last_ts:
                     break
                 before = last_ts
-            stats[timeframe] = total
+            per_tf[timeframe] = total
             await asyncio.sleep(random.uniform(0.2, 0.5))
 
-        return stats
+        return per_tf
 
     async def run(self, request: SyncJobRequest) -> SyncJobResult:
         started_at = time.perf_counter()
+        started_dt = datetime.now(UTC)
         timeframes = request.timeframes or DEFAULT_TIMEFRAMES
-        endpoint_stats: dict[str, dict[str, float]] = {
-            "candles": {"ok": 0, "retries": 0, "rate_limit": 0},
-        }
-        db_write_latencies_sec: list[float] = []
-        db_write_batch_sizes: list[int] = []
+        stats = _SyncStats()
         total_candles_synced = 0
         total_symbols_processed = 0
         errors_count = 0
@@ -236,38 +400,99 @@ class RunCandleSyncUseCase:
         extra_data_loader = (
             _AdditionalDataLoader(self._market_data) if request.extra_data else None
         )
+        sync_run = SyncRun(
+            correlation_id=uuid.uuid4().hex[:12],
+            mode=request.mode.value,
+            requested_symbols=request.symbols,
+            requested_timeframes=tuple(timeframes),
+            started_at=started_dt,
+        )
+        if self._telemetry is not None:
+            self._telemetry.event(
+                "sync_started",
+                correlation_id=sync_run.correlation_id,
+                mode=sync_run.mode,
+                requested_symbols=len(sync_run.requested_symbols),
+                requested_timeframes=",".join(sync_run.requested_timeframes),
+            )
 
         async with self._market_data:
-            symbols = await self._resolve_symbols(request.symbols)
+            await self._ensure_candle_store_ready()
+            try:
+                symbols = await self._resolve_symbols(request.symbols)
+            except Exception as exc:
+                if _is_db_outage_error(exc):
+                    raise DatabaseUnavailableError("database_unavailable") from exc
+                raise
+            symbols = await self._filter_supported_symbols(symbols)
             semaphore = asyncio.Semaphore(request.max_concurrent_symbols)
 
-            async def _run_symbol(symbol: str) -> tuple[str, dict[str, int] | Exception]:
-                nonlocal total_candles_synced
-                nonlocal total_symbols_processed
-                nonlocal errors_count
+            async def _run_symbol(symbol: str) -> None:
+                nonlocal total_candles_synced, total_symbols_processed, errors_count
 
                 async with semaphore:
+                    if self._telemetry is not None:
+                        self._telemetry.event(
+                            "symbol_started",
+                            correlation_id=sync_run.correlation_id,
+                            symbol=symbol,
+                        )
                     try:
                         result = await self._sync_symbol(
                             symbol=symbol,
                             timeframes=timeframes,
                             extra_data_loader=extra_data_loader,
-                            endpoint_stats=endpoint_stats,
-                            db_write_latencies_sec=db_write_latencies_sec,
-                            db_write_batch_sizes=db_write_batch_sizes,
+                            stats=stats,
                         )
                         total_candles_synced += sum(result.values())
                         total_symbols_processed += 1
-                        return symbol, result
+                        results_by_symbol[symbol] = result
+                        if self._telemetry is not None:
+                            self._telemetry.event(
+                                "symbol_completed",
+                                correlation_id=sync_run.correlation_id,
+                                symbol=symbol,
+                                rows_upserted=sum(result.values()),
+                            )
                     except Exception as exc:
                         errors_count += 1
+                        if isinstance(exc, DatabaseUnavailableError) or _is_db_outage_error(exc):
+                            logger.exception(
+                                "Database unavailable during swap sync; aborting remaining symbols"
+                            )
+                            raise DatabaseUnavailableError("database_unavailable") from exc
                         logger.exception("Failed to sync symbol %s", symbol, exc_info=exc)
-                        return symbol, exc
+                        results_by_symbol[symbol] = {}
 
-            tasks = [asyncio.create_task(_run_symbol(symbol)) for symbol in symbols]
-            for task in asyncio.as_completed(tasks):
-                symbol, result = await task
-                results_by_symbol[symbol] = result if isinstance(result, dict) else {}
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    for symbol in symbols:
+                        tg.create_task(_run_symbol(symbol))
+            except* DatabaseUnavailableError as eg:
+                failed_run = SyncRun(
+                    correlation_id=sync_run.correlation_id,
+                    mode=sync_run.mode,
+                    requested_symbols=sync_run.requested_symbols,
+                    requested_timeframes=sync_run.requested_timeframes,
+                    started_at=sync_run.started_at,
+                    completed_at=datetime.now(UTC),
+                    status=SyncRunStatus.ABORTED,
+                    error_summary="database_unavailable",
+                    aggregate_metrics={
+                        "total_symbols_processed": total_symbols_processed,
+                        "rows_upserted_total": total_candles_synced,
+                        "errors_count": errors_count,
+                    },
+                )
+                if self._telemetry is not None:
+                    self._telemetry.event(
+                        "sync_completed",
+                        correlation_id=failed_run.correlation_id,
+                        status=failed_run.status.value,
+                        errors_count=errors_count,
+                        rows_upserted_total=total_candles_synced,
+                    )
+                raise eg.exceptions[0] from eg.exceptions[0].__cause__
 
         duration = time.perf_counter() - started_at
         start_of_day_ms = int(
@@ -276,28 +501,41 @@ class RunCandleSyncUseCase:
             .timestamp()
             * 1000
         )
-        today_fill = await self._candle_store.get_fill_stats(start_of_day_ms)
-        db_write = {
-            "writes_count": len(db_write_latencies_sec),
-            "latency_avg_ms": (
-                round(sum(db_write_latencies_sec) / len(db_write_latencies_sec) * 1000, 3)
-                if db_write_latencies_sec
-                else 0.0
-            ),
-            "latency_p95_ms": round(
-                self._percentile(db_write_latencies_sec, 0.95) * 1000.0,
-                3,
-            ),
-            "batch_size_avg": (
-                round(sum(db_write_batch_sizes) / len(db_write_batch_sizes), 2)
-                if db_write_batch_sizes
-                else 0.0
-            ),
-            "batch_size_max": max(db_write_batch_sizes) if db_write_batch_sizes else 0,
-        }
+        try:
+            today_fill = await self._candle_store.get_fill_stats(start_of_day_ms)
+        except Exception as exc:
+            if _is_db_outage_error(exc):
+                raise DatabaseUnavailableError("database_unavailable") from exc
+            raise
 
         if extra_data_loader is not None:
-            endpoint_stats.update(extra_data_loader.snapshot_stats())
+            stats.merge_extra_data_stats(extra_data_loader.snapshot_stats())
+
+        completed_run = SyncRun(
+            correlation_id=sync_run.correlation_id,
+            mode=sync_run.mode,
+            requested_symbols=sync_run.requested_symbols,
+            requested_timeframes=sync_run.requested_timeframes,
+            started_at=sync_run.started_at,
+            completed_at=datetime.now(UTC),
+            status=SyncRunStatus.COMPLETED,
+            aggregate_metrics={
+                "total_symbols_processed": total_symbols_processed,
+                "rows_upserted_total": total_candles_synced,
+                "errors_count": errors_count,
+                "duration_sec": duration,
+            },
+        )
+        if self._telemetry is not None:
+            self._telemetry.event(
+                "sync_completed",
+                correlation_id=completed_run.correlation_id,
+                status=completed_run.status.value,
+                total_symbols=len(symbols),
+                total_symbols_processed=total_symbols_processed,
+                rows_upserted_total=total_candles_synced,
+                errors_count=errors_count,
+            )
 
         return SyncJobResult(
             mode=request.mode.value,
@@ -311,9 +549,10 @@ class RunCandleSyncUseCase:
             candles_per_second=total_candles_synced / duration if duration > 0 else 0.0,
             symbols_per_second=len(symbols) / duration if duration > 0 else 0.0,
             results_by_symbol=results_by_symbol,
-            endpoint_stats=endpoint_stats,
+            endpoint_stats=stats.endpoint_stats,
             today_fill=today_fill,
-            db_write=db_write,
+            db_write=stats.db_write_summary(),
+            sync_run=completed_run,
         )
 
 
@@ -332,11 +571,13 @@ async def run_candle_sync(
     candle_store: CandleStorePort,
     instrument_catalog: InstrumentCatalogPort,
     retry_policy: RetryPolicy,
+    telemetry: TelemetryPort | None = None,
 ) -> SyncJobResult:
     use_case = RunCandleSyncUseCase(
         market_data=market_data,
         candle_store=candle_store,
         instrument_catalog=instrument_catalog,
         retry_policy=retry_policy,
+        telemetry=telemetry,
     )
     return await use_case.run(request)

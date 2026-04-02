@@ -36,7 +36,7 @@ MODE_CONFIGS: dict[str, dict[str, Any]] = {
         "max_requests_per_second": 15,
     },
     "bootstrap": {
-        "timeframes": None,  # uses SWAP_BARS from sync_swap_candles
+        "timeframes": None,  # resolved to the default candles timeframe set
         "extra_data": True,
         "max_concurrent_symbols": 1,
         "max_requests_per_second": 15,
@@ -170,8 +170,10 @@ def format_stats_for_xcom(
 
     return {
         "mode": config.get("mode", "unknown"),
+        "skipped": False,
         "timeframes": config.get("timeframes", []),
         "symbols_count": stats.get("total_symbols", 0),
+        "total_symbols_processed": stats.get("total_symbols_processed", 0),
         "duration_sec": round(stats.get("duration_seconds", 0), 2),
         "rows_upserted_total": stats.get("total_candles_synced", 0),
         "errors_count": stats.get("errors_count", 0),

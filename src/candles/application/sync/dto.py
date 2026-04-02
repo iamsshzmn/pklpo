@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class ExecutionMode(StrEnum):
@@ -11,6 +13,12 @@ class ExecutionMode(StrEnum):
     SLOW = "slow"
     EXTENDED = "ext"
     BOOTSTRAP = "bootstrap"
+
+
+class SyncRunStatus(StrEnum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    ABORTED = "aborted"
 
 
 @dataclass(frozen=True)
@@ -46,3 +54,17 @@ class SyncJobResult:
     db_write: dict[str, Any] = field(default_factory=dict)
     skipped: bool = False
     skip_reason: str | None = None
+    sync_run: SyncRun | None = None
+
+
+@dataclass(frozen=True)
+class SyncRun:
+    correlation_id: str
+    mode: str
+    requested_symbols: tuple[str, ...]
+    requested_timeframes: tuple[str, ...]
+    started_at: datetime
+    completed_at: datetime | None = None
+    status: SyncRunStatus = SyncRunStatus.RUNNING
+    error_summary: str | None = None
+    aggregate_metrics: dict[str, Any] = field(default_factory=dict)

@@ -33,7 +33,7 @@ def _to_ccxt_symbol(inst_id: str) -> str:
 
 
 class CcxtOKXAdapter:
-    """Compatibility adapter with methods used by sync_swap_candles.py."""
+    """CCXT-backed market data adapter for the candles sync runtime."""
 
     def __init__(self, max_requests_per_second: int = 80) -> None:
         if ccxt is None:

@@ -1,15 +1,66 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any
+import socket
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select, text
+from sqlalchemy import exc as sa_exc, select, text
 
 from src.models import Instrument
+from src.utils.retry import get_db_retry
 from src.utils.session_utils import get_db_session
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+try:
+    import asyncpg
+except ImportError:  # pragma: no cover
+    asyncpg = None
+
+
+def _build_transient_db_exceptions() -> tuple[type[Exception], ...]:
+    exceptions: list[type[Exception]] = [
+        sa_exc.OperationalError,
+        sa_exc.InterfaceError,
+        ConnectionError,
+        ConnectionRefusedError,
+        socket.gaierror,
+        OSError,
+    ]
+    if asyncpg is not None:
+        exceptions.extend(
+            [
+                asyncpg.PostgresConnectionError,
+                asyncpg.ConnectionDoesNotExistError,
+                asyncpg.InterfaceError,
+            ]
+        )
+    return tuple(exceptions)
+
+
+_DB_RETRY = get_db_retry(exceptions=_build_transient_db_exceptions())
 
 
 class SwapCandlesRepository:
+    async def _run_with_db_retry(
+        self,
+        operation: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        @_DB_RETRY
+        async def _wrapped() -> Any:
+            try:
+                return await operation()
+            except sa_exc.DBAPIError as exc:
+                if exc.connection_invalidated:
+                    from src.database import reset_pool
+
+                    await reset_pool()
+                    raise ConnectionError("database connection invalidated") from exc
+                raise
+
+        return await _wrapped()
+
     async def upsert_candles(
         self,
         *,
@@ -30,7 +81,7 @@ class SwapCandlesRepository:
             open_interest = additional_data["open_interest"].get("oi")
 
         rows: list[dict[str, Any]] = []
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         for candle in candles:
             rows.append(
                 {
@@ -97,15 +148,17 @@ class SwapCandlesRepository:
             """
         )
 
-        async with get_db_session() as session:
-            try:
-                await session.execute(stmt, rows)
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
+        async def _operation() -> int:
+            async with get_db_session() as session:
+                try:
+                    result = await session.execute(stmt, rows)
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+                    raise
+            return result.rowcount if result.rowcount >= 0 else len(rows)
 
-        return len(rows)
+        return int(await self._run_with_db_retry(_operation))
 
     async def list_swap_symbols(self) -> list[str]:
         async with get_db_session() as session:
@@ -113,6 +166,7 @@ class SwapCandlesRepository:
                 select(Instrument.symbol).where(
                     Instrument.settle_ccy == "USDT",
                     Instrument.inst_type == "SWAP",
+                    Instrument.state == "live",
                 )
             )
             symbols = [row[0] for row in result.fetchall()]
@@ -124,19 +178,22 @@ class SwapCandlesRepository:
         symbol: str,
         timeframe: str,
     ) -> int | None:
-        async with get_db_session() as session:
-            result = await session.execute(
-                text(
-                    """
-                    SELECT MAX(timestamp)
-                    FROM swap_ohlcv_p
-                    WHERE symbol = :symbol AND timeframe = :timeframe
-                    """
-                ),
-                {"symbol": symbol, "timeframe": timeframe},
-            )
-            latest_ts = result.scalar()
-        return int(latest_ts) if latest_ts is not None else None
+        async def _operation() -> int | None:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT MAX(timestamp)
+                        FROM swap_ohlcv_p
+                        WHERE symbol = :symbol AND timeframe = :timeframe
+                        """
+                    ),
+                    {"symbol": symbol, "timeframe": timeframe},
+                )
+                latest_ts = result.scalar()
+            return int(latest_ts) if latest_ts is not None else None
+
+        return await self._run_with_db_retry(_operation)
 
     async def get_instrument_counts(self) -> dict[str, int]:
         async with get_db_session() as session:
@@ -163,79 +220,51 @@ class SwapCandlesRepository:
         self,
         start_timestamp_ms: int,
     ) -> dict[str, int | float]:
-        async with get_db_session() as session:
-            q_total = await session.execute(
-                text(
-                    """
-                    SELECT COUNT(*) FROM swap_ohlcv_p WHERE timestamp >= :t
-                    """
-                ),
-                {"t": start_timestamp_ms},
+        async def _operation() -> dict[str, int | float]:
+            async with get_db_session() as session:
+                q_total = await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM swap_ohlcv_p WHERE timestamp >= :t
+                        """
+                    ),
+                    {"t": start_timestamp_ms},
+                )
+                rows_today = int(q_total.scalar() or 0)
+
+                q_fill = await session.execute(
+                    text(
+                        """
+                        SELECT
+                          COUNT(*) FILTER (WHERE funding_rate IS NOT NULL) AS fr,
+                          COUNT(*) FILTER (WHERE open_interest IS NOT NULL) AS oi
+                        FROM swap_ohlcv_p
+                        WHERE timestamp >= :t
+                        """
+                    ),
+                    {"t": start_timestamp_ms},
+                )
+                fr, oi = q_fill.fetchone()
+
+            funding_rate_non_null = int(fr or 0)
+            open_interest_non_null = int(oi or 0)
+            funding_rate_fill_pct = (
+                round(100.0 * funding_rate_non_null / rows_today, 2)
+                if rows_today
+                else 0.0
             )
-            rows_today = int(q_total.scalar() or 0)
-
-            q_fill = await session.execute(
-                text(
-                    """
-                    SELECT
-                      COUNT(*) FILTER (WHERE funding_rate IS NOT NULL) AS fr,
-                      COUNT(*) FILTER (WHERE open_interest IS NOT NULL) AS oi
-                    FROM swap_ohlcv_p
-                    WHERE timestamp >= :t
-                    """
-                ),
-                {"t": start_timestamp_ms},
+            open_interest_fill_pct = (
+                round(100.0 * open_interest_non_null / rows_today, 2)
+                if rows_today
+                else 0.0
             )
-            fr, oi = q_fill.fetchone()
 
-        funding_rate_non_null = int(fr or 0)
-        open_interest_non_null = int(oi or 0)
-        funding_rate_fill_pct = (
-            round(100.0 * funding_rate_non_null / rows_today, 2) if rows_today else 0.0
-        )
-        open_interest_fill_pct = (
-            round(100.0 * open_interest_non_null / rows_today, 2) if rows_today else 0.0
-        )
+            return {
+                "rows_today": rows_today,
+                "funding_rate_non_null": funding_rate_non_null,
+                "open_interest_non_null": open_interest_non_null,
+                "funding_rate_fill_pct": funding_rate_fill_pct,
+                "open_interest_fill_pct": open_interest_fill_pct,
+            }
 
-        return {
-            "rows_today": rows_today,
-            "funding_rate_non_null": funding_rate_non_null,
-            "open_interest_non_null": open_interest_non_null,
-            "funding_rate_fill_pct": funding_rate_fill_pct,
-            "open_interest_fill_pct": open_interest_fill_pct,
-        }
-
-    async def upsert_swap_candles(
-        self,
-        *,
-        symbol: str,
-        timeframe: str,
-        candles: list[dict[str, Any]],
-        additional_data: dict[str, Any],
-    ) -> int:
-        return await self.upsert_candles(
-            symbol=symbol,
-            timeframe=timeframe,
-            candles=candles,
-            additional_data=additional_data,
-        )
-
-    async def fetch_swap_usdt_symbols(self) -> list[str]:
-        return await self.list_swap_symbols()
-
-    async def fetch_latest_timestamp_ms(
-        self,
-        *,
-        symbol: str,
-        timeframe: str,
-    ) -> int | None:
-        return await self.get_latest_timestamp(symbol=symbol, timeframe=timeframe)
-
-    async def fetch_instrument_counts(self) -> dict[str, int]:
-        return await self.get_instrument_counts()
-
-    async def fetch_today_fill_stats(
-        self,
-        start_timestamp_ms: int,
-    ) -> dict[str, int | float]:
-        return await self.get_fill_stats(start_timestamp_ms)
+        return await self._run_with_db_retry(_operation)

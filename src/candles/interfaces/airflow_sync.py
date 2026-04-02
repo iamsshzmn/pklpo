@@ -12,8 +12,10 @@ from src.candles.application.sync_use_cases import (
     run_smoke_validation as run_smoke_validation_use_case,
     should_refresh_instruments,
 )
-from src.candles.interfaces.swap_sync import sync_swap_candles
-from src.candles.sync_runtime import run_catalog_refresh_via_application
+from src.candles.interfaces.swap_sync import (
+    run_catalog_refresh_via_application,
+    sync_swap_candles,
+)
 from src.utils.session_utils import get_db_session
 
 if TYPE_CHECKING:

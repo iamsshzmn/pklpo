@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from src.candles.ports import MarketDataAdapterPort
 from src.logging import get_logger
+
+if TYPE_CHECKING:
+    from src.candles.ports import MarketDataPort
 
 logger = get_logger("candles.extra_data")
 
@@ -12,8 +14,8 @@ logger = get_logger("candles.extra_data")
 class ExtraDataFetcher:
     """Fetch optional funding/open-interest data with local cache and stats."""
 
-    def __init__(self, adapter: MarketDataAdapterPort) -> None:
-        self._adapter = adapter
+    def __init__(self, market_data: MarketDataPort) -> None:
+        self._market_data = market_data
         self._funding_cache: dict[tuple[str, str], dict[str, Any]] = {}
         self._oi_cache: dict[tuple[str, str], dict[str, Any]] = {}
         self._stats: dict[str, dict[str, float]] = {
@@ -30,7 +32,7 @@ class ExtraDataFetcher:
 
     async def fetch_funding_rate(self, symbol: str) -> dict[str, Any] | None:
         try:
-            fr_map = await self._adapter.get_funding_rates([symbol])
+            fr_map = await self._market_data.fetch_funding_rates([symbol])
             fr = fr_map.get(symbol)
             if not fr:
                 return None
@@ -52,7 +54,7 @@ class ExtraDataFetcher:
 
     async def fetch_open_interest(self, symbol: str) -> dict[str, Any] | None:
         try:
-            oi_map = await self._adapter.get_open_interest([symbol])
+            oi_map = await self._market_data.fetch_open_interest([symbol])
             oi = oi_map.get(symbol)
             if not oi:
                 return None

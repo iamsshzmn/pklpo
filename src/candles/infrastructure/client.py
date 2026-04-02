@@ -1,4 +1,3 @@
-import json
 import os
 from typing import Any
 
@@ -70,29 +69,40 @@ class OKXClient:
         order_count: int = 1,
     ) -> dict[str, Any]:
         if self._session is None:
-            # Автоматическая инициализация сессии, если не используется контекстный менеджер
+            # Auto-initialize session if not using context manager
             self._session = aiohttp.ClientSession(
                 base_url=self._base_url,
                 timeout=aiohttp.ClientTimeout(total=self._timeout),
                 raise_for_status=True,
                 headers={"Accept": "application/json"},
             )
+        # Acquire all applicable rate limiters BEFORE the request
+        limiters: list[AsyncLimiter] = []
         if is_public:
-            async with self._public_limiter:
-                pass
+            limiters.append(self._public_limiter)
         if symbol:
-            async with self.get_instrument_limiter(symbol):
-                pass
+            limiters.append(self.get_instrument_limiter(symbol))
         if is_order:
-            for _ in range(order_count):
-                async with self._account_limiter:
-                    pass
+            limiters.extend([self._account_limiter] * order_count)
+
+        return await self._execute_with_limiters(method, path, params, limiters)
+
+    async def _execute_with_limiters(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None,
+        limiters: list[AsyncLimiter],
+    ) -> dict[str, Any]:
+        """Execute request inside all rate limiter contexts."""
+        if limiters:
+            async with limiters[0]:
+                return await self._execute_with_limiters(
+                    method, path, params, limiters[1:]
+                )
+
+        assert self._session is not None  # noqa: S101
         async with self._session.request(method, path, params=params) as resp:
             payload = await resp.json()
-            try:
-                with open("debug_okx_response.json", "w", encoding="utf-8") as f:
-                    json.dump(payload, f, ensure_ascii=False, indent=2)
-            except Exception as e:
-                logger.error(f"Error saving debug response: {e}")
-
+            logger.debug("OKX response %s %s: code=%s", method, path, payload.get("code"))
             return payload

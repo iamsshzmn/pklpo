@@ -5,7 +5,7 @@ Standalone helper for loading instruments from OKX API into the database.
 
 import asyncio
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.candles.infrastructure.adapters import build_market_data_adapter
@@ -139,6 +139,27 @@ async def save_instruments_to_db(instruments: list, inst_type: str) -> tuple[int
         return new_count, updated_count
 
 
+async def mark_missing_instruments_not_live(instruments: list, inst_type: str) -> int:
+    """Mark SWAP instruments missing from the latest OKX snapshot as non-live."""
+    current_symbols = {item.get("instId") for item in instruments if item.get("instId")}
+    async with get_db_session() as session:
+        stmt = (
+            update(Instrument)
+            .where(
+                Instrument.inst_type == inst_type,
+                Instrument.settle_ccy == "USDT",
+                Instrument.state == "live",
+            )
+            .values(state="expired")
+        )
+        if current_symbols:
+            stmt = stmt.where(~Instrument.inst_id.in_(current_symbols))
+
+        result = await session.execute(stmt)
+        await session.commit()
+        return int(result.rowcount or 0)
+
+
 async def load_instruments() -> None:
     """Load instruments from OKX API into DB."""
     try:
@@ -161,14 +182,18 @@ async def load_instruments() -> None:
                         new_count, updated_count = await save_instruments_to_db(
                             instruments, inst_type
                         )
+                        deactivated_count = await mark_missing_instruments_not_live(
+                            instruments, inst_type
+                        )
                         total_new += new_count
                         total_updated += updated_count
 
                         logger.info(
-                            "%s: inserted=%s, updated=%s",
+                            "%s: inserted=%s, updated=%s, deactivated=%s",
                             inst_type,
                             new_count,
                             updated_count,
+                            deactivated_count,
                         )
                     else:
                         logger.warning("No %s instruments were returned", inst_type)

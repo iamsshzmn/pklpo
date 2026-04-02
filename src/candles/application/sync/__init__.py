@@ -1,4 +1,4 @@
-from .dto import ExecutionMode, SyncJobRequest, SyncJobResult
+from .dto import ExecutionMode, SyncJobRequest, SyncJobResult, SyncRun, SyncRunStatus
 from .policy import RetryPolicy, SyncPolicyConfig
 from .ports import (
     CandleStorePort,
@@ -25,6 +25,8 @@ __all__ = [
     "SyncJobRequest",
     "SyncJobResult",
     "SyncPolicyConfig",
+    "SyncRun",
+    "SyncRunStatus",
     "SyncStatePort",
     "TelemetryPort",
     "refresh_instrument_catalog",

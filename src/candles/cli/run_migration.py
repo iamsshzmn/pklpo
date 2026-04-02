@@ -1,8 +1,8 @@
-"""CLI для запуска SQL миграций.
+"""CLI for running SQL migrations (candles).
 
-Использование:
-    python -m src.market_meta.cli.run_migration 006 --dry-run
-    python -m src.market_meta.cli.run_migration 006 --apply
+Usage:
+    python -m src.candles.cli.run_migration 006 --dry-run
+    python -m src.candles.cli.run_migration 006 --apply
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from ..infrastructure.config import get_database_url
 
 
 def main() -> int:
-    """Запуск миграции."""
+    """Run migration."""
     parser = argparse.ArgumentParser(description="Run SQL migration")
     parser.add_argument("migration", help="Migration number (e.g. 006)")
     parser.add_argument("--apply", action="store_true", help="Apply migration")
