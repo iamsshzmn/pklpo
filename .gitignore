@@ -5,8 +5,8 @@ __pycache__/
 *.so
 .Python
 build/
-develop-eggs/
 dist/
+develop-eggs/
 downloads/
 eggs/
 .eggs/
@@ -27,8 +27,9 @@ venv/
 ENV/
 env/
 .env
+.env.*
 
-# Testing
+# Testing & type checking
 .pytest_cache/
 .coverage
 .coverage.*
@@ -37,145 +38,106 @@ coverage.xml
 *.cover
 .hypothesis/
 .tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
 
-# IDE
+# Linting
+.ruff_cache/
+
+# IDE & editors
 .vscode/
 .idea/
+.cursor/
+.cursorrules
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
+._*
+Thumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
 
 # Logs
 *.log
-logs/
 *.log.*
+logs/
 
 # Database
 *.db
 *.sqlite3
 
-# Codex
-.codex-pre-commit-cache
-
-# Jupyter Notebook
+# Jupyter
 .ipynb_checkpoints
+notebooks/
 
 # pyenv
 .python-version
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# Archives (не удалять, но не коммитить)
-features_archive/
-tests_archive/
-
-# Temporary files
-*.tmp
-*.temp
-TEMP_*
-
-# Application specific
-app.log
-*.pid
-
 # Docker
 docker-compose.override.yml
-.dockerignore
-
-# Documentation build
-history/
-site/
-
-# macOS
-.AppleDouble
-.LSOverride
-
-# Thumbnails
-._*
-
-# Files that might appear in the root of a volume
-.DocumentRevisions-V100
-.fseventsd
-.Spotlight-V100
-.TemporaryItems
-.Trashes
-.VolumeIcon.icns
-.com.apple.timemachine.donotpresent
-
-# Windows
-Thumbs.db
-Thumbs.db:encryptable
-ehthumbs.db
-ehthumbs_vista.db
-[Dd]esktop.ini
-$RECYCLE.BIN/
 
 # Airflow
 airflow.cfg
 airflow.db
 airflow_login.py
 ops/airflow/logs/
-ops/airflow/dags/__pycache__/
 
-# Cursor / IDE
-.cursorrules
-.cursor/
+# AI tools
+.claude/
+.codex/
+.codex-pre-commit-cache
+agent_workspace/
 
-# Ruff cache
-.ruff_cache/
-
-# Local configs / backups
-.env.backup
+# Archives & backups
+features_archive/
+tests_archive/
+backups/
 *.backup
 *_backup.json
-.env.local
+*.bundle
 
-# Data directories
-data/
+# Temp files
+*.tmp
+*.temp
+TEMP_*
 tmp/
-backups/
 
 # Build artifacts
 *.tar
 *.img
+*.pid
 
-# Claude AI
-.claude/
-.codex/
+# Data
+data/
 
-# Working docs / plans (не коммитить)
+# Working docs (not for repo)
 plan/
 reports/
+history/
+site/
+input_docs/
 
-# Debug / temp files
+# Debug & scratch
 debug_*.json
-cursor_*.session.sql
 *.session.sql
-scripts/migration_report*.json
 
-# Old/deprecated code in src/
-**/*(old)/
-**/*(old)*/
+# Old/deprecated code
 src/main_with_options*.py
 src/main_v2.py
 src/_backups
 
-# Reports in src/ (не коммитить)
+# Reports in src/
 src/*/reports/
 src/features/README/
 src/**/*_REPORT.md
 src/**/*_SUMMARY.md
 
-# Tests (не коммитить)
-tests/
-!tests/
+# Tests — only allow tests/db/test_indicators_partition_maintenance*.py
 tests/*
 !tests/db/
 tests/db/*
@@ -185,14 +147,7 @@ src/**/tests/
 src/**/test_*.py
 /benchmarks
 
-# Git bundles
-backup-*.bundle
-*.bundle
-
-# Input / notebook scratch dirs
-input_docs/
-notebooks/
-
-# Local scratch scripts (do not commit unless part of CI)
-scripts/run_features_*.py
-scripts/run_*benchmark*.py
+# Scripts — only track .py and .sql, exclude scratch
+scripts/*.md
+scripts/*.txt
+scripts/migration_report*.json
