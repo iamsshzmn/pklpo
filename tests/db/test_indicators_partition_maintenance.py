@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import pytest
 
 from src.db.indicators_partition.application import (
+    WeeklyPartitionPolicy,
     indicators_partition_maintenance as maintenance,
 )
 from src.db.indicators_partition.ports import (
@@ -66,8 +67,7 @@ def test_iter_month_partition_specs_uses_exact_calendar_months() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ensure_partition_window_creates_only_missing_partitions(
-) -> None:
+async def test_ensure_partition_window_creates_only_missing_partitions() -> None:
     specs = maintenance.iter_month_partition_specs(
         datetime(2026, 3, 7, tzinfo=UTC),
         months_back=0,
@@ -98,8 +98,7 @@ async def test_ensure_partition_window_creates_only_missing_partitions(
 
 
 @pytest.mark.asyncio
-async def test_get_partition_coverage_counts_consecutive_future_months(
-) -> None:
+async def test_get_partition_coverage_counts_consecutive_future_months() -> None:
     specs = maintenance.iter_month_partition_specs(
         datetime(2026, 3, 7, tzinfo=UTC),
         months_back=0,
@@ -147,3 +146,54 @@ async def test_preview_partition_window_reports_missing_without_creating() -> No
     assert result.existing_partitions == [specs[1].name]
     assert result.missing_before_run == [specs[0].name, specs[2].name]
     assert port.created == []
+
+
+def test_weekly_partition_policy_uses_exact_calendar_weeks() -> None:
+    policy = WeeklyPartitionPolicy()
+
+    specs = policy.build_window(
+        datetime(2026, 3, 18, 12, 0, tzinfo=UTC),
+        periods_back=1,
+        periods_ahead=1,
+    )
+
+    assert [spec.start.date().isoformat() for spec in specs] == [
+        "2026-03-09",
+        "2026-03-16",
+        "2026-03-23",
+    ]
+    assert [spec.end.date().isoformat() for spec in specs] == [
+        "2026-03-16",
+        "2026-03-23",
+        "2026-03-30",
+    ]
+    assert [spec.name for spec in specs] == [
+        "indicators_p_2026_w11",
+        "indicators_p_2026_w12",
+        "indicators_p_2026_w13",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_use_case_accepts_alternative_partition_policy() -> None:
+    policy = WeeklyPartitionPolicy()
+    specs = policy.build_window(
+        datetime(2026, 3, 18, tzinfo=UTC),
+        periods_back=0,
+        periods_ahead=1,
+    )
+    port = FakeMaintenancePort(
+        present={specs[0].name},
+        created=[],
+        calls=[],
+    )
+    use_case = maintenance.EnsureIndicatorsPartitionWindow(port, policy=policy)
+
+    result = await use_case.execute(
+        months_back=0,
+        months_ahead=1,
+        reference_dt=datetime(2026, 3, 18, tzinfo=UTC),
+    )
+
+    assert result.existing_partitions == [specs[0].name]
+    assert result.created_partitions == [specs[1].name]
