@@ -14,7 +14,11 @@ from src.logging import get_logger
 logger = get_logger(__name__)
 
 
-def normalize_and_finalize_result(result_df: pd.DataFrame) -> pd.DataFrame:
+def normalize_and_finalize_result(
+    result_df: pd.DataFrame,
+    *,
+    debug: bool | None = None,
+) -> pd.DataFrame:
     """
     Normalize types and finalize result DataFrame.
 
@@ -24,20 +28,20 @@ def normalize_and_finalize_result(result_df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         Normalized and finalized DataFrame
     """
-    # Финальное приведение типов к float64 для всех числовых колонок (кроме служебных)
+    # Final type casting to float64 for all numeric columns (except service columns)
     result_df = _normalize_numeric_types(result_df)
 
-    # Унификация имён колонок (единый словарь маппинга)
+    # Unify column names (single rename mapping)
     result_df = _normalize_column_names(result_df)
 
     # Debug: check final state of result_df
-    _debug_final_state(result_df)
+    _debug_final_state(result_df, debug=debug)
 
     # Group-level quick debug of representative features
-    _log_feature_probes(result_df)
+    _log_feature_probes(result_df, debug=debug)
 
-    # Итоговая сводка по заполненности (только при verbose)
-    _log_feature_summary(result_df)
+    # Final fill-rate summary (verbose only)
+    _log_feature_summary(result_df, debug=debug)
 
     return result_df
 
@@ -69,7 +73,7 @@ def _normalize_numeric_types(result_df: pd.DataFrame) -> pd.DataFrame:
         logger.info(
             f"Converting {len(numeric_cols)} columns to float64 to avoid FutureWarning"
         )
-        # Векторизация: конвертируем все колонки одновременно
+        # Vectorized: convert all columns at once
         result_df[numeric_cols] = (
             result_df[numeric_cols]
             .apply(pd.to_numeric, errors="coerce", axis=0)
@@ -88,7 +92,7 @@ def _normalize_column_names(result_df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with normalized column names
     """
-    # Унификация имён колонок (единый словарь маппинга)
+    # Unify column names (single rename mapping)
     column_rename_map = {
         # Bollinger Bands
         "bbands_upper": "bb_upper",
@@ -96,30 +100,30 @@ def _normalize_column_names(result_df: pd.DataFrame) -> pd.DataFrame:
         "bbands_lower": "bb_lower",
         "bbands_width": "bb_width",
         "bbands_percent": "bb_percent",
-        # Overlap - маппинг алиасов на канонические имена
+        # Overlap - map aliases to canonical names
         "midpoint": "hl2",
         "midprice": "hl2",
-        # Ichimoku - маппинг для БД (ichimoku_chikou используется как ics_26 в БД)
+        # Ichimoku - DB mapping (ichimoku_chikou is stored as ics_26 in DB)
         "ichimoku_chikou": "ics_26",
-        # Vortex (уже обрабатывается в fallback, но на всякий случай)
+        # Vortex (already handled in fallback, but just in case)
         "vtxp": "vortex_pos",
         "vtxm": "vortex_neg",
     }
 
-    # Применяем переименование только для существующих колонок
-    # Для overlap: если hl2 уже есть, удаляем midpoint/midprice вместо переименования
+    # Apply rename only for existing columns
+    # For overlap: if hl2 already exists, drop midpoint/midprice instead of renaming
     rename_dict = {}
     cols_to_drop = []
     for old, new in column_rename_map.items():
         if old in result_df.columns:
             if new in result_df.columns:
-                # Целевая колонка уже существует - удаляем алиас
+                # Target column already exists - drop the alias
                 cols_to_drop.append(old)
                 logger.info(
                     f"Dropping duplicate alias {old} (target {new} already exists)"
                 )
             else:
-                # Целевой колонки нет - переименовываем
+                # Target column missing - rename
                 rename_dict[old] = new
 
     if cols_to_drop:
@@ -133,14 +137,18 @@ def _normalize_column_names(result_df: pd.DataFrame) -> pd.DataFrame:
             f"Renaming {len(rename_dict)} columns for DB compatibility: {rename_dict}"
         )
         result_df = result_df.rename(columns=rename_dict)
-        # Проверяем, что переименование сработало
+        # Verify the rename was applied
         if "ichimoku_chikou" in rename_dict and "ics_26" in result_df.columns:
             logger.info("✅ ichimoku_chikou → ics_26 mapping applied successfully")
 
     return result_df
 
 
-def _debug_final_state(result_df: pd.DataFrame) -> None:
+def _debug_final_state(
+    result_df: pd.DataFrame,
+    *,
+    debug: bool | None = None,
+) -> None:
     """
     Debug log final state of result DataFrame.
 
@@ -148,6 +156,9 @@ def _debug_final_state(result_df: pd.DataFrame) -> None:
         result_df: DataFrame to debug
     """
     # Debug: check final state of result_df
+    if not _is_verbose(debug):
+        return
+
     if "hlc3" in result_df.columns:
         hlc3_final = result_df["hlc3"]
         logger.debug(
@@ -160,7 +171,11 @@ def _debug_final_state(result_df: pd.DataFrame) -> None:
         logger.debug(f"hlc3 NOT in result_df.columns columns={list(result_df.columns)}")
 
 
-def _log_feature_probes(result_df: pd.DataFrame) -> None:
+def _log_feature_probes(
+    result_df: pd.DataFrame,
+    *,
+    debug: bool | None = None,
+) -> None:
     """
     Log feature probes for debugging.
 
@@ -168,7 +183,7 @@ def _log_feature_probes(result_df: pd.DataFrame) -> None:
         result_df: DataFrame to probe
     """
     # Group-level quick debug of representative features
-    if os.getenv("FEATURES_VERBOSE", "false").lower() == "true":
+    if _is_verbose(debug):
         try:
             probes = [
                 c
@@ -190,15 +205,19 @@ def _log_feature_probes(result_df: pd.DataFrame) -> None:
             logger.debug(f"Failed to log feature probes: {e}")
 
 
-def _log_feature_summary(result_df: pd.DataFrame) -> None:
+def _log_feature_summary(
+    result_df: pd.DataFrame,
+    *,
+    debug: bool | None = None,
+) -> None:
     """
     Log feature summary statistics.
 
     Args:
         result_df: DataFrame to summarize
     """
-    # Итоговая сводка по заполненности (только при verbose)
-    if os.getenv("FEATURES_VERBOSE", "false").lower() == "true":
+    # Final fill-rate summary (verbose only)
+    if _is_verbose(debug):
         try:
             # Get feature columns (exclude OHLCV and timestamp columns)
             exclude_cols = [
@@ -230,3 +249,9 @@ def _log_feature_summary(result_df: pd.DataFrame) -> None:
             )
         except Exception as e:
             logger.debug(f"Failed to log feature summary: {e}")
+
+
+def _is_verbose(debug: bool | None = None) -> bool:
+    if debug is not None:
+        return debug
+    return os.getenv("FEATURES_VERBOSE", "false").lower() == "true"

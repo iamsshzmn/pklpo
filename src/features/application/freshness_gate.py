@@ -2,27 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.features.domain.timeframe import timeframe_to_seconds
 from src.features.storage_contract import IndicatorStorageContract
 from src.logging import get_logger
 
 logger = get_logger("features.application.freshness_gate")
 
-_TIMEFRAME_TO_SECONDS = {
-    "1m": 60,
-    "5m": 300,
-    "15m": 900,
-    "30m": 1800,
-    "1H": 3600,
-    "4H": 14400,
-    "12H": 43200,
-    "1D": 86400,
-    "1W": 604800,
-    "1M": 2592000,
-}
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @dataclass(slots=True)
@@ -32,7 +23,7 @@ class FreshnessGateConfig:
 
 
 def _timeframe_to_seconds(timeframe: str) -> int:
-    return _TIMEFRAME_TO_SECONDS.get(timeframe, 60)
+    return timeframe_to_seconds(timeframe)
 
 
 def _expected_closed_bar_ts_ms(timeframe: str, now_utc: datetime) -> int:

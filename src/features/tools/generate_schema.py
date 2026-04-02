@@ -126,12 +126,7 @@ class IndicatorFieldExtractor:
         Returns:
             True if nullable
         """
-        # Primary key fields are not nullable
-        if field_name in ["symbol", "timeframe", "timestamp"]:
-            return False
-
-        # All indicator values can be null (especially during warmup)
-        return True
+        return field_name not in ["symbol", "timeframe", "timestamp"]
 
     def extract_all_fields(self) -> dict[str, dict[str, Any]]:
         """

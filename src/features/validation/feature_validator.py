@@ -283,18 +283,21 @@ def validate_calculation_params(
                 )
 
             # Check for positive values where appropriate
-            if param_name in [
-                "period",
-                "fast_period",
-                "slow_period",
-                "signal_period",
-                "k_period",
-                "d_period",
-            ]:
-                if params[param_name] <= 0:
-                    raise FeatureValidationError(
-                        f"Parameter {param_name} must be positive for feature {feature_name}"
-                    )
+            if (
+                param_name
+                in [
+                    "period",
+                    "fast_period",
+                    "slow_period",
+                    "signal_period",
+                    "k_period",
+                    "d_period",
+                ]
+                and params[param_name] <= 0
+            ):
+                raise FeatureValidationError(
+                    f"Parameter {param_name} must be positive for feature {feature_name}"
+                )
 
     logger.debug(f"Parameter validation passed for feature {feature_name}")
 

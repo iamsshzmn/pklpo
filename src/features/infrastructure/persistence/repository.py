@@ -12,20 +12,44 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from sqlalchemy import text
 
+from ...ports.persistence import RepositoryStorageProfile
 from ...storage_contract import IndicatorStorageContract
 from .inserter import insert_indicators
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from ...ports import IndicatorRepository
+    from ...ports import IndicatorRepository, PartitionManager
 
 
 class SqlAlchemyIndicatorRepository:
     """IndicatorRepository adapter backed by AsyncSession + insert_indicators()."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        partition_manager_factory: Callable[[AsyncSession], PartitionManager] | None = None,
+        storage_backend: str = "postgresql",
+        storage_targets: tuple[str, ...] | None = None,
+    ) -> None:
         self._session = session
+        self._partition_manager_factory = partition_manager_factory
+        self._storage_profile = RepositoryStorageProfile(
+            backend=storage_backend,
+            targets=(
+                storage_targets
+                if storage_targets is not None
+                else (IndicatorStorageContract.table_name,)
+            ),
+            table_name=IndicatorStorageContract.table_name,
+        )
+
+    def describe_storage(self) -> RepositoryStorageProfile:
+        """Describe the current backend and its storage targets."""
+        return self._storage_profile
 
     async def save_batch(
         self,
@@ -45,11 +69,16 @@ class SqlAlchemyIndicatorRepository:
         symbol: str,
         timeframe: str,
     ) -> int:
+        partition_manager = None
+        if self._partition_manager_factory is not None:
+            partition_manager = self._partition_manager_factory(self._session)
+
         return await insert_indicators(
             session=self._session,
             ind_df=df,
             symbol=symbol,
             timeframe=timeframe,
+            partition_manager=partition_manager,
         )
 
     async def validate_connection(self) -> dict[str, object]:
@@ -154,7 +183,18 @@ class SqlAlchemyIndicatorRepository:
             return {"error": str(exc), "integrity_ok": False}
 
 
-def create_indicator_repository(session: AsyncSession) -> IndicatorRepository:
+def create_indicator_repository(
+    session: AsyncSession,
+    *,
+    partition_manager_factory: Callable[[AsyncSession], PartitionManager] | None = None,
+    storage_backend: str = "postgresql",
+    storage_targets: tuple[str, ...] | None = None,
+) -> IndicatorRepository:
     """Create the default persistence adapter for features save use cases."""
 
-    return SqlAlchemyIndicatorRepository(session)
+    return SqlAlchemyIndicatorRepository(
+        session,
+        partition_manager_factory=partition_manager_factory,
+        storage_backend=storage_backend,
+        storage_targets=storage_targets,
+    )

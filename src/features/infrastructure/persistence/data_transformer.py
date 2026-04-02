@@ -172,11 +172,14 @@ def validate_service_fields(
     """
     for i, record in enumerate(records):
         for field in service_fields:
-            if field in record and record[field] is not None:
-                if isinstance(record[field], str):
-                    raise TypeError(
-                        f"Row {i}: Service field '{field}' is str, expected datetime or None"
-                    )
+            if (
+                field in record
+                and record[field] is not None
+                and isinstance(record[field], str)
+            ):
+                raise TypeError(
+                    f"Row {i}: Service field '{field}' is str, expected datetime or None"
+                )
 
 
 def get_numeric_columns_from_table(indicators_table) -> set[str]:

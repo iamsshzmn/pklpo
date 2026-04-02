@@ -63,7 +63,7 @@ def clean_ohlcv_data(
     except Exception as e:
         symbol_name = getattr(df, "name", "unknown")
         timeframe_name = getattr(df, "timeframe", "unknown")
-        logging.error(
+        logger.error(
             f"Error cleaning OHLCV data for {symbol_name} {timeframe_name}: {e}"
         )
         return pd.Series(), pd.Series(), pd.Series(), pd.Series(), False
@@ -100,7 +100,7 @@ def clean_close_data(df: pd.DataFrame, min_length: int = 14) -> tuple[pd.Series,
     except Exception as e:
         symbol_name = getattr(df, "name", "unknown")
         timeframe_name = getattr(df, "timeframe", "unknown")
-        logging.error(
+        logger.error(
             f"Error cleaning close data for {symbol_name} {timeframe_name}: {e}"
         )
         return pd.Series(), False

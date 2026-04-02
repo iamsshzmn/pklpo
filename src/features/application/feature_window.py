@@ -1,23 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pandas as pd
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..ports import FeatureStorageGateway
+from ..domain.timeframe import timeframe_to_seconds as _domain_timeframe_to_seconds
 
-_TIMEFRAME_TO_SECONDS = {
-    "1m": 60,
-    "5m": 300,
-    "15m": 900,
-    "30m": 1800,
-    "1H": 3600,
-    "4H": 14400,
-    "12H": 43200,
-    "1D": 86400,
-    "1W": 604800,
-    "1M": 2592000,
-}
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from ..ports import FeatureStorageGateway
 
 _TIMEFRAME_LIMITS = {
     "1m": 15000,
@@ -49,7 +42,7 @@ OHLCV_TIMESTAMP_COLUMN = "timestamp"
 
 
 def timeframe_to_seconds(timeframe: str) -> int:
-    return _TIMEFRAME_TO_SECONDS.get(timeframe, 60)
+    return _domain_timeframe_to_seconds(timeframe)
 
 
 def limit_for_timeframe(timeframe: str) -> int:

@@ -15,12 +15,6 @@ from datetime import UTC, datetime
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.indicators_partition.application.partition_policy import (
-    MonthlyPartitionPolicy,
-)
-from src.db.indicators_partition.infrastructure import (
-    PostgresIndicatorsPartitionMaintenanceAdapter,
-)
 from src.logging import (
     LogAggregator,
     LogCategory,
@@ -32,6 +26,8 @@ from src.logging import (
 from ...domain.indicator_schema_registry import IndicatorSchemaRegistry
 from ...domain.strategy import get_max_lookback_for_strategies
 from ...observability.prometheus import get_metrics as get_prom_metrics
+from ...ports import PartitionManager
+from ..partition_adapter import create_partition_manager
 from .batch_builder import (
     build_batch_data,
     filter_batch_by_schema,
@@ -76,6 +72,8 @@ def _add_month(dt: datetime) -> datetime:
 async def _ensure_indicator_monthly_partitions(
     session: AsyncSession,
     ind_df: pd.DataFrame,
+    *,
+    partition_manager: PartitionManager | None = None,
 ) -> None:
     if "timestamp" not in ind_df.columns:
         return
@@ -86,15 +84,13 @@ async def _ensure_indicator_monthly_partitions(
 
     start_dt = _month_start(datetime.fromtimestamp(int(timestamps.min()) / 1000, tz=UTC))
     end_dt = _month_start(datetime.fromtimestamp(int(timestamps.max()) / 1000, tz=UTC))
-    policy = MonthlyPartitionPolicy()
-    adapter = PostgresIndicatorsPartitionMaintenanceAdapter(session)
+    manager = partition_manager or create_partition_manager(session)
 
-    await adapter.ensure_parent_exists()
-    await adapter.assert_parent_upsert_constraint()
+    await manager.assert_parent_upsert_constraint()
 
     current = start_dt
     while current <= end_dt:
-        await adapter.ensure_partition(policy.build_partition_spec(current))
+        await manager.ensure_partition(manager.build_partition_spec(current))
         current = _add_month(current)
 
 
@@ -200,6 +196,7 @@ async def insert_indicators(
     *,
     trim_warmup: bool = True,
     seen_timestamps: set[int] | None = None,
+    partition_manager: PartitionManager | None = None,
 ) -> int:
     """
     Batch UPSERT indicators to database.
@@ -265,7 +262,11 @@ async def insert_indicators(
 
         # 4. Prepare DataFrame
         ind_df = _prepare_dataframe(ind_df, symbol, timeframe)
-        await _ensure_indicator_monthly_partitions(session, ind_df)
+        await _ensure_indicator_monthly_partitions(
+            session,
+            ind_df,
+            partition_manager=partition_manager,
+        )
 
         # 5. Load schema (cached)
         schema_info = await get_or_load_schema(

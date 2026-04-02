@@ -21,8 +21,11 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Generator
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 logger = logging.getLogger("features.observability.prometheus")
 

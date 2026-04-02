@@ -11,8 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 if TYPE_CHECKING:
     import pandas as pd
 
-from src.candles.application.quality_pipeline import run_quality_pipeline
-from src.candles.infrastructure.sqlalchemy_pool_adapter import SQLAlchemyPoolAdapter
+    from src.features.ports import (
+        FeatureSaveDependenciesFactory,
+        FeatureStorageGateway,
+        QualityPipelineRunner,
+    )
+
 from src.features.application.feature_window import (
     check_has_new_ohlcv,
     get_last_calculated_ts,
@@ -26,7 +30,6 @@ from src.features.application.freshness_gate import (
 from src.features.application.save import save_batch
 from src.features.bootstrap import create_feature_application_bootstrap
 from src.features.core import compute_features
-from src.features.ports import FeatureSaveDependenciesFactory, FeatureStorageGateway
 from src.features.presets.features_calc_short_v1 import FEATURES_CALC_SHORT_SPECS
 from src.features.storage_contract import IndicatorStorageContract
 from src.logging import get_logger
@@ -326,12 +329,19 @@ async def run_features_calc_short_validate(
     quality_enabled: bool,
     quality_send_alerts: bool,
     quality_alert_cooldown: int,
+    quality_pipeline_runner: QualityPipelineRunner | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "lag_seconds": {},
         "quality_postcheck_enabled": quality_enabled,
     }
     engine = create_async_engine(database_url, pool_pre_ping=True)
+    bootstrap = (
+        None
+        if quality_pipeline_runner is not None
+        else create_feature_application_bootstrap()
+    )
+    runner = quality_pipeline_runner or bootstrap.quality_pipeline_runner
     try:
         async with AsyncSession(engine) as session:
             for tf in ["1m", "5m"]:
@@ -353,9 +363,8 @@ async def run_features_calc_short_validate(
                     result["lag_seconds"][tf] = round(lag_sec, 2)
 
         if quality_enabled:
-            pool_adapter = SQLAlchemyPoolAdapter(engine)
-            report, alert_stats = await run_quality_pipeline(
-                pool_adapter,
+            report, alert_stats = await runner(
+                engine,
                 send_alerts=quality_send_alerts,
                 alert_cooldown_minutes=quality_alert_cooldown,
             )

@@ -11,7 +11,6 @@ Phase 2.1: Added DIP compliance with optional normalizer injection.
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -50,6 +49,7 @@ def compute_features(
     normalize_window: int = 20,
     normalize_method: str = "rolling_std",
     debug: bool = False,  # New debug parameter
+    critical_indicators: list[str] | None = None,
     **kwargs: dict[str, object],
 ) -> pd.DataFrame:
     """
@@ -67,7 +67,9 @@ def compute_features(
         volatility_normalize: Whether to apply volatility normalization
         normalize_window: Window size for volatility calculation
         normalize_method: Method for volatility normalization ("rolling_std", "ewm_std")
-        debug: Enable detailed debug logging (sets FEATURES_DEBUG env var)
+        debug: Enable detailed debug logging
+        critical_indicators: Optional list of indicators that must be included
+            even if they are not present in `specs`.
         **kwargs: Additional parameters for feature calculation (symbol, timeframe, etc.)
 
     Returns:
@@ -89,10 +91,7 @@ def compute_features(
         >>> 'rsi_14' in result.columns
         True
     """
-    # Enable debug mode if requested
     if debug:
-        os.environ["FEATURES_DEBUG"] = "true"
-        os.environ["FEATURES_VERBOSE"] = "true"
         logger.setLevel(logging.DEBUG)
         logger.debug("Debug mode enabled via compute_features(debug=True)")
 
@@ -103,10 +102,11 @@ def compute_features(
         symbol=symbol,
         timeframe=timeframe,
         feature_count=len(specs) if specs else len(FEATURE_SPECS),
+        debug=debug,
     )
 
     try:
-        _debug_log_dataframe_info(df_ohlcv, "INPUT OHLCV")
+        _debug_log_dataframe_info(df_ohlcv, "INPUT OHLCV", debug=ctx.debug)
 
         # Handle backward compatibility with calc_indicators interface
         if available is not None and specs is None:
@@ -122,9 +122,13 @@ def compute_features(
 
         # Calculate features using group-based approach
         result_df = _calculate_features_internal(
-            result_df, feature_specs, ctx, **kwargs
+            result_df,
+            feature_specs,
+            ctx,
+            critical_indicators=critical_indicators,
+            **kwargs,
         )
-        _debug_log_dataframe_info(result_df, "AFTER CALCULATION")
+        _debug_log_dataframe_info(result_df, "AFTER CALCULATION", debug=ctx.debug)
 
         # Apply volatility normalization if requested
         if volatility_normalize:
@@ -182,8 +186,7 @@ def _apply_volatility_normalization(
                 f"[{ctx.run_id}] Using injected normalizer "
                 f"window={normalize_window}"
             )
-            result_df = normalizer.normalize(result_df, window=normalize_window)
-            return result_df
+            return normalizer.normalize(result_df, window=normalize_window)
 
         # Default behavior: use built-in volatility_normalize_features
         from ..utils import volatility_normalize_features
@@ -218,6 +221,8 @@ def _calculate_features_internal(
     result_df: pd.DataFrame,
     feature_specs: list[FeatureSpec],
     ctx: PipelineContext,
+    *,
+    critical_indicators: list[str] | None = None,
     **kwargs: dict[str, object],
 ) -> pd.DataFrame:
     """
@@ -244,7 +249,7 @@ def _calculate_features_internal(
     )
 
     # Debug: check OHLCV data
-    if os.getenv("FEATURES_VERBOSE", "false").lower() == "true":
+    if ctx.debug:
         for col in ("open", "high", "low", "close", "volume"):
             if col in result_df.columns:
                 non_null_count = result_df[col].notna().sum()
@@ -268,14 +273,8 @@ def _calculate_features_internal(
         available_names.add("ichimoku_chikou")
         logger.debug(f"[{ctx.run_id}] Added ichimoku_chikou for ics_26 calculation")
 
-    # Critical indicators from configuration (OCP compliance)
-    try:
-        from src.config import get_settings
-
-        settings = get_settings()
-        critical_indicators = settings.features.critical_indicators
-    except ImportError:
-        # Fallback if settings not available
+    # Critical indicators from explicit parameter (OCP compliance)
+    if critical_indicators is None:
         critical_indicators = ["t3_20", "rma_20", "ics_26"]
 
     for crit_ind in critical_indicators:
@@ -330,7 +329,7 @@ def _calculate_features_internal(
     result_df = merge_indicator_results(result, result_df, available_names)
 
     # Normalize and finalize result DataFrame
-    return normalize_and_finalize_result(result_df)
+    return normalize_and_finalize_result(result_df, debug=ctx.debug)
 
 
 def _ensure_macd_histogram(

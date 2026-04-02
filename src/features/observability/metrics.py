@@ -18,8 +18,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from logging import Logger
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -27,6 +26,9 @@ import pandas as pd
 from src.logging import get_features_logger
 
 from ..specs import PHASE_2_REQUIRED_FEATURES
+
+if TYPE_CHECKING:
+    from logging import Logger
 
 logger = get_features_logger("features.metrics")
 

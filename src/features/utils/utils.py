@@ -515,12 +515,15 @@ def ensure_no_lookahead(
         feature_columns = [col for col in feature_columns if col in df_features.columns]
 
     # Check for monotonic timestamps
-    if "ts" in df_features.columns and len(df_features) > 1:
-        if not df_features["ts"].is_monotonic_increasing:
-            logger.warning(
-                "Timestamps are not in ascending order - potential lookahead bias"
-            )
-            return False
+    if (
+        "ts" in df_features.columns
+        and len(df_features) > 1
+        and not df_features["ts"].is_monotonic_increasing
+    ):
+        logger.warning(
+            "Timestamps are not in ascending order - potential lookahead bias"
+        )
+        return False
 
     # Check for features that might have lookahead issues
     lookahead_risky_patterns = [

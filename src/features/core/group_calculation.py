@@ -37,16 +37,14 @@ if TYPE_CHECKING:
 
 # Public API (backward compatible)
 __all__ = [
-    # Legacy exports (backward compatible)
     "CALCULATION_ORDER",
     "GroupCalculationConfig",
-    "GroupCalculator",
-    "compute_features_grouped",
-    # New SRP-compliant exports
-    "GroupFeatureCalculator",
-    "GroupPersister",
-    "GroupMetricsRecorder",
     "GroupCalculationOrchestrator",
+    "GroupCalculator",
+    "GroupFeatureCalculator",
+    "GroupMetricsRecorder",
+    "GroupPersister",
+    "compute_features_grouped",
 ]
 
 # Standard calculation order for all indicator groups

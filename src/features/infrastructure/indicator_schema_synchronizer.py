@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.logging import get_logger
 
-from ..domain.indicator_schema_registry import IndicatorSchemaRegistry
 from ..storage_contract import IndicatorStorageContract
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from ..domain.indicator_schema_registry import IndicatorSchemaRegistry
 
 logger = get_logger(__name__)
 

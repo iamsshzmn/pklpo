@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TYPE_CHECKING, Any
 
 from ..domain.indicator_schema_registry import IndicatorSchemaRegistry
 from ..infrastructure.indicator_schema_synchronizer import IndicatorSchemaSynchronizer
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class SchemaManager:

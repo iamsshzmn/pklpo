@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, ExitStack
-
-import pandas as pd
+from contextlib import ExitStack
+from typing import TYPE_CHECKING
 
 from src.logging import LogAggregator, LogCategory, set_log_context
 
 from ..utils.memlog import memory_monitor
+
+if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
+
+    import pandas as pd
 
 
 class SaveObservationSession:

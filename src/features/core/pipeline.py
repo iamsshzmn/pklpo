@@ -65,6 +65,7 @@ class BaseContext:
     timeframe: str = "unknown"
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     feature_count: int = 0
+    debug: bool = False
 
 
 @dataclass

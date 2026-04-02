@@ -13,12 +13,19 @@ from src.logging import get_features_logger
 logger = get_features_logger(__name__)
 
 
-def _is_debug_mode() -> bool:
-    """Check if debug mode is enabled via environment variable."""
+def _is_debug_mode(debug: bool | None = None) -> bool:
+    """Check if debug mode is enabled explicitly or via environment variable."""
+    if debug is not None:
+        return debug
     return os.getenv("FEATURES_DEBUG", "false").lower() == "true"
 
 
-def _debug_log_dataframe_info(df: pd.DataFrame, label: str) -> None:
+def _debug_log_dataframe_info(
+    df: pd.DataFrame,
+    label: str,
+    *,
+    debug: bool | None = None,
+) -> None:
     """
     Log detailed DataFrame information for debugging.
 
@@ -26,7 +33,7 @@ def _debug_log_dataframe_info(df: pd.DataFrame, label: str) -> None:
         df: DataFrame to log information about
         label: Label for the log entry
     """
-    if not _is_debug_mode():
+    if not _is_debug_mode(debug):
         return
 
     logger.debug(f"{label}: shape={df.shape}, columns={list(df.columns)}")

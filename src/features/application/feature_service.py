@@ -11,16 +11,23 @@ SOLID principles:
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import os
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
-
-import pandas as pd
+from typing import TYPE_CHECKING, Any
 
 from src.logging import get_logger
 
-from ..domain.protocols import FeatureNormalizer, OHLCVValidator
 from ..specs import FEATURE_SPECS, FeatureSpec
+from ..ta_safe.constants import get_backend
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import pandas as pd
+
+    from ..domain.protocols import FeatureNormalizer, OHLCVValidator
+    from ..ports import FeatureBackendId, FeatureCalculatorBackend
 
 logger = get_logger(__name__)
 
@@ -66,6 +73,50 @@ class DefaultFeatureNormalizer:
         return df
 
 
+@contextmanager
+def _temporary_feature_backend(backend_id: FeatureBackendId) -> Any:
+    """Temporarily override the TA backend for a single calculation."""
+    if backend_id == "auto":
+        yield
+        return
+
+    previous_backend = os.environ.get("FEATURES_TA_BACKEND")
+    os.environ["FEATURES_TA_BACKEND"] = backend_id
+    try:
+        yield
+    finally:
+        if previous_backend is None:
+            os.environ.pop("FEATURES_TA_BACKEND", None)
+        else:
+            os.environ["FEATURES_TA_BACKEND"] = previous_backend
+
+
+@dataclass(frozen=True)
+class DefaultFeatureCalculatorBackend:
+    """Default backend wrapper around the core compute function."""
+
+    backend_id: FeatureBackendId = field(default_factory=get_backend)
+
+    def __call__(
+        self,
+        compute_fn: Callable[..., pd.DataFrame],
+        df_ohlcv: pd.DataFrame,
+        specs: list[str] | None = None,
+        *,
+        volatility_normalize: bool = False,
+        normalize_window: int = 20,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        with _temporary_feature_backend(self.backend_id):
+            return compute_fn(
+                df_ohlcv,
+                specs=specs,
+                volatility_normalize=volatility_normalize,
+                normalize_window=normalize_window,
+                **kwargs,
+            )
+
+
 # =============================================================================
 # FEATURE CALCULATION SERVICE
 # =============================================================================
@@ -91,6 +142,8 @@ class FeatureCalculationService:
 
     validator: OHLCVValidator = field(default_factory=DefaultOHLCVValidator)
     normalizer: FeatureNormalizer = field(default_factory=DefaultFeatureNormalizer)
+    backend: FeatureCalculatorBackend | None = field(default=None, repr=False)
+    backend_id: FeatureBackendId = "auto"
     _compute_fn: Callable[..., pd.DataFrame] | None = field(default=None, repr=False)
 
     def __post_init__(self):
@@ -99,6 +152,8 @@ class FeatureCalculationService:
             from ..core.calculation import compute_features
 
             self._compute_fn = compute_features
+        if self.backend is None:
+            self.backend = DefaultFeatureCalculatorBackend(self.backend_id)
 
     def calculate(
         self,
@@ -124,10 +179,10 @@ class FeatureCalculationService:
         # 1. Validate input
         self.validator.validate(df_ohlcv)
 
-        # 2. Calculate features (delegate to compute function)
-        # We pass volatility_normalize=False here and apply it ourselves
-        # for better control
-        result = self._compute_fn(
+        # 2. Calculate features through the configured backend wrapper.
+        # The backend may temporarily override FEATURES_TA_BACKEND for the call.
+        result = self.backend(
+            self._compute_fn,
             df_ohlcv,
             specs=specs,
             volatility_normalize=False,  # We'll apply it ourselves
@@ -184,6 +239,9 @@ class FeatureCalculationService:
 def create_feature_service(
     validator: OHLCVValidator | None = None,
     normalizer: FeatureNormalizer | None = None,
+    *,
+    backend: FeatureCalculatorBackend | None = None,
+    backend_id: FeatureBackendId = "auto",
 ) -> FeatureCalculationService:
     """
     Factory function to create FeatureCalculationService.
@@ -191,6 +249,8 @@ def create_feature_service(
     Args:
         validator: Custom OHLCV validator (optional)
         normalizer: Custom feature normalizer (optional)
+        backend: Custom backend wrapper (optional)
+        backend_id: Backend selection for the default wrapper
 
     Returns:
         Configured FeatureCalculationService instance
@@ -198,4 +258,6 @@ def create_feature_service(
     return FeatureCalculationService(
         validator=validator or DefaultOHLCVValidator(),
         normalizer=normalizer or DefaultFeatureNormalizer(),
+        backend=backend,
+        backend_id=backend_id,
     )

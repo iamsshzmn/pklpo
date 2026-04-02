@@ -1,612 +1,565 @@
-# Features Module
+# `src/features`
 
-Практическая документация по модулю `src/features`.
+Technical indicators calculation and persistence module. Takes OHLCV candle data, computes ~100+ indicators across 10 groups, validates results, and upserts them into PostgreSQL (`indicators_p` table).
 
-Назначение файла:
+## Responsibility Boundary
 
-- показать текущий рабочий путь данных для `features`
-- зафиксировать контракты, которые нельзя ломать
-- дать команды для запуска, проверки и диагностики
-- показать, где искать код по слоям
+**Owns:**
+- Indicator specification registry (what to calculate)
+- Indicator group calculation (how to calculate)
+- Data validation, normalization, and quality gates
+- Persistence to `indicators_p` via upsert
+- Schema synchronization (auto-adding indicator columns)
+- Prometheus metrics and observability
+- Freshness gate (deciding whether a DAG run is needed)
 
-См. также:
+**Does not own:**
+- OHLCV ingestion from exchanges (upstream: `src/candles`)
+- Top-level CLI (`src/cli/main.py`)
+- Airflow DAG definitions (`ops/airflow/dags/`)
+- Database migrations or partition DDL (`src/db/`)
 
-- `D:\projects\pklpo\ENGINEERING_GUIDE.md`
-- `D:\projects\pklpo\DATA_FLOW.md`
-- `D:\projects\pklpo\ARCHITECTURE_GUIDE.md`
-- `D:\projects\pklpo\ARCHITECTURE.md`
+## Role in the System
 
----
-
-## 1. Scope
-
-Модуль `features` отвечает за:
-
-- расчёт индикаторов по OHLCV
-- валидацию входных и выходных данных
-- сохранение результатов в `indicators_p`
-- short-run расчёт через preset `features_calc_short`
-- синхронизацию схемы индикаторов с декларативным реестром
-
-Модуль `features` не отвечает за:
-
-- ingest OHLCV с биржи
-- orchestration Airflow вне своих DAG/use case entrypoints
-- downstream-логику `mtf_context`, `signals`, `risk`, `positions`
-
----
-
-## 2. Current Runtime Path
-
-Текущий operational path для features:
-
-```text
-swap_ohlcv_p
-  -> features application / CLI
-  -> compute_features(...)
-  -> save_batch(...) / save_parquet_to_pg(...)
-  -> indicators_p
+```
+Exchange (OKX)
+    |
+    v
+src/candles  -->  swap_ohlcv_p (PostgreSQL)
+                       |
+                       v
+              src/features (this module)
+                       |
+                       v
+                  indicators_p (PostgreSQL, partitioned)
+                       |
+                       v
+              downstream: backtesting, labeling, ML training
 ```
 
-Для scheduled short-path используется:
+Airflow DAGs (`features_calc.py`, `features_calc_short.py`) call into this module's public API to orchestrate scheduled runs.
 
-```text
-swap_ohlcv_p
-  -> application/features_calc_short_service.py
-  -> presets/features_calc_short_v1.py
-  -> indicators_p
+## Architecture
+
+```mermaid
+graph TB
+    subgraph "Public API (api.py, bootstrap.py)"
+        API[api.py<br/>facade]
+        BOOT[bootstrap.py<br/>composition root]
+    end
+
+    subgraph "Application Layer"
+        SVC[FeatureCalculationService<br/>feature_service.py]
+        SHORT[features_calc_short_service.py<br/>incremental path]
+        SAVE[save.py<br/>orchestration]
+        FRESH[freshness_gate.py<br/>skip-if-fresh]
+        SYNC[sync_indicator_schema.py]
+        BATCH[batch_processor.py]
+    end
+
+    subgraph "Core (calculation engine)"
+        CALC[calculation.py<br/>compute_features]
+        PIPE[pipeline.py<br/>pre/post hooks]
+        ORCH[group_orchestrator.py<br/>GroupCalculationOrchestrator]
+        NORM[normalization.py]
+        MERGE[merging.py]
+    end
+
+    subgraph "Domain"
+        MODELS[models.py<br/>FeatureSpec, FeatureResult]
+        PROTO[protocols.py<br/>FeatureCalculator, etc.]
+        TF[timeframe.py]
+    end
+
+    subgraph "Indicator Groups"
+        REG[registry.py<br/>GroupRegistry]
+        OVL[overlap] --> MA[ma] --> OSC[oscillators]
+        MA --> VOL[volatility]
+        OVL --> VOLM[volume]
+        MA --> TREND[trend] --> SQZ[squeeze]
+        OVL --> CAND[candles]
+        MA --> STAT[statistics]
+        VOL --> PERF[performance]
+    end
+
+    subgraph "Specs (declarative)"
+        SPECS[specs/__init__.py<br/>FEATURE_SPECS dict]
+    end
+
+    subgraph "TA Safe (backend)"
+        TASAFE[ta_safe/backend.py<br/>safe_ta wrapper]
+        TAFALL[fallback.py]
+    end
+
+    subgraph "Infrastructure"
+        REPO[persistence/repository.py<br/>SqlAlchemyIndicatorRepository]
+        UPSERT[upsert/<br/>SQL generation + retry]
+        SCHEMA[indicator_schema_synchronizer.py]
+        PROM[observability/prometheus.py<br/>PipelineMetrics]
+        ALERTS[alerts.py<br/>Airflow callbacks]
+    end
+
+    subgraph "Ports (abstractions)"
+        IREPO[IndicatorRepository]
+        ISTORE[FeatureStorageGateway]
+        IQUAL[QualityPipelineRunner]
+        IDDL[SchemaDDLPort]
+    end
+
+    API --> SVC
+    API --> SHORT
+    API --> SAVE
+    BOOT --> REPO
+    BOOT --> SCHEMA
+
+    SVC --> CALC
+    SHORT --> CALC
+    SHORT --> SAVE
+    SHORT --> FRESH
+
+    CALC --> ORCH
+    ORCH --> PIPE
+    ORCH --> REG
+    REG --> OVL
+    OVL --> TASAFE
+    MA --> TASAFE
+    OSC --> TASAFE
+    CALC --> NORM
+    CALC --> MERGE
+
+    SAVE --> IREPO
+    IREPO -.-> REPO
+    REPO --> UPSERT
+    SYNC --> IDDL
+    BOOT --> IDDL
+
+    SPECS --> MODELS
 ```
 
-Источник правды по общему data flow:
+## Data Flow
 
-- `D:\projects\pklpo\DATA_FLOW.md`
+```mermaid
+sequenceDiagram
+    participant Caller as Airflow DAG / CLI
+    participant API as api.py
+    participant SVC as FeatureCalculationService
+    participant PIPE as pipeline.py
+    participant ORCH as GroupOrchestrator
+    participant GRP as Indicator Groups
+    participant TA as ta_safe
+    participant SAVE as save.py
+    participant REPO as IndicatorRepository
+    participant DB as PostgreSQL
 
----
+    Caller->>API: compute_features(df_ohlcv) or run_features_calc_short(...)
+    API->>SVC: calculate(df_ohlcv, specs)
+    SVC->>SVC: validate OHLCV input
+    SVC->>PIPE: run_pre_calculation(df, ctx)
+    PIPE->>PIPE: validate timestamps, enforce float64, start metrics
 
-## 3. Storage Contracts
+    loop For each group in dependency order
+        ORCH->>GRP: calculate_group(df, group_name, available)
+        GRP->>TA: safe_ta(df, indicator_name, **params)
+        TA-->>GRP: dict[str, pd.Series]
+        GRP-->>ORCH: merge results into df
+    end
 
-### 3.1 Source table
+    PIPE->>PIPE: run_post_calculation: gate validation, fill rates, quality score
+    SVC-->>API: DataFrame with all indicators
 
-Текущий источник OHLCV для features:
-
-- `swap_ohlcv_p`
-
-Не опирайся на legacy `ohlcv` как на основной runtime source.
-
-### 3.2 Target table
-
-Текущая таблица записи:
-
-- `indicators_p`
-
-### 3.3 Identity key
-
-Запись индикаторов должна оставаться идемпотентной по ключу:
-
-```text
-(symbol, timeframe, timestamp)
+    Caller->>SAVE: save_batch(session, df, symbol, timeframe, repository=...)
+    SAVE->>REPO: save_batch_from_df(df, symbol, timeframe)
+    REPO->>DB: UPSERT into indicators_p
+    REPO-->>SAVE: rows_saved count
+    SAVE-->>Caller: {success, rows_saved, ...}
 ```
 
-### 3.4 Canonical storage metadata
+## Key Concepts
 
-Канонический контракт хранения находится в:
+### Storage Contract
 
-- `src/features/storage_contract.py`
+`IndicatorStorageContract` (`storage_contract.py`) is the single source of truth for the `indicators_p` table layout:
 
-Важные поля контракта:
+| Field | Role |
+|-------|------|
+| `symbol`, `timeframe`, `timestamp` | Identity / composite PK |
+| `calculated_at` | Service metadata |
+| Everything else | Feature columns (dynamic, added via schema sync) |
 
-- `table_name = "indicators_p"`
-- `identity_fields = ("symbol", "timeframe", "timestamp")`
-- `service_fields = ("symbol", "timeframe", "timestamp", "calculated_at")`
+### Indicator Groups
 
-### 3.5 Timestamp contract
+10 groups executed in dependency order (topologically sorted via `networkx`, fallback to numeric `order`):
 
-Не менять без явной миграции и проверки всех call sites:
+| Order | Group | Dependencies | Examples |
+|-------|-------|-------------|----------|
+| 0 | overlap | none | hlc3, hl2, ohlc4, wcp |
+| 1 | ma | overlap | sma_20, ema_8, wma_14, hma_21, t3_5 |
+| 2 | oscillators | overlap, ma | rsi_14, macd, stoch_k, cci_20, willr |
+| 3 | volatility | overlap, ma | atr_14, bb_upper_20, kc_upper, natr |
+| 4 | volume | overlap | obv, cmf, vwap, mfi_14, ad |
+| 5 | trend | overlap, ma | adx_14, supertrend, psar, ichimoku |
+| 6 | squeeze | volatility, trend | ttm_squeeze |
+| 7 | candles | overlap | candlestick patterns |
+| 8 | statistics | overlap, ma | statistical indicators |
+| 9 | performance | overlap, ma, volatility | performance metrics |
 
-- storage contract использует `timestamp` в `milliseconds`
-- часть внутренних DataFrame path всё ещё использует `ts`
-- на границе чтения/сохранения timestamp должен быть явно нормализован
+Groups self-register via `@GroupRegistry.register(name, order, dependencies)` decorator. All group calculators follow `GroupCalculatorProtocol`: `(df, available, **kwargs) -> dict[str, pd.Series]`.
 
-Если работаешь с чтением из БД, сохранением parquet или watermark-логикой, сначала проверь:
+### TA Safe Layer
 
-- `D:\projects\pklpo\DATA_FLOW.md` -> `Timestamp Contract`
+`ta_safe/` wraps `pandas_ta` calls with:
+- Allowlist enforcement (`ALLOW` set)
+- Input validation
+- Output normalization to `pd.DataFrame`
+- Type coercion to `float64` (avoids `FutureWarning`)
+- Fallback implementations when `pandas_ta` functions are unavailable
 
----
+### Feature Specs
 
-## 4. Input Contract
+`specs/` declares indicator metadata as `FeatureSpec` dataclasses (name, type, params, required OHLCV columns, dependencies). The combined registry `FEATURE_SPECS: dict[str, FeatureSpec]` is the authoritative list of available indicators.
 
-Для расчёта индикаторов DataFrame должен содержать:
+### Freshness Gate
 
-- `open`
-- `high`
-- `low`
-- `close`
-- `volume`
+`freshness_gate.py` checks whether indicators are up-to-date relative to OHLCV data. Used by Airflow DAGs to skip runs when data is already fresh. Compares `max(timestamp)` in `indicators_p` vs `swap_ohlcv_p` with configurable lag tolerances.
 
-Для большинства save path также нужен один из временных столбцов:
+## Public API
 
-- `ts`
-- `timestamp`
+Entry points exposed through `api.py` and `__init__.py`:
 
-Минимальные ожидания:
+| Function / Class | Purpose |
+|-----------------|---------|
+| `compute_features(df_ohlcv, ...)` | Calculate all indicators from OHLCV DataFrame |
+| `FeatureCalculationService` | DI-friendly service wrapping `compute_features` |
+| `create_feature_service(...)` | Factory for `FeatureCalculationService` |
+| `run_features_calc_short(...)` | Incremental: fetch latest OHLCV, calculate, save |
+| `save_batch(session, df, ...)` | Save indicator DataFrame to PostgreSQL |
+| `save_parquet_to_pg(session, path, ...)` | Load parquet + save to PostgreSQL |
+| `FeatureApplicationBootstrap` | Composition root bundle (gateway, repository, quality, schema DDL) |
+| `create_feature_application_bootstrap(...)` | Factory for the bootstrap bundle |
+| `IndicatorStorageContract` | Table metadata constants |
+| `FEATURE_SPECS` | Registry of all indicator specifications |
 
-- DataFrame не пустой
-- обязательные OHLCV-колонки существуют
-- обязательные OHLCV-колонки не состоят целиком из `NaN`
+## Ports (Abstractions)
 
-Код:
+Defined in `ports/`, these are the dependency inversion boundaries:
 
-- `src/features/application/feature_service.py`
-- `src/features/validation/data_validator.py`
-- `src/features/validation/feature_validator.py`
+| Port | Purpose |
+|------|---------|
+| `IndicatorRepository` | Batched indicator persistence (save, validate, verify) |
+| `FeatureStorageGateway` | Fetch OHLCV data, ensure columns exist |
+| `FeatureCalculatorBackend` | Backend wrapper (can override TA library selection) |
+| `FeatureSaveValidator` | Pre-save validation |
+| `FeatureSaveObserver` | Observability during save operations |
+| `QualityPipelineRunner` | Data quality pipeline |
+| `SchemaDDLPort` | Column DDL operations (ALTER TABLE ADD COLUMN) |
+| `PartitionManager` | Partition maintenance |
 
----
+## Configuration
 
-## 5. Output Contract
+Configuration is centralized in `src.config.get_settings().features` (`FeaturesSettings`). Key fields:
 
-Результат расчёта:
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `chunk_size` | - | Rows per calculation chunk |
+| `batch_size` | - | Rows per DB upsert batch |
+| `max_lookback` | - | Maximum lookback window |
+| `volatility_normalize` | - | Enable volatility normalization |
+| `normalize_window` | 20 | Window for normalization |
+| `min_fill_rate` | - | Minimum acceptable fill rate |
+| `max_retries` | - | Upsert retry count |
+| `log_memory` | - | Log memory usage during save |
+| `force_gc_after_chunk` | - | Force GC after each chunk |
 
-- pandas DataFrame
-- исходные OHLCV-поля сохраняются
-- добавляются рассчитанные feature columns
+Legacy config functions in `config/settings.py` are deprecated. Use `get_settings().features` directly.
 
-Перед сохранением persistence path ожидает:
+Environment variable override: `FEATURES_<FIELD_NAME>` (e.g., `FEATURES_CHUNK_SIZE=200000`).
 
-- `symbol`
-- `timeframe`
-- `timestamp`
-- feature columns, допустимые схемой `indicators_p`
+TA backend selection: `FEATURES_TA_BACKEND` env var (default: auto-detect).
 
-Код:
+## Directory Structure
 
-- `src/features/application/save.py`
-- `src/features/infrastructure/persistence/repository.py`
-- `src/features/infrastructure/persistence/inserter.py`
-- `src/features/infrastructure/upsert_builder.py`
-
----
-
-## 6. Module Layout
-
-```text
+```
 src/features/
-├── __init__.py
-├── __main__.py
-├── bootstrap.py
-├── container.py
-├── storage_contract.py
-├── application/
-├── cli/
-├── config/
-├── core/
-├── domain/
-├── indicator_groups/
-├── infrastructure/
-├── observability/
-├── ports/
-├── presets/
-├── schema/
-├── specs/
-├── ta_safe/
-├── utils/
-└── validation/
+    __init__.py              # Public exports
+    api.py                   # Public API facade
+    bootstrap.py             # Composition root (DI wiring)
+    storage_contract.py      # Table metadata constants
+    metrics.py               # Legacy metrics
+    backfill.py              # Backfill entry point
+
+    application/             # Use cases / orchestration
+        feature_service.py       # FeatureCalculationService
+        features_calc_short_service.py  # Incremental calculation path
+        save.py                  # Save orchestration
+        save_validation.py       # Pre-save validators
+        save_observer.py         # Save observability
+        freshness_gate.py        # Skip-if-fresh logic
+        batch_processor.py       # Batch processing
+        feature_window.py        # OHLCV window management
+        sync_indicator_schema.py # Schema sync use case
+        calc.py                  # compute_and_dump_parquet
+        save_dependencies.py     # DI helper
+
+    core/                    # Calculation engine
+        calculation.py           # compute_features()
+        pipeline.py              # Pre/post calculation hooks
+        group_orchestrator.py    # GroupCalculationOrchestrator
+        group_calculation.py     # compute_features_grouped()
+        group_calculator.py      # GroupFeatureCalculator
+        group_persister.py       # GroupPersister
+        group_metrics.py         # GroupMetricsRecorder
+        normalization.py         # Volatility normalization
+        merging.py               # Indicator result merging
+        dependency_graph.py      # Dependency resolution
+        validation.py            # Spec validation
+        debug_utils.py           # Debug logging
+
+    domain/                  # Models and protocols
+        models.py                # FeatureSpec, FeatureResult, FeatureError
+        protocols.py             # FeatureCalculator, OHLCVValidator, etc.
+        indicator_specs.py       # Indicator spec helpers
+        strategy.py              # Calculation strategies
+        timeframe.py             # Timeframe utilities
+
+    specs/                   # Declarative indicator metadata
+        candles.py, ma.py, oscillators.py, overlap.py,
+        performance.py, statistics.py, trend.py,
+        volatility.py, volume.py
+
+    indicator_groups/        # Calculation implementations
+        registry.py              # GroupRegistry (decorator-based)
+        overlap.py, ma.py, oscillators.py, volatility.py,
+        volume.py, trend.py, squeeze.py, candles.py,
+        statistics.py, performance.py
+        data_cleaner.py          # Data cleaning utilities
+
+    ta_safe/                 # Safe pandas_ta wrapper
+        backend.py               # safe_ta() function
+        fallback.py              # Fallback implementations
+        constants.py             # ALLOW set, backend detection
+        validation.py            # Input validation
+        normalization.py         # Output normalization
+        errors.py                # FeatureCalcError
+        bridge.py                # Adapter bridge
+        adapters/                # Backend-specific adapters
+
+    infrastructure/          # External integrations
+        persistence/             # DB persistence layer
+            repository.py           # SqlAlchemyIndicatorRepository
+            inserter.py              # Insert orchestration
+            data_transformer.py      # Type conversions
+            upsert_executor.py       # UPSERT with retry
+            schema_cache.py          # Schema caching
+            batch_builder.py         # Batch construction
+            row_processor.py         # Row-level processing
+            validator.py             # DB-level validation
+            schema_checker.py        # Schema introspection
+            schema_filter.py         # Column filtering
+            name_normalizer.py       # Column name normalization
+            normalizer.py            # Value normalization
+        upsert/                  # SQL generation
+            sql_generator.py
+            column_introspector.py
+            batch_sizer.py
+            type_validator.py
+        db_operations.py         # Low-level DB queries
+        database.py              # Connection helpers
+        indicator_schema_synchronizer.py  # Auto-add columns
+        schema_ddl_adapter.py    # SchemaDDLPort implementation
+        partition_adapter.py     # PartitionManager adapter
+        quality_adapter.py       # QualityPipelineRunner adapter
+        alerts.py                # Airflow failure/SLA callbacks
+        versioning.py            # Algorithm version tracking
+        snapshot_manager.py      # Calculation snapshots
+        upsert_builder.py        # Legacy upsert builder
+        upsert_optimizer.py      # Batch size optimization
+        diagnostics.py           # Runtime diagnostics
+        indicator_registry.py    # DB indicator registry
+        models.py                # Infrastructure models
+
+    observability/           # Metrics and logging
+        prometheus.py            # PipelineMetrics (Pushgateway)
+        metrics.py               # Fill rate, quality score
+        logging.py               # Structured logging
+        error_handling.py        # Error handling
+        indicators_logging.py    # Indicator-specific logging
+        quality_store.py         # Quality data store
+        traceability.py          # Feature tracing
+
+    ports/                   # Dependency inversion interfaces
+        persistence.py, storage.py, save.py,
+        calculator_backend.py, partition.py,
+        quality.py, schema_ddl.py
+
+    validation/              # Input/output validation
+        feature_validator.py     # OHLCV + spec validation
+        gate_validator.py        # Data gate (fill rate checks)
+        data_validator.py        # General data quality
+        code_validator.py        # Code-level validation
+        chain.py                 # Validation chaining
+
+    schema/                  # Schema management
+        schema_manager.py        # Schema operations
+        name_aliases.py          # Column name aliasing
+
+    presets/                  # Predefined calculation configs
+        features_calc_short_v1.py  # Short-path indicator subset
+
+    config/                  # Module configuration (deprecated)
+        settings.py              # Legacy config adapters
+
+    cli/                     # Module-level CLI
+        main.py                  # CLI entry point
+        check_database_setup.py  # DB setup verification
+        schema_check.py          # Schema validation
+
+    tools/                   # Developer tools
+        generate_schema.py       # Schema generation
+
+    utils/                   # Utilities
+        dependency_resolver.py, indicator_utils.py,
+        time_utils.py, memlog.py, utils.py
+
+    tests/                   # In-module test config
+        conftest.py
 ```
 
-### 6.1 `core/`
+## Quality Gates
 
-Используй для чистого расчёта.
+The pipeline applies several validation stages:
 
-Основные файлы:
+1. **Pre-calculation**: OHLCV validation (required columns, non-null, numeric types), timestamp validation (UTC ms, monotonic, no duplicates)
+2. **Per-group**: Each group calculator returns `dict[str, pd.Series]` (LSP-enforced via `GroupCalculatorProtocol`)
+3. **Post-calculation**: Data gate validation (fill rates per group), quality score (NaN ratio + outlier ratio)
+4. **Pre-save**: DataFrame structure validation before persistence
+5. **Freshness gate**: Lag tolerance checks per timeframe (fast: 240s, slow: 1200s)
 
-- `src/features/core/calculation.py`
-- `src/features/core/dependency_graph.py`
-- `src/features/core/group_calculation.py`
-- `src/features/core/merging.py`
-- `src/features/core/normalization.py`
+Failed groups are tracked in `PipelineContext.failed_groups` and recorded as `data_status='inc'` (incomplete). Gate failures are non-blocking -- data is saved with metadata flags.
 
-Главная функция:
+## Observability
 
-- `src.features.core.compute_features`
+### Prometheus Metrics
 
-### 6.2 `application/`
+`PipelineMetrics` singleton (`observability/prometheus.py`) exposes via Pushgateway:
 
-Используй для orchestration use cases.
+| Metric | Type | Description |
+|--------|------|-------------|
+| `pklpo_features_rows_written_total` | Counter | Rows written to DB |
+| `pklpo_upsert_failures_total` | Counter | Failed upserts |
+| `pklpo_data_freshness_lag_seconds` | Gauge | Lag from expected bar close |
+| `pklpo_data_fill_rate` | Gauge | Data completeness (0-1) |
+| `pklpo_data_quality_score` | Gauge | Composite quality (0-1) |
+| `pklpo_features_calculation_duration_seconds` | Histogram | Calculation time |
+| `pklpo_upsert_duration_seconds` | Histogram | Upsert time |
 
-Основные файлы:
+Graceful degradation: all metrics are no-ops if `prometheus-client` is not installed or Pushgateway is unreachable.
 
-- `src/features/application/feature_service.py`
-- `src/features/application/save.py`
-- `src/features/application/features_calc_short_service.py`
-- `src/features/application/backfill.py`
-- `src/features/application/sync_indicator_schema.py`
+### Logging
 
-### 6.3 `ports/`
+Uses `src.logging` with category-based loggers (`LogCategory.CALC`, `LogCategory.DIAG`). Key log points:
+- Pre/post calculation milestones with `run_id`
+- Per-group fill rates
+- Timestamp validation results
+- Save operation outcomes with row counts
 
-Если меняешь взаимодействие application <-> infrastructure, сначала смотри порты:
+### Feature Tracing
 
-- `src/features/ports/persistence.py`
-- `src/features/ports/save.py`
-- `src/features/ports/storage.py`
+`FeatureTracer` (`observability/traceability.py`) provides per-feature metadata tracking, toggle-able via `enable_tracing()` / `disable_tracing()`.
 
-Ключевые протоколы:
+## CLI Usage
 
-- `IndicatorRepository`
-- `FeatureSaveValidator`
-- `FeatureSaveObserver`
-- `FeatureStorageGateway`
-- `FeatureSaveDependenciesFactory`
-
-### 6.4 `infrastructure/`
-
-Здесь находятся concrete adapters:
-
-- чтение из БД
-- schema-aware save
-- UPSERT helpers
-- schema synchronizer
-
-Основные файлы:
-
-- `src/features/infrastructure/db_operations.py`
-- `src/features/infrastructure/indicator_schema_synchronizer.py`
-- `src/features/infrastructure/persistence/repository.py`
-- `src/features/infrastructure/persistence/inserter.py`
-
-### 6.5 `schema/`
-
-Используй для registry/sync схемы индикаторов.
-
-Основные файлы:
-
-- `src/features/schema/schema_manager.py`
-- `src/features/schema/indicators_schema.yml`
-- `src/features/schema/indicators_schema_clean.yml`
-- `src/features/schema/indicators_schema_complete.yml`
-
-### 6.6 `specs/`
-
-Декларативный реестр индикаторов.
-
-Точка входа:
-
-- `src/features/specs/__init__.py`
-
-Основные exports:
-
-- `FEATURE_SPECS`
-- `FEATURE_GROUPS`
-
-Текущее количество:
-
-- `177` индикаторов
-
-### 6.7 `presets/`
-
-Short-run preset:
-
-- `src/features/presets/features_calc_short_v1.py`
-
-Текущий preset `FEATURES_CALC_SHORT_SPECS`:
-
-- используется в scheduled short path
-- содержит `24` индикатора
-
----
-
-## 7. Dependency Rules
-
-Следовать общим правилам проекта:
-
-- `domain` не должен зависеть от `infrastructure`
-- `application` не должен зависеть от concrete DB/SQL деталей
-- concrete persistence wiring должен идти через `bootstrap.py`
-- новые cross-layer зависимости должны идти через `ports`
-
-Практическое правило для изменений:
-
-- меняешь orchestration -> начинай с `application/`
-- меняешь контракт взаимодействия -> сначала `ports/`
-- меняешь конкретную реализацию сохранения/чтения -> `infrastructure/`
-- меняешь формулы/реестр индикаторов -> `core/`, `indicator_groups/`, `specs/`
-
----
-
-## 8. Main Entry Points
-
-### 8.1 Pure calculation
-
-```python
-from src.features import compute_features
-
-df_features = compute_features(
-    df_ohlcv,
-    specs=["ema_21", "rsi_14", "macd"],
-    volatility_normalize=False,
-)
-```
-
-### 8.2 Service API
-
-```python
-from src.features.application.feature_service import create_feature_service
-
-service = create_feature_service()
-df_features = service.calculate(df_ohlcv, specs=["ema_21", "rsi_14"])
-```
-
-### 8.3 Save wiring
-
-```python
-from src.features.bootstrap import create_feature_save_dependencies
-
-save_deps = create_feature_save_dependencies(session)
-```
-
-### 8.4 Schema sync
-
-```python
-from src.features.application.sync_indicator_schema import SyncIndicatorSchemaUseCase
-from src.features.infrastructure.indicator_schema_synchronizer import IndicatorSchemaSynchronizer
-
-use_case = SyncIndicatorSchemaUseCase(IndicatorSchemaSynchronizer())
-result = await use_case.execute(session)
-```
-
----
-
-## 9. CLI
-
-### 9.1 Local features CLI
-
-Команды:
+Module CLI (`python -m src.features`):
 
 ```bash
-python -m src.features calculate input.csv output.parquet --symbol BTC-USDT-SWAP --timeframe 1H
-python -m src.features save output.parquet --symbol BTC-USDT-SWAP --timeframe 1H
-python -m src.features validate output.parquet --data-type features
+# Calculate indicators from OHLCV file
+python -m src.features calculate input.parquet output.parquet \
+    --symbol BTC-USDT-SWAP --timeframe 1m
+
+# Calculate with legacy (non-streaming) method
+python -m src.features calculate input.csv output.parquet \
+    --symbol BTC-USDT-SWAP --timeframe 5m --legacy --volatility-normalize
+
+# Save parquet to PostgreSQL
+python -m src.features save output.parquet \
+    --symbol BTC-USDT-SWAP --timeframe 1m --validate
+
+# Validate data quality
+python -m src.features validate input.parquet --data-type features --strict
+
+# Test parquet file integrity
 python -m src.features test-parquet output.parquet
+
+# Test database connection
 python -m src.features test-database
-python -m src.features pipeline input.csv output.parquet --symbol BTC-USDT-SWAP --timeframe 1H
-python -m src.features snapshots-list
-python -m src.features snapshots-show <snapshot_id>
+
+# Full pipeline: calculate -> validate -> save
+python -m src.features pipeline input.parquet output.parquet \
+    --symbol BTC-USDT-SWAP --timeframe 1m --validate
+
+# List calculation snapshots
+python -m src.features snapshots-list --limit 10 --status completed
+
+# Show snapshot details
+python -m src.features snapshots-show <snapshot_id> --show-config
 ```
 
-### 9.2 Main project CLI
+## Testing
 
 ```bash
-python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
-python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1H --normalize
-python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1D --limit 1000
+# Run all feature tests
+pytest tests/features/ -v
+
+# Run specific test category
+pytest tests/features/tests/ -v
+pytest tests/features/domain/ -v
+pytest tests/features/core/ -v
+
+# Run benchmarks
+pytest tests/features/benchmarks/ -v
 ```
 
-Важно:
+79 test files across `tests/features/`.
 
-- `python -m src.features` умеет перенаправлять вызов в `src.cli.commands.features`
-- scheduled short path и full/manual path не одно и то же
+## Failure and Retry Behavior
 
----
+- **Group calculation failures**: Isolated per-group. Failed groups are recorded in `ctx.failed_groups`; remaining groups continue. Result DataFrame gets `data_status='inc'`.
+- **Upsert retries**: Handled by `upsert_executor.py` with configurable `max_retries` and exponential backoff (`retry_delay_base`).
+- **Save failures**: Session is rolled back on exception. Result dict returns `{success: False, error: ...}`.
+- **TA function failures**: `safe_ta()` raises `FeatureCalcError`, caught at group level.
+- **Freshness gate**: Returns `True` (run) on any error or missing data; `False` (skip) only when all timeframes are verified fresh.
 
-## 10. Validation Rules
+## Extension Guide
 
-### 10.1 Gate validation
+### Adding a New Indicator Group
 
-По умолчанию `GateValidator` использует:
+1. Create `src/features/indicator_groups/new_group.py`
+2. Register with decorator:
+   ```python
+   from .registry import GroupRegistry
 
-- `min_rows = 20`
-- `min_fill_rate = 0.5`
-- `max_nan_ratio = 0.1`
-- `max_outlier_ratio = 0.05`
+   @GroupRegistry.register("new_group", order=10, dependencies=["overlap", "ma"])
+   def calc_new_group_indicators(df, available, **kwargs):
+       result = {}
+       # ... calculate indicators ...
+       return result  # dict[str, pd.Series]
+   ```
+3. Add corresponding specs in `src/features/specs/new_group.py`
+4. Import the module in `indicator_groups/__init__.py`
+5. Add metadata entry to `GROUP_METADATA` dict
 
-Код:
+### Adding a New Indicator to an Existing Group
 
-- `src/features/validation/gate_validator.py`
+1. Add `FeatureSpec` entry in the appropriate `specs/*.py` file
+2. Add calculation logic in the corresponding `indicator_groups/*.py` calculator function
+3. The indicator column will be auto-created in `indicators_p` via schema sync
 
-### 10.2 Pre-save validation
+### Swapping the TA Backend
 
-Перед save orchestration проверяется:
+Set `FEATURES_TA_BACKEND` env var or pass `backend_id` to `create_feature_service()`. The `DefaultFeatureCalculatorBackend` temporarily overrides the env var for each calculation call.
 
-- пустой ли DataFrame
-- есть ли `ts`
-- есть ли feature columns
-- отсутствуют ли критичные признаки `hlc3`, `ema_8`, `sma_20`
+## Limitations
 
-Код:
-
-- `src/features/application/save_validation.py`
-
-### 10.3 Что не ломать
-
-Если меняешь validation/save path, проверь:
-
-- что пустой DataFrame не уходит в persistence
-- что `NaN`/`Inf` корректно нормализуются для БД
-- что schema filtering не выкидывает нужные колонки
-- что idempotent key остаётся `(symbol, timeframe, timestamp)`
-
----
-
-## 11. Save Path
-
-Текущий save path:
-
-```text
-application.save
-  -> observer.observe(...)
-  -> validator.validate_save_dataframe(...)
-  -> repository.save_batch_from_df(...)
-  -> commit / rollback
-```
-
-Где смотреть:
-
-- `src/features/application/save.py`
-- `src/features/application/save_observer.py`
-- `src/features/application/save_validation.py`
-- `src/features/infrastructure/persistence/repository.py`
-
-Порядок изменений:
-
-1. Сначала проверь, меняется ли контракт порта.
-2. Если да, сначала обнови `ports/`.
-3. Потом обнови `application/`.
-4. Только потом меняй `infrastructure/`.
-
----
-
-## 12. Short Path vs Full Path
-
-Не смешивать эти сценарии в документации и коде:
-
-### 12.1 `features_calc_short`
-
-Используется для scheduled path.
-
-Особенности:
-
-- читает `swap_ohlcv_p`
-- сравнивает latest OHLCV с последним feature timestamp
-- берёт окно с `warmup_bars=500`
-- считает только `FEATURES_CALC_SHORT_SPECS`
-- сохраняет в `indicators_p`
-
-Код:
-
-- `src/features/application/features_calc_short_service.py`
-- `src/features/presets/features_calc_short_v1.py`
-
-### 12.2 Full/manual path
-
-Используется для CLI/manual перерасчёта.
-
-Код:
-
-- `src/cli/commands/features.py`
-- `ops/airflow/dags/features_calc.py`
-
----
-
-## 13. Schema Sync
-
-Если меняешь набор индикаторов или имена колонок:
-
-1. Обнови `specs/` или `schema/*.yml`.
-2. Проверь alias/name normalization.
-3. Проверь schema manager.
-4. Проверь synchronizer/use case.
-5. После этого проверь persistence path.
-
-Основные файлы:
-
-- `src/features/schema/schema_manager.py`
-- `src/features/domain/indicator_schema_registry.py`
-- `src/features/infrastructure/indicator_schema_synchronizer.py`
-- `src/features/application/sync_indicator_schema.py`
-
----
-
-## 14. Observability
-
-Логирование и метрики не должны попадать в доменную логику.
-
-Использовать:
-
-- `src.logging` для нового кода
-- `src/features/observability/*` для feature-specific metrics/traceability
-
-Основные файлы:
-
-- `src/features/observability/metrics.py`
-- `src/features/observability/traceability.py`
-- `src/features/observability/error_handling.py`
-
-Основные env:
-
-- `FEATURES_LOG_VERBOSITY`
-- `FEATURES_LOG_FORMAT`
-- `FEATURES_LOG_CATEGORIES`
-
----
-
-## 15. Commands for Checks
-
-### 15.1 Быстрые проверки
-
-```bash
-python -m src.features test-database
-python -m src.features test-parquet output.parquet
-```
-
-### 15.2 Проверка реестра индикаторов
-
-```bash
-@'
-from src.features.specs import FEATURE_SPECS
-print(len(FEATURE_SPECS))
-print("rsi_14" in FEATURE_SPECS)
-'@ | python -
-```
-
-### 15.3 Тесты
-
-```bash
-pytest tests/features/tests/test_core.py -v
-pytest tests/features/tests/test_validators.py -v
-pytest tests/features/tests/test_database_integration.py -v
-pytest tests/features/tests/test_metrics.py -v
-```
-
-Если меняешь imports, contracts или layering, дополнительно сверяйся с:
-
-- `D:\projects\pklpo\ENGINEERING_GUIDE.md`
-- `D:\projects\pklpo\ARCHITECTURE_GUIDE.md`
-
----
-
-## 16. Common Change Scenarios
-
-### Добавить новый индикатор
-
-1. Добавь spec в `src/features/specs/`.
-2. Добавь реализацию в нужную группу `src/features/indicator_groups/`.
-3. Проверь dependency graph и group calculation path.
-4. При необходимости обнови schema files.
-5. Проверь save path.
-6. Добавь/обнови тесты.
-
-### Изменить сохранение в БД
-
-1. Проверь `storage_contract.py`.
-2. Проверь `ports/persistence.py`.
-3. Проверь `application/save.py`.
-4. Проверь `infrastructure/persistence/*`.
-5. Проверь idempotency key и timestamp normalization.
-
-### Изменить short scheduled path
-
-1. Проверь `features_calc_short_service.py`.
-2. Проверь preset `features_calc_short_v1.py`.
-3. Проверь freshness gate / watermark behavior.
-4. Проверь, что scheduled path не начинает использовать full/manual assumptions.
-
----
-
-## 17. File Map
-
-Если нужно быстро найти точку изменения:
-
-| Что нужно изменить | Куда смотреть |
-|--------------------|---------------|
-| Формулы индикаторов | `src/features/indicator_groups/`, `src/features/core/` |
-| Реестр индикаторов | `src/features/specs/` |
-| Чистый API расчёта | `src/features/core/calculation.py`, `src/features/__init__.py` |
-| Save orchestration | `src/features/application/save.py` |
-| Save validator | `src/features/application/save_validation.py` |
-| DB repository | `src/features/infrastructure/persistence/repository.py` |
-| UPSERT/sanitize/schema filtering | `src/features/infrastructure/upsert_builder.py`, `src/features/infrastructure/persistence/` |
-| Short scheduled path | `src/features/application/features_calc_short_service.py` |
-| Schema sync | `src/features/application/sync_indicator_schema.py`, `src/features/schema/`, `src/features/infrastructure/indicator_schema_synchronizer.py` |
-| Layer contracts | `src/features/ports/` |
-
----
-
-Последнее обновление: `2026-03-18`
+- **Single-threaded calculation**: Group calculation runs sequentially (dependency order). No parallel group execution.
+- **pandas_ta dependency**: Core calculation depends on `pandas_ta`. If unavailable, `compute_features` import raises `ImportError`.
+- **In-memory processing**: Entire OHLCV window must fit in memory for calculation. No streaming/chunked calculation at the group level.
+- **PostgreSQL only**: Persistence layer is tightly coupled to PostgreSQL (upsert SQL, schema introspection). The `IndicatorRepository` port exists but has only one implementation.

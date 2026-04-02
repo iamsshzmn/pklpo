@@ -38,8 +38,6 @@ if TYPE_CHECKING:
 
     import pandas as pd
 
-    from src.config.settings import FeaturesSettings
-
 __all__ = [
     "GroupCalculationConfig",
     "GroupCalculationOrchestrator",
@@ -60,10 +58,6 @@ class GroupCalculationConfig:
     Configuration for group-based calculation.
 
     This class holds all configuration options for the orchestrator.
-    It can be loaded from settings via the from_settings() factory method.
-
-    OCP Compliance: Configuration can be changed without modifying code
-    by updating the centralized FeaturesSettings.
     """
 
     # Deprecated compatibility field: runtime execution order is resolved from
@@ -93,48 +87,6 @@ class GroupCalculationConfig:
             "atr_21": 21,
         }
     )
-
-    @classmethod
-    def from_settings(
-        cls, settings: FeaturesSettings | None = None
-    ) -> GroupCalculationConfig:
-        """
-        Create configuration from FeaturesSettings.
-
-        If settings is None, attempts to load from centralized config.
-
-        Args:
-            settings: Features settings (optional, loads from get_settings() if None)
-
-        Returns:
-            Configured GroupCalculationConfig instance
-        """
-        if settings is None:
-            try:
-                from src.config import get_settings
-
-                settings = get_settings().features
-            except ImportError:
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "src.config not available, using default GroupCalculationConfig"
-                )
-                return cls()
-
-        # Get default values for fallback
-        defaults = cls()
-
-        return cls(
-            calculation_order=defaults.calculation_order,
-            batch_size=getattr(settings, "batch_size", defaults.batch_size),
-            max_retries=getattr(settings, "max_retries", defaults.max_retries),
-            min_rows=getattr(settings, "min_rows", defaults.min_rows),
-            min_fill_rate=getattr(settings, "min_fill_rate", defaults.min_fill_rate),
-            feature_periods=getattr(settings, "feature_periods", None)
-            or defaults.feature_periods,
-        )
-
 
 class GroupCalculationOrchestrator:
     """

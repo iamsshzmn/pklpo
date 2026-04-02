@@ -1,14 +1,24 @@
 """Ports for the features bounded context."""
 
-from .persistence import IndicatorRepository
+from .calculator_backend import FeatureBackendId, FeatureCalculatorBackend
+from .partition import PartitionManager
+from .persistence import IndicatorRepository, RepositoryStorageProfile
+from .quality import QualityPipelineRunner
 from .save import FeatureSaveObservation, FeatureSaveObserver, FeatureSaveValidator
+from .schema_ddl import SchemaDDLPort
 from .storage import FeatureSaveDependenciesFactory, FeatureStorageGateway
 
 __all__ = [
+    "FeatureBackendId",
+    "FeatureCalculatorBackend",
     "FeatureSaveDependenciesFactory",
     "FeatureSaveObservation",
     "FeatureSaveObserver",
     "FeatureSaveValidator",
     "FeatureStorageGateway",
     "IndicatorRepository",
+    "PartitionManager",
+    "QualityPipelineRunner",
+    "RepositoryStorageProfile",
+    "SchemaDDLPort",
 ]

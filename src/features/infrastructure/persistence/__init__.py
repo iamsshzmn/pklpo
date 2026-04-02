@@ -26,23 +26,19 @@ from .schema_cache import SchemaCache, SchemaInfo, get_or_load_schema, get_schem
 from .upsert_executor import execute_upsert_with_retry
 
 __all__ = [
-    # Main entry point
-    "insert_indicators",
-    "SqlAlchemyIndicatorRepository",
-    "create_indicator_repository",
-    # Data transformation
-    "convert_timestamps_to_int64",
-    "normalize_numeric_values",
-    "filter_records_by_schema",
-    "validate_pk_fields",
-    "validate_service_fields",
-    "get_numeric_columns_from_table",
-    "transform_records_for_upsert",
-    # Schema caching
     "SchemaCache",
     "SchemaInfo",
-    "get_schema_cache",
-    "get_or_load_schema",
-    # UPSERT execution
+    "SqlAlchemyIndicatorRepository",
+    "convert_timestamps_to_int64",
+    "create_indicator_repository",
     "execute_upsert_with_retry",
+    "filter_records_by_schema",
+    "get_numeric_columns_from_table",
+    "get_or_load_schema",
+    "get_schema_cache",
+    "insert_indicators",
+    "normalize_numeric_values",
+    "transform_records_for_upsert",
+    "validate_pk_fields",
+    "validate_service_fields",
 ]

@@ -4,7 +4,7 @@ Exception classes and result types for ta_safe module.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
 class FeatureCalcError(Exception):
@@ -13,7 +13,7 @@ class FeatureCalcError(Exception):
     pass
 
 
-class CalculationStatus(str, Enum):
+class CalculationStatus(StrEnum):
     """
     Explicit indicator calculation status (Stage 3.3).
 

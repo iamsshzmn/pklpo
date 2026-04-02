@@ -13,13 +13,14 @@ from src.logging import get_logger
 
 from ..domain.calculator import calculate_batch
 from ..domain.strategy import get_max_lookback_for_strategies
-from ..ports import FeatureSaveDependenciesFactory, FeatureStorageGateway
 from ..storage_contract import IndicatorStorageContract
 from ..utils.time_utils import timeframe_to_seconds
 from .save import save_batch
 
 if TYPE_CHECKING:
     import pandas as pd
+
+    from ..ports import FeatureSaveDependenciesFactory, FeatureStorageGateway
 
 logger = get_logger(__name__)
 
