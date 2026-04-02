@@ -1,0 +1,39 @@
+{
+  "prompt_safety": {
+    "enabled": true,
+    "block_patterns": [
+      "git reset --hard",
+      "git checkout --",
+      "rm -rf",
+      "Remove-Item -Recurse",
+      "del /f /s /q",
+      "format "
+    ],
+    "allow_if_prompt_contains_any": [
+      "explicitly requested",
+      "user approved",
+      "confirmed by user",
+      "with approval"
+    ]
+  },
+  "prompt_enrichment": {
+    "enabled": false,
+    "keyword_hints": {
+      "migration": "Check src/db/migrations/, src/db/README.md, and python -m src.cli.main migrate.",
+      "partitions": "Check src/cli/commands/indicators_partitions.py, tests/db/, and ops/airflow/dags/indicators_partition_maintenance.py.",
+      "features": "Check src/features/, src/cli/commands/features.py, src/features/README.md, and tests tied to features flows.",
+      "airflow": "Check ops/airflow/dags/, ops/airflow/README_FIX.md, and related tests under tests/db/ or DAG docs.",
+      "candles": "Check src/candles/, src/cli/commands/swap_sync.py, and parity or sync tests."
+    }
+  },
+  "post_tool_validation": {
+    "enabled": true,
+    "python_compile": true,
+    "ruff_check": true,
+    "max_files": 20
+  },
+  "turn_summary": {
+    "enabled": true,
+    "max_files": 12
+  }
+}

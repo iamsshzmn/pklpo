@@ -90,8 +90,7 @@ docker-compose.override.yml
 .dockerignore
 
 # Documentation build
-docs/
-docs/_build/
+history/
 site/
 
 # macOS
@@ -149,6 +148,7 @@ backups/
 
 # Claude AI
 .claude/
+.codex/
 
 # Working docs / plans (не коммитить)
 plan/

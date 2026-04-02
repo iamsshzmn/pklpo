@@ -1,0 +1,106 @@
+﻿-- Cleanup: remove Metabase tables and legacy OHLCV from pklpo DB
+-- Run: psql -U pklpo_user -d pklpo -f cleanup_metabase_tables.sql
+
+-- 1. Metabase views
+DROP VIEW IF EXISTS v_alerts CASCADE;
+DROP VIEW IF EXISTS v_audit_log CASCADE;
+DROP VIEW IF EXISTS v_content CASCADE;
+DROP VIEW IF EXISTS v_dashboardcard CASCADE;
+DROP VIEW IF EXISTS v_databases CASCADE;
+DROP VIEW IF EXISTS v_fields CASCADE;
+DROP VIEW IF EXISTS v_group_members CASCADE;
+DROP VIEW IF EXISTS v_query_log CASCADE;
+DROP VIEW IF EXISTS v_subscriptions CASCADE;
+DROP VIEW IF EXISTS v_tables CASCADE;
+DROP VIEW IF EXISTS v_tasks CASCADE;
+DROP VIEW IF EXISTS v_users CASCADE;
+DROP VIEW IF EXISTS v_view_log CASCADE;
+
+-- 2. Metabase tables (CASCADE handles FK dependencies)
+DROP TABLE IF EXISTS sandboxes CASCADE;
+DROP TABLE IF EXISTS connection_impersonations CASCADE;
+DROP TABLE IF EXISTS model_index_value CASCADE;
+DROP TABLE IF EXISTS model_index CASCADE;
+DROP TABLE IF EXISTS persisted_info CASCADE;
+DROP TABLE IF EXISTS moderation_review CASCADE;
+DROP TABLE IF EXISTS qrtz_blob_triggers CASCADE;
+DROP TABLE IF EXISTS qrtz_simple_triggers CASCADE;
+DROP TABLE IF EXISTS qrtz_simprop_triggers CASCADE;
+DROP TABLE IF EXISTS qrtz_cron_triggers CASCADE;
+DROP TABLE IF EXISTS qrtz_triggers CASCADE;
+DROP TABLE IF EXISTS qrtz_fired_triggers CASCADE;
+DROP TABLE IF EXISTS qrtz_calendars CASCADE;
+DROP TABLE IF EXISTS qrtz_job_details CASCADE;
+DROP TABLE IF EXISTS qrtz_locks CASCADE;
+DROP TABLE IF EXISTS qrtz_paused_trigger_grps CASCADE;
+DROP TABLE IF EXISTS qrtz_scheduler_state CASCADE;
+DROP TABLE IF EXISTS dashboardcard_series CASCADE;
+DROP TABLE IF EXISTS report_dashboardcard CASCADE;
+DROP TABLE IF EXISTS report_cardfavorite CASCADE;
+DROP TABLE IF EXISTS report_dashboard CASCADE;
+DROP TABLE IF EXISTS dashboard_tab CASCADE;
+DROP TABLE IF EXISTS dashboard_favorite CASCADE;
+DROP TABLE IF EXISTS dashboard_bookmark CASCADE;
+DROP TABLE IF EXISTS card_bookmark CASCADE;
+DROP TABLE IF EXISTS card_label CASCADE;
+DROP TABLE IF EXISTS report_card CASCADE;
+DROP TABLE IF EXISTS native_query_snippet CASCADE;
+DROP TABLE IF EXISTS parameter_card CASCADE;
+DROP TABLE IF EXISTS query_action CASCADE;
+DROP TABLE IF EXISTS http_action CASCADE;
+DROP TABLE IF EXISTS implicit_action CASCADE;
+DROP TABLE IF EXISTS action CASCADE;
+DROP TABLE IF EXISTS pulse_channel_recipient CASCADE;
+DROP TABLE IF EXISTS pulse_channel CASCADE;
+DROP TABLE IF EXISTS pulse_card CASCADE;
+DROP TABLE IF EXISTS pulse CASCADE;
+DROP TABLE IF EXISTS timeline_event CASCADE;
+DROP TABLE IF EXISTS timeline CASCADE;
+DROP TABLE IF EXISTS view_log CASCADE;
+DROP TABLE IF EXISTS recent_views CASCADE;
+DROP TABLE IF EXISTS login_history CASCADE;
+DROP TABLE IF EXISTS lock_logs CASCADE;
+DROP TABLE IF EXISTS query_execution CASCADE;
+DROP TABLE IF EXISTS query_cache CASCADE;
+DROP TABLE IF EXISTS query CASCADE;
+DROP TABLE IF EXISTS task_history CASCADE;
+DROP TABLE IF EXISTS revision CASCADE;
+DROP TABLE IF EXISTS audit_log CASCADE;
+DROP TABLE IF EXISTS activity CASCADE;
+DROP TABLE IF EXISTS bookmark_ordering CASCADE;
+DROP TABLE IF EXISTS user_settings CASCADE;
+DROP TABLE IF EXISTS setting CASCADE;
+-- Keep system_settings: used by trigger_cleanup_old_data() on swap_ohlcv_p.
+-- DROP TABLE IF EXISTS system_settings CASCADE;
+DROP TABLE IF EXISTS secret CASCADE;
+DROP TABLE IF EXISTS alerts CASCADE;
+DROP TABLE IF EXISTS api_key CASCADE;
+DROP TABLE IF EXISTS application_permissions_revision CASCADE;
+DROP TABLE IF EXISTS collection_permission_graph_revision CASCADE;
+DROP TABLE IF EXISTS collection_bookmark CASCADE;
+DROP TABLE IF EXISTS collection CASCADE;
+DROP TABLE IF EXISTS permissions_group_membership CASCADE;
+DROP TABLE IF EXISTS permissions_revision CASCADE;
+DROP TABLE IF EXISTS permissions CASCADE;
+DROP TABLE IF EXISTS permissions_group CASCADE;
+DROP TABLE IF EXISTS metabase_fieldvalues CASCADE;
+DROP TABLE IF EXISTS metabase_field CASCADE;
+DROP TABLE IF EXISTS metabase_table CASCADE;
+DROP TABLE IF EXISTS metabase_database CASCADE;
+DROP TABLE IF EXISTS metric_important_field CASCADE;
+DROP TABLE IF EXISTS metric CASCADE;
+DROP TABLE IF EXISTS segment CASCADE;
+DROP TABLE IF EXISTS calculation_metadata CASCADE;
+DROP TABLE IF EXISTS dependency CASCADE;
+DROP TABLE IF EXISTS dimension CASCADE;
+DROP TABLE IF EXISTS label CASCADE;
+DROP TABLE IF EXISTS core_session CASCADE;
+DROP TABLE IF EXISTS core_user CASCADE;
+DROP TABLE IF EXISTS databasechangelog CASCADE;
+DROP TABLE IF EXISTS table_privileges CASCADE;
+DROP TABLE IF EXISTS performance_metrics CASCADE;
+DROP TABLE IF EXISTS migration_logs CASCADE;
+
+-- 3. Legacy empty OHLCV tables (replaced by swap_ohlcv_p)
+DROP TABLE IF EXISTS ohlcv CASCADE;
+DROP TABLE IF EXISTS ohlcv_p CASCADE;

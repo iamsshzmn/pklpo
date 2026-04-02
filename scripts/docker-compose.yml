@@ -5,7 +5,7 @@ services:
       dockerfile: docker/Dockerfile.app
     container_name: pklpo_app
     volumes:
-      - ./src:/app
+      - ../src:/app
     env_file:
       - ../.env
     depends_on:
@@ -17,10 +17,12 @@ services:
     image: postgres:16.3
     container_name: pklpo_db
     restart: always
+    env_file:
+      - ../.env
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-pklpo}
+      POSTGRES_USER: ${POSTGRES_USER:-pklpo_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strongpassword}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -31,9 +33,11 @@ services:
   pgadmin:
     image: dpage/pgadmin4:9.13
     container_name: pklpo_pgadmin
+    env_file:
+      - ../.env
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
       PGADMIN_CONFIG_SERVER_MODE: 'False'
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
     ports:
@@ -49,12 +53,14 @@ services:
     image: metabase/metabase:v0.57.6.x
     container_name: pklpo_metabase
     restart: always
+    env_file:
+      - ../.env
     environment:
       MB_DB_TYPE: postgres
-      MB_DB_DBNAME: ${POSTGRES_DB}
+      MB_DB_DBNAME: metabase
       MB_DB_PORT: 5432
-      MB_DB_USER: ${POSTGRES_USER}
-      MB_DB_PASS: ${POSTGRES_PASSWORD}
+      MB_DB_USER: ${POSTGRES_USER:-pklpo_user}
+      MB_DB_PASS: ${POSTGRES_PASSWORD:-strongpassword}
       MB_DB_HOST: db
       MB_ENCRYPTION_SECRET_KEY: ${MB_ENCRYPTION_SECRET_KEY:-your-secret-key-here}
     ports:
@@ -75,4 +81,5 @@ volumes:
 
 networks:
   pklpo_network:
-    driver: bridge
+    external: true
+    name: pklpo_pklpo_network
