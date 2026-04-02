@@ -570,7 +570,7 @@ async def _refill_null_indicators(
     )
 
     # Validate indicator names to avoid SQL injection.
-    from src.models import Indicator
+    from src.features.infrastructure.models import Indicator
 
     valid_columns = {col.name for col in Indicator.__table__.columns}
     invalid_inds = [ind for ind in null_indicators if ind not in valid_columns]

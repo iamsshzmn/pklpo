@@ -1,27 +1,26 @@
 """
 DAG: okx_swap_ohlcv_sync_v2
 
-Назначение
-- Сбор и загрузка OHLCV свечей для SWAP-инструментов OKX в таблицу `swap_ohlcv_p`.
-- Дополнительно, при `extra_data=True`, подтягиваются `funding_rate` и `open_interest`.
+Purpose
+- Collect and load OHLCV candles for OKX SWAP instruments into `swap_ohlcv_p`.
+- Optionally (extra_data=True) fetches `funding_rate` and `open_interest`.
 
-Состав задач
-- refresh_okx_meta: обновляет справочник инструментов условно (кэш < 24 ч -> пропуск).
-- swap_sync: вызывает candles interface entrypoint и возвращает агрегированную
-  статистику в XCom (`return_value`).
-- smoke_validate: быстрая проверка наличия записей и доли заполнения за сегодня.
-- quality_pipeline: data-quality checks с оповещениями.
+Tasks
+- refresh_okx_meta: conditionally refreshes instrument metadata (cache < 24h -> skip).
+- swap_sync: calls candles interface entrypoint, returns aggregated stats via XCom.
+- smoke_validate: quick check for records and fill rate for today.
+- quality_pipeline: data-quality checks with alerts.
 
-Параметры запуска (через dag_run.conf)
+Run parameters (via dag_run.conf)
 - mode: "fast" (default), "slow", "ext", "bootstrap"
 - extra_data: bool (default: False)
-- timeframes: list[str] (optional, переопределяет режим)
+- timeframes: list[str] (optional, overrides mode)
 - symbols: list[str] (optional)
 - refresh_instruments: bool (default: False)
 - max_concurrent_symbols: int (optional)
 
-Расписание
-- schedule="*/5 * * * *": fast каждые 5 мин, slow в 0/15/30/45 (авто-слоты).
+Schedule
+- schedule="*/5 * * * *": fast every 5 min, slow at 0/15/30/45 (auto-slots).
 """
 
 import asyncio
@@ -78,7 +77,7 @@ def get_dag_env() -> dict[str, str]:
         env["DATABASE_URL"] = _normalize_async_database_uri(conn.get_uri())
     except Exception as exc:
         raise RuntimeError(
-            "DATABASE_URL не настроен. Установите Airflow Connection 'pklpo_db'."
+            "DATABASE_URL not configured. Set Airflow Connection 'pklpo_db'."
         ) from exc
 
     env["DATABASE_SSL"] = Variable.get("pklpo_database_ssl", default_var="disable")
@@ -196,12 +195,14 @@ def validate_swap_sync_xcom_task(**context):
     if not isinstance(payload, dict):
         raise ValueError(f"swap_sync XCom must be dict, got {type(payload).__name__}")
 
-    required_keys = ("mode", "skipped")
+    required_keys = ("mode",)
     missing_keys = [key for key in required_keys if key not in payload]
     if missing_keys:
         raise ValueError(f"swap_sync XCom missing required keys: {missing_keys}")
 
-    if payload.get("skipped"):
+    skipped = bool(payload.get("skipped", False))
+
+    if skipped:
         print(
             f"[validate_swap_sync_xcom] skipped mode={payload.get('mode')} "
             f"reason={payload.get('reason', 'unknown')}"
@@ -212,6 +213,7 @@ def validate_swap_sync_xcom_task(**context):
         "mode",
         "timeframes",
         "symbols_count",
+        "total_symbols_processed",
         "duration_sec",
         "rows_upserted_total",
         "errors_count",
@@ -223,12 +225,17 @@ def validate_swap_sync_xcom_task(**context):
     missing_sync_keys = [key for key in sync_required_keys if key not in payload]
     if missing_sync_keys:
         raise ValueError(f"swap_sync XCom missing sync keys: {missing_sync_keys}")
+    if payload["rows_upserted_total"] == 0:
+        raise ValueError("swap_sync total failure: rows_upserted_total == 0")
+    if payload["total_symbols_processed"] == 0:
+        raise ValueError("swap_sync total failure: total_symbols_processed == 0")
 
     print(
         "[validate_swap_sync_xcom] "
         f"mode={payload['mode']} "
         f"timeframes={payload['timeframes']} "
         f"symbols_count={payload['symbols_count']} "
+        f"total_symbols_processed={payload['total_symbols_processed']} "
         f"rows_upserted_total={payload['rows_upserted_total']} "
         f"api_429_count={payload['api_429_count']}"
     )

@@ -66,6 +66,18 @@ services:
       - pklpo_network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    develop:
+      watch:
+        - action: sync
+          path: ../../src
+          target: /opt/airflow/project/src
+        - action: sync
+          path: ./dags
+          target: /opt/airflow/dags
+        - action: rebuild
+          path: ./Dockerfile.airflow
+        - action: rebuild
+          path: ./requirements-airflow.txt
     restart: always
 
   airflow-scheduler:
@@ -83,6 +95,18 @@ services:
       - pklpo_network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    develop:
+      watch:
+        - action: sync
+          path: ../../src
+          target: /opt/airflow/project/src
+        - action: sync
+          path: ./dags
+          target: /opt/airflow/dags
+        - action: rebuild
+          path: ./Dockerfile.airflow
+        - action: rebuild
+          path: ./requirements-airflow.txt
     restart: always
 
 volumes:

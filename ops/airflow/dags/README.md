@@ -26,7 +26,7 @@
 
 **Состав задач:**
 1. `refresh_okx_meta` - обновляет справочник инструментов (CLI: load-instruments) условно
-2. `swap_sync` - вызывает Python-функцию `sync_swap_candles` и возвращает статистику в XCom
+2. `swap_sync` - вызывает canonical entrypoint `src.candles.interfaces.swap_sync.sync_swap_candles` и возвращает статистику в XCom
 3. `smoke_validate` - быстрая проверка наличия записей и доли заполнения `funding_rate`/`open_interest`
 
 **Параметры запуска (через `dag_run.conf`):**
@@ -77,7 +77,8 @@ airflow dags trigger okx_swap_ohlcv_sync_v2 --conf '{"mode":"bootstrap","refresh
 
 **Логирование:**
 - Лог-файл: `/tmp/pklpo/market_meta.log`
-- XCom у `swap_sync`: ключ `return_value` содержит статистику (mode, timeframes, symbols_count, duration_sec, rows_upserted_total, api_429_count, today_fill)
+- XCom у `swap_sync`: ключ `return_value` содержит статистику sync run, включая `mode`, `timeframes`, `symbols_count`, `total_symbols_processed`, `rows_upserted_total`, `endpoint_stats`, `today_fill` и `sync_run`
+- `validate_swap_sync_xcom` валит non-skipped run только при total failure: `rows_upserted_total == 0` или `total_symbols_processed == 0`; `errors_count` остаётся диагностикой partial issues
 
 **Настройки:**
 - `max_active_runs=1` - только один активный запуск
@@ -381,7 +382,7 @@ features_calc (полный расчёт, ручной запуск)
 
 После выполнения задач проверяйте XCom для получения статистики:
 
-- `okx_swap_ohlcv_sync_v2.swap_sync`: mode, timeframes, symbols_count, duration_sec, rows_upserted_total, api_429_count, today_fill
+- `okx_swap_ohlcv_sync_v2.swap_sync`: mode, timeframes, symbols_count, total_symbols_processed, duration_sec, rows_upserted_total, api_429_count, today_fill
 - `features_calc_short.features_calc_short_run`: total_symbols, successful, failed, rows_saved_total, duration_seconds
 
 ### Логи

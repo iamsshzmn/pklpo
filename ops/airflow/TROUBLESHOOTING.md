@@ -195,3 +195,127 @@ docker network inspect pklpo_pklpo_network
 ```bash
 docker network create pklpo_pklpo_network
 ```
+
+---
+
+## Runbook: swap_sync DB-аварии
+
+Этот раздел охватывает инфраструктурные инциденты вокруг `pklpo_db` и DAG `okx_swap_ohlcv_sync_v2`.
+
+> **Важно:** DB-слой (retry, pool_pre_ping, pool_recycle) смягчает кратковременные сбои, но **не устраняет** инфраструктурную аварию. Если `pklpo_db` не запущен или scheduler не видит его по сети — это инфраструктурная проблема. Чините её на уровне Docker/Compose, а не кода.
+
+---
+
+### Симптом: `connection is closed` / `Connect call failed`
+
+**Что значит:** asyncpg потерял соединение с Postgres в момент выполнения запроса.
+
+**Диагностика:**
+```bash
+# 1. Проверить, запущен ли pklpo_db
+docker ps --filter "name=pklpo_db"
+
+# 2. Проверить логи pklpo_db
+docker logs pklpo_db --tail=50
+```
+
+**Решение:**
+- Если `pklpo_db` в статусе `Restarting` — см. симптом «pklpo_db restarting» ниже.
+- Если кратковременный сбой — swap_sync сам восстановится (pool_pre_ping + retry).
+- Если DB стабильна, но swap_sync всё равно падает — проверить `pool_recycle` и переподключение.
+
+---
+
+### Симптом: `Name or service not known` / `Temporary failure in name resolution`
+
+**Что значит:** scheduler/worker не может разрезолвить имя `pklpo_db` через Docker DNS.
+
+**Причина:** контейнеры находятся в разных Docker-сетях.
+
+**Диагностика:**
+```bash
+# Проверить, что pklpo_db и airflow-scheduler в одной сети
+docker inspect pklpo_db | grep -A10 '"Networks"'
+docker inspect pklpo-airflow-airflow-scheduler-1 | grep -A10 '"Networks"'
+```
+
+Оба контейнера должны быть в `pklpo_pklpo_network`.
+
+**Решение:**
+```bash
+# Если scheduler не в pklpo_pklpo_network — подключить вручную
+docker network connect pklpo_pklpo_network pklpo-airflow-airflow-scheduler-1
+
+# Или пересобрать через docker-compose (сеть прописана в docker-compose.airflow.yml)
+docker compose -f ops/airflow/docker-compose.airflow.yml down
+docker compose -f ops/airflow/docker-compose.airflow.yml up -d
+```
+
+---
+
+### Симптом: `pklpo_db restarting` — контейнер не стартует
+
+**Причина:** `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` пустые или не заданы.
+
+**Диагностика:**
+```bash
+docker logs pklpo_db --tail=30
+# Ищем: "error: database is uninitialized and password option is not specified"
+```
+
+**Решение:**
+1. Убедиться, что `.env` содержит все три переменные.
+2. Проверить `scripts/docker-compose.yml` — секция `db.environment` должна иметь безопасные дефолты:
+   ```yaml
+   POSTGRES_DB: ${POSTGRES_DB:-pklpo}
+   POSTGRES_USER: ${POSTGRES_USER:-pklpo_user}
+   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strongpassword}
+   ```
+3. Пересоздать контейнер:
+   ```bash
+   docker compose -f scripts/docker-compose.yml up -d --force-recreate db
+   ```
+
+---
+
+### Симптом: `airflow-scheduler cannot resolve pklpo_db`
+
+Полная ошибка: `Name or service not known` при попытке подключиться к `pklpo_db:5432`.
+
+**Причина:** scheduler запустился раньше, чем `pklpo_db` присоединился к `pklpo_pklpo_network`, или Compose-сети разведены.
+
+**Решение:** см. симптом «Name or service not known» выше.
+
+---
+
+### Симптом: `validate_swap_sync_xcom` падает после успешного `swap_sync`
+
+**Диагностика:** посмотреть XCom в Airflow UI: Admin → XComs → фильтровать по `swap_sync`.
+
+**Возможные причины:**
+- `swap_sync` вернул `skipped=True` без обязательных ключей (нормально, проверяет только `mode`).
+- `format_stats_for_xcom` не передала один из ключей: `mode`, `timeframes`, `symbols_count`, `total_symbols_processed`, `duration_sec`, `rows_upserted_total`, `errors_count`, `candles_per_second`, `api_429_count`, `api_timeout_count`, `today_fill`.
+- Non-skipped run действительно считается total failure и падает, если `rows_upserted_total == 0` или `total_symbols_processed == 0`; `errors_count > 0` сам по себе не делает DAG красным.
+
+---
+
+### После DB-аварии: восстановление схемы
+
+Если `pklpo_db` поднялся с пустой БД:
+```bash
+# Запустить миграции
+docker exec pklpo_app python -m src.cli.main migrate
+
+# Проверить схему
+docker exec pklpo_db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\dt"'
+```
+
+---
+
+### Обновление Airflow-образов после изменения кода
+
+Код проекта вшит в образ (нет bind-mount на `/opt/airflow/project`). После изменений в `src/`:
+```bash
+docker compose -f ops/airflow/docker-compose.airflow.yml build --no-cache airflow-webserver airflow-scheduler
+docker compose -f ops/airflow/docker-compose.airflow.yml up -d --force-recreate airflow-webserver airflow-scheduler
+```
