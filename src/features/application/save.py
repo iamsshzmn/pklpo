@@ -22,18 +22,13 @@ import pandas as pd
 
 from src.config import FeaturesSettings, get_settings
 
-from ..infrastructure.persistence.row_processor import build_batch_data
 from ..utils.memlog import force_cleanup
 from .save_validation import create_feature_save_validator
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from ..domain.protocols import (
-        FeatureSaveObserver,
-        FeatureSaveValidator,
-        IndicatorRepository,
-    )
+    from ..ports import FeatureSaveObserver, FeatureSaveValidator, IndicatorRepository
 
 
 async def save_batch(
@@ -234,13 +229,30 @@ def _prepare_batch_data(
             pd.to_numeric(working_df["ts"], errors="coerce") * 1000
         )
 
-    db_cols = set(working_df.columns) - {"ts"}
-    batch_data, _ = build_batch_data(
-        ind_df=working_df,
-        symbol=symbol,
-        timeframe=timeframe,
-        db_cols=db_cols,
-    )
+    batch_data: list[dict[str, Any]] = []
+    indicator_columns = [
+        col
+        for col in working_df.columns
+        if col not in {"ts", "open", "high", "low", "close", "volume"}
+    ]
+    for row in working_df.to_dict(orient="records"):
+        timestamp_ms = row.get("timestamp")
+        if pd.isna(timestamp_ms):
+            continue
+
+        record: dict[str, Any] = {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "timestamp": int(timestamp_ms),
+            "calculated_at": datetime.utcfromtimestamp(int(timestamp_ms) / 1000),
+        }
+        for col in indicator_columns:
+            value = row.get(col)
+            if pd.isna(value):
+                continue
+            record[col] = float(value)
+        batch_data.append(record)
+
     return batch_data
 
 

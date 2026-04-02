@@ -10,18 +10,13 @@ import time
 from typing import TYPE_CHECKING
 
 from src.logging import get_logger
-from src.models import INDICATORS_TABLE_NAME
 
 from ..domain.calculator import calculate_batch
 from ..domain.strategy import get_max_lookback_for_strategies
-from ..infrastructure.database import (
-    ensure_columns_exist,
-    fetch_latest_ts,
-    fetch_ohlcv_df,
-)
+from ..ports import FeatureSaveDependenciesFactory, FeatureStorageGateway
+from ..storage_contract import IndicatorStorageContract
 from ..utils.time_utils import timeframe_to_seconds
 from .save import save_batch
-from .save_dependencies import create_feature_save_dependencies
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -44,7 +39,13 @@ async def process_dataframe(
 
 
 async def process_single_pair(
-    session, symbol: str, timeframe: str, available: set[str]
+    session,
+    symbol: str,
+    timeframe: str,
+    available: set[str],
+    *,
+    storage_gateway: FeatureStorageGateway,
+    save_dependencies_factory: FeatureSaveDependenciesFactory,
 ) -> tuple[bool, int, float, list[str]]:
     """
     Process a single symbol/timeframe pair.
@@ -57,7 +58,7 @@ async def process_single_pair(
 
     try:
         # Get the latest calculated indicator timestamp in seconds.
-        max_ts = await fetch_latest_ts(session, symbol, timeframe) or 0
+        max_ts = await storage_gateway.fetch_latest_ts(session, symbol, timeframe) or 0
 
         # Calculate the warmup offset from indicator lookback.
         max_lookback = get_max_lookback_for_strategies(list(available))
@@ -73,7 +74,12 @@ async def process_single_pair(
             f"warmup_bars={warmup_bars}, since_ts={since_ts}"
         )
 
-        df = await fetch_ohlcv_df(session, symbol, timeframe, since_ts=since_ts)
+        df = await storage_gateway.fetch_ohlcv_df(
+            session,
+            symbol,
+            timeframe,
+            since_ts=since_ts,
+        )
         if df is None or len(df) < 20:
             return False, 0, time.time() - start_time, ["Insufficient data"]
 
@@ -83,9 +89,13 @@ async def process_single_pair(
             for c in ind_df.columns
             if c not in ("open", "high", "low", "close", "volume", "ts")
         ]
-        await ensure_columns_exist(session, INDICATORS_TABLE_NAME, indicator_columns)
+        await storage_gateway.ensure_indicator_columns(
+            session,
+            IndicatorStorageContract.table_name,
+            indicator_columns,
+        )
 
-        save_deps = create_feature_save_dependencies(session)
+        save_deps = save_dependencies_factory(session)
         save_result = await save_batch(
             session=session,
             df=ind_df,

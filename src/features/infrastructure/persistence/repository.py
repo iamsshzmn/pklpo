@@ -12,14 +12,13 @@ from typing import TYPE_CHECKING
 import pandas as pd
 from sqlalchemy import text
 
-from src.models import INDICATORS_TABLE_NAME
-
+from ...storage_contract import IndicatorStorageContract
 from .inserter import insert_indicators
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from ...domain.protocols import IndicatorRepository
+    from ...ports import IndicatorRepository
 
 
 class SqlAlchemyIndicatorRepository:
@@ -66,7 +65,7 @@ class SqlAlchemyIndicatorRepository:
                     "WHERE table_name = :table_name"
                     ")"
                 ),
-                {"table_name": INDICATORS_TABLE_NAME},
+                {"table_name": IndicatorStorageContract.table_name},
             )
             table_exists = table_check.scalar()
 
@@ -79,7 +78,7 @@ class SqlAlchemyIndicatorRepository:
                         "WHERE table_name = :table_name "
                         "ORDER BY ordinal_position"
                     ),
-                    {"table_name": INDICATORS_TABLE_NAME},
+                    {"table_name": IndicatorStorageContract.table_name},
                 )
                 columns = [
                     {"name": row[0], "type": row[1]}
@@ -111,7 +110,7 @@ class SqlAlchemyIndicatorRepository:
 
             count_result = await self._session.execute(
                 text(
-                    f"SELECT COUNT(*) FROM {INDICATORS_TABLE_NAME} "
+                    f"SELECT COUNT(*) FROM {IndicatorStorageContract.table_name} "
                     "WHERE symbol = :symbol AND timeframe = :timeframe"
                 ),
                 {"symbol": symbol, "timeframe": timeframe},
@@ -121,7 +120,7 @@ class SqlAlchemyIndicatorRepository:
             ts_result = await self._session.execute(
                 text(
                     "SELECT MIN(timestamp), MAX(timestamp), COUNT(DISTINCT timestamp) "
-                    f"FROM {INDICATORS_TABLE_NAME} "
+                    f"FROM {IndicatorStorageContract.table_name} "
                     "WHERE symbol = :symbol AND timeframe = :timeframe"
                 ),
                 {"symbol": symbol, "timeframe": timeframe},
@@ -132,7 +131,7 @@ class SqlAlchemyIndicatorRepository:
                 text(
                     "SELECT COUNT(*) FROM ("
                     "  SELECT symbol, timeframe, timestamp, COUNT(*) "
-                    f"  FROM {INDICATORS_TABLE_NAME} "
+                    f"  FROM {IndicatorStorageContract.table_name} "
                     "  WHERE symbol = :symbol AND timeframe = :timeframe "
                     "  GROUP BY symbol, timeframe, timestamp "
                     "  HAVING COUNT(*) > 1"

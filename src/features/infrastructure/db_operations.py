@@ -1,128 +1,164 @@
-"""
-Функции для работы с базой данных.
-"""
+"""Functions for feature-related database access."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
 
 import pandas as pd
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 
-from src.models import OHLCV, Indicator
+from src.features.storage_contract import IndicatorStorageContract
+
+_TIMEFRAME_TO_SECONDS = {
+    "1m": 60,
+    "5m": 300,
+    "15m": 900,
+    "30m": 1800,
+    "1H": 3600,
+    "4H": 14400,
+    "12H": 43200,
+    "1D": 86400,
+    "1W": 604800,
+    "1M": 2592000,
+}
+
+
+def _month_start(dt: datetime) -> datetime:
+    normalized = dt.astimezone(UTC)
+    return datetime(normalized.year, normalized.month, 1, tzinfo=UTC)
+
+
+def _add_month(dt: datetime, months: int) -> datetime:
+    month_index = dt.month - 1 + months
+    year = dt.year + month_index // 12
+    month = month_index % 12 + 1
+    return datetime(year, month, 1, tzinfo=UTC)
+
+
+def _timeframe_to_seconds(timeframe: str) -> int:
+    return _TIMEFRAME_TO_SECONDS.get(timeframe, 60)
+
+
+def build_ohlcv_partition_pruning_window_ms(
+    *,
+    timeframe: str,
+    since_ts: int | None,
+    limit: int,
+    now_utc: datetime | None = None,
+) -> tuple[int, int]:
+    """Return an inclusive/exclusive timestamp window for monthly partition pruning."""
+    now = (now_utc or datetime.now(UTC)).astimezone(UTC)
+    horizon_seconds = max(limit, 1) * _timeframe_to_seconds(timeframe)
+    lower_anchor = (
+        datetime.fromtimestamp(since_ts, tz=UTC)
+        if since_ts is not None
+        else datetime.fromtimestamp(max(0, int(now.timestamp()) - horizon_seconds), tz=UTC)
+    )
+    lower_bound = _month_start(lower_anchor)
+    upper_bound = _add_month(_month_start(now), 1)
+    return int(lower_bound.timestamp() * 1000), int(upper_bound.timestamp() * 1000)
 
 
 async def fetch_latest_ts(session, symbol: str, timeframe: str) -> int | None:
-    """Вернуть последний timestamp в СЕКУНДАХ из таблицы indicators.
-
-    В модели Indicator поле называется `timestamp` и хранится в миллисекундах.
-    Здесь нормализуем к секундам для совместимости с остальным кодом.
-    """
-    q = (
-        select(func.max(Indicator.timestamp))
-        .where(Indicator.symbol == symbol)
-        .where(Indicator.timeframe == timeframe)
+    """Return the latest indicator timestamp in seconds for a symbol/timeframe."""
+    res = await session.execute(
+        text(
+            f"""
+            SELECT timestamp
+            FROM {IndicatorStorageContract.table_name}
+            WHERE symbol = :symbol
+              AND timeframe = :timeframe
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """
+        ),
+        {"symbol": symbol, "timeframe": timeframe},
     )
-    res = await session.execute(q)
     latest_ms = res.scalar_one_or_none()
     return (latest_ms // 1000) if latest_ms else None
 
 
 async def ensure_columns_exist(session, table: str, columns: list[str]) -> None:
-    from src.db.db_schema_utils import ensure_columns  # локальный импорт, как раньше
+    from src.db.db_schema_utils import ensure_columns
 
     await ensure_columns(session, table, columns)
 
 
 async def get_symbol_timeframes_to_update(session):
-    """Получить пары (symbol, timeframe), для которых есть новые OHLCV-данные."""
-    subq = (
-        select(
-            Indicator.symbol,
-            Indicator.timeframe,
-            func.max(Indicator.timestamp).label("max_ts_ms"),
+    """Return (symbol, timeframe) pairs with new OHLCV rows to process."""
+    result = await session.execute(
+        text(
+            f"""
+            WITH latest_indicators AS (
+                SELECT symbol, timeframe, MAX(timestamp) AS max_ts_ms
+                FROM {IndicatorStorageContract.table_name}
+                GROUP BY symbol, timeframe
+            )
+            SELECT o.symbol, o.timeframe
+            FROM swap_ohlcv_p o
+            LEFT JOIN latest_indicators i
+              ON i.symbol = o.symbol
+             AND i.timeframe = o.timeframe
+            WHERE o.timestamp > COALESCE(i.max_ts_ms, 0)
+            GROUP BY o.symbol, o.timeframe
+            """
         )
-        .group_by(Indicator.symbol, Indicator.timeframe)
-        .subquery()
     )
-
-    q = (
-        select(OHLCV.symbol, OHLCV.timeframe)
-        .outerjoin(
-            subq,
-            (OHLCV.symbol == subq.c.symbol) & (OHLCV.timeframe == subq.c.timeframe),
-        )
-        .where(OHLCV.ts > func.coalesce(subq.c.max_ts_ms, 0))  # оба в мс
-        .group_by(OHLCV.symbol, OHLCV.timeframe)
-    )
-    result = await session.execute(q)
     return result.all()
 
 
 async def fetch_ohlcv_df(
     session, symbol: str, timeframe: str, since_ts: int | None = None, limit: int = 200
 ) -> pd.DataFrame | None:
-    """Получить OHLCV для символа/таймфрейма с учетом since_ts (секунды)."""
-    # 1) Основной источник: таблица ohlcv (ts в миллисекундах)
-    q = (
-        select(OHLCV)
-        .where(OHLCV.symbol == symbol, OHLCV.timeframe == timeframe)
-        .order_by(OHLCV.ts.desc())
+    """Load OHLCV data from swap_ohlcv_p using timestamp bounds for partition pruning."""
+    from_ts_ms, to_ts_ms = build_ohlcv_partition_pruning_window_ms(
+        timeframe=timeframe,
+        since_ts=since_ts,
+        limit=limit,
     )
-    if since_ts:
-        # since_ts в секундах, ohlcv.ts в миллисекундах
-        q = q.where(OHLCV.ts > since_ts * 1000)
-    q = q.limit(limit)
-    result = await session.execute(q)
-    rows = result.scalars().all()
-    if rows:
-        df = pd.DataFrame(
-            [
-                {
-                    "ts": r.ts // 1000,  # конвертируем миллисекунды в секунды
-                    "open": float(r.open),
-                    "high": float(r.high),
-                    "low": float(r.low),
-                    "close": float(r.close),
-                    "volume": float(r.volume),
-                }
-                for r in reversed(rows)
-            ]
-        )
 
-        df.name = symbol
-        df.timeframe = timeframe
-        return df
+    params = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "from_ts_ms": from_ts_ms,
+        "to_ts_ms": to_ts_ms,
+        "limit": int(limit),
+    }
+    query = """
+        SELECT timestamp, open, high, low, close, volume
+        FROM swap_ohlcv_p
+        WHERE symbol = :symbol
+          AND timeframe = :timeframe
+          AND timestamp >= :from_ts_ms
+          AND timestamp < :to_ts_ms
+    """
+    if since_ts is not None:
+        query += " AND timestamp > :since_ts_ms"
+        params["since_ts_ms"] = since_ts * 1000
 
-    # 2) Фоллбек: таблица swap_ohlcv_p (timestamp в миллисекундах)
-    try:
-        # Формируем запрос вручную, учитывая имена столбцов (LIMIT как литерал для совместимости)
-        base_sql = (
-            "SELECT symbol, timeframe, timestamp, open, high, low, close, volume "
-            "FROM swap_ohlcv_p WHERE symbol=:symbol AND timeframe=:timeframe "
-        )
-        params = {"symbol": symbol, "timeframe": timeframe}
-        if since_ts:
-            base_sql += "AND timestamp > :since_ms "
-            params["since_ms"] = since_ts * 1000  # INT, не строка!
-        base_sql += f"ORDER BY timestamp DESC LIMIT {int(limit)}"
+    query += """
+        ORDER BY timestamp DESC
+        LIMIT :limit
+    """
 
-        res = await session.execute(text(base_sql), params)
-        rows2 = res.fetchall()
-        if not rows2:
-            return None
-
-        df2 = pd.DataFrame(
-            [
-                {
-                    "ts": int(r[2]) // 1000,
-                    "open": float(r[3]),
-                    "high": float(r[4]),
-                    "low": float(r[5]),
-                    "close": float(r[6]),
-                    "volume": float(r[7]) if r[7] is not None else 0.0,
-                }
-                for r in reversed(rows2)
-            ]
-        )
-        df2.name = symbol
-        df2.timeframe = timeframe
-        return df2
-    except Exception:
+    res = await session.execute(text(query), params)
+    rows = res.fetchall()
+    if not rows:
         return None
+
+    df = pd.DataFrame(
+        [
+            {
+                "ts": int(row[0]) // 1000,
+                "open": float(row[1]),
+                "high": float(row[2]),
+                "low": float(row[3]),
+                "close": float(row[4]),
+                "volume": float(row[5]) if row[5] is not None else 0.0,
+            }
+            for row in reversed(rows)
+        ]
+    )
+    df.name = symbol
+    df.timeframe = timeframe
+    return df

@@ -11,7 +11,7 @@ from typing import Any
 
 from src.logging import get_features_logger
 
-from ..infrastructure.versioning import get_current_version
+from ..bootstrap import get_current_feature_version
 
 logger = get_features_logger("features.backfill")
 
@@ -182,7 +182,7 @@ class FeaturesBackfillManager:
                 raise ValueError("At least one timeframe must be specified")
 
             # Get current version info
-            version_info = get_current_version()
+            version_info = get_current_feature_version()
             self.logger.info(
                 "Using version info for backfill: schema_version=%s, algo_version=%s",
                 version_info.schema_version,

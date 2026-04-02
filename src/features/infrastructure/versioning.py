@@ -383,7 +383,7 @@ def _get_calculation_metadata_model():
     """Lazy import of CalculationMetadata model."""
     global _CalculationMetadata
     if _CalculationMetadata is None:
-        from src.models import CalculationMetadata
+        from .models import CalculationMetadata
 
         _CalculationMetadata = CalculationMetadata
     return _CalculationMetadata

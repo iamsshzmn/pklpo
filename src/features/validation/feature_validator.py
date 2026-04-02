@@ -16,7 +16,7 @@ from ..domain.models import FeatureSpec, FeatureValidationError, FeatureValidati
 
 # Use the canonical registry from specs.py; fall back gracefully if auxiliary registries are absent
 try:
-    from .specs import FEATURE_SPECS, PHASE_2_REQUIRED_FEATURES
+    from ..specs import FEATURE_SPECS, PHASE_2_REQUIRED_FEATURES
 except Exception:  # pragma: no cover - defensive import for partial environments
     FEATURE_SPECS = {}
     PHASE_2_REQUIRED_FEATURES = []

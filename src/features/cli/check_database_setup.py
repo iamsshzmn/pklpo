@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
 """
-CLI команда для проверки настройки БД.
-Проверяет индексы, схемы, права доступа.
+CLI command for database setup verification.
+Checks indexes, schemas, and access permissions.
 """
 
 import asyncio
 import sys
 from pathlib import Path
 
-# Добавляем путь к проекту
+# Add project path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from sqlalchemy import text
 
 from src.database import get_async_session
+from src.features.storage_contract import IndicatorStorageContract
 from src.logging import get_logger
-from src.models import INDICATORS_TABLE_NAME
 
 logger = get_logger(__name__)
 
 
 async def check_unique_index():
-    """Проверяет наличие правильного уникального индекса."""
+    """Check for correct unique index."""
     print("🔍 Checking unique index...")
 
     try:
         async for session in get_async_session():
-            # Проверяем индексы
+            # Check indexes
             index_query = text(
                 """
                 SELECT indexname, indexdef
@@ -37,7 +37,8 @@ async def check_unique_index():
             """
             )
             result = await session.execute(
-                index_query, {"table_name": INDICATORS_TABLE_NAME}
+                index_query,
+                {"table_name": IndicatorStorageContract.table_name},
             )
             indexes = result.fetchall()
 
@@ -45,7 +46,7 @@ async def check_unique_index():
             for name, definition in indexes:
                 print(f"  📋 {name}: {definition}")
 
-            # Проверяем наличие правильного индекса
+            # Check for correct index
             has_correct_index = any(
                 "symbol" in idx[1] and "timeframe" in idx[1] and "timestamp" in idx[1]
                 for idx in indexes
@@ -57,11 +58,11 @@ async def check_unique_index():
             print("❌ No unique index on (symbol, timeframe, timestamp)")
             print("💡 Creating unique index...")
 
-            # Создаем уникальный индекс
+            # Create unique index
             create_index_sql = text(
                 f"""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_indicators_unique
-                    ON {INDICATORS_TABLE_NAME} (symbol, timeframe, timestamp)
+                    ON {IndicatorStorageContract.table_name} (symbol, timeframe, timestamp)
                 """
 
             )
@@ -77,12 +78,12 @@ async def check_unique_index():
 
 
 async def check_table_schema():
-    """Проверяет схему таблицы."""
+    """Check table schema."""
     print("\n🔍 Checking table schema...")
 
     try:
         async for session in get_async_session():
-            # Проверяем схему таблицы
+            # Check table schema
             schema_query = text(
                 """
                 SELECT column_name, data_type, is_nullable, column_default
@@ -93,12 +94,12 @@ async def check_table_schema():
             """
             )
             result = await session.execute(
-                schema_query, {"table_name": INDICATORS_TABLE_NAME}
+                schema_query, {"table_name": IndicatorStorageContract.table_name}
             )
             columns = result.fetchall()
 
             print(f"Table has {len(columns)} columns:")
-            for col_name, data_type, nullable, _default in columns[:10]:  # Первые 10
+            for col_name, data_type, nullable, _default in columns[:10]:
                 print(
                     f"  📋 {col_name}: {data_type} {'NULL' if nullable == 'YES' else 'NOT NULL'}"
                 )
@@ -106,7 +107,7 @@ async def check_table_schema():
             if len(columns) > 10:
                 print(f"  ... and {len(columns) - 10} more columns")
 
-            # Проверяем критические поля
+            # Check critical fields
             critical_fields = ["symbol", "timeframe", "timestamp"]
             col_names = [col[0] for col in columns]
 
@@ -125,12 +126,12 @@ async def check_table_schema():
 
 
 async def check_permissions():
-    """Проверяет права доступа."""
+    """Check access permissions."""
     print("\n🔍 Checking permissions...")
 
     try:
         async for session in get_async_session():
-            # Проверяем права на таблицу
+            # Check table privileges
             perm_query = text(
                 """
                 SELECT privilege_type
@@ -141,7 +142,7 @@ async def check_permissions():
             """
             )
             result = await session.execute(
-                perm_query, {"table_name": INDICATORS_TABLE_NAME}
+                perm_query, {"table_name": IndicatorStorageContract.table_name}
             )
             privileges = [row[0] for row in result.fetchall()]
 
@@ -164,23 +165,25 @@ async def check_permissions():
 
 
 async def test_upsert():
-    """Тестирует UPSERT с тестовыми данными."""
+    """Test UPSERT with sample data."""
     print("\n🧪 Testing UPSERT with sample data...")
 
     try:
         async for session in get_async_session():
-            # Проверяем текущее количество записей
-            count_query = text(f"SELECT COUNT(*) FROM public.{INDICATORS_TABLE_NAME}")
+            # Check current record count
+            count_query = text(
+                f"SELECT COUNT(*) FROM public.{IndicatorStorageContract.table_name}"
+            )
             result = await session.execute(count_query)
             count_before = result.scalar()
             print(f"Records before test: {count_before}")
 
-            # Вставляем тестовую запись
+            # Insert test record
             test_insert = text(
                 f"""
-                INSERT INTO public.{INDICATORS_TABLE_NAME} (symbol, timeframe, timestamp, calculated_at, rsi_14)
+                INSERT INTO public.{IndicatorStorageContract.table_name} (symbol, timeframe, timestamp, calculated_at, rsi_14)
                 VALUES ('TEST-SYMBOL', '1m', 1761044280000, NOW(), 65.5)
-                ON CONFLICT (symbol, timeframe, timestamp)
+                    ON CONFLICT (symbol, timeframe, timestamp)
                 DO UPDATE SET rsi_14 = EXCLUDED.rsi_14, calculated_at = EXCLUDED.calculated_at
             """
 
@@ -189,7 +192,7 @@ async def test_upsert():
             await session.execute(test_insert)
             await session.commit()
 
-            # Проверяем количество записей после
+            # Check record count after
             result = await session.execute(count_query)
             count_after = result.scalar()
             print(f"Records after test: {count_after}")
@@ -197,9 +200,9 @@ async def test_upsert():
             if count_after > count_before:
                 print("✅ UPSERT test successful")
 
-                # Удаляем тестовую запись
+                # Clean up test record
                 cleanup = text(
-                    f"DELETE FROM public.{INDICATORS_TABLE_NAME} WHERE symbol = 'TEST-SYMBOL'"
+                    f"DELETE FROM public.{IndicatorStorageContract.table_name} WHERE symbol = 'TEST-SYMBOL'"
                 )
                 await session.execute(cleanup)
                 await session.commit()
@@ -215,7 +218,7 @@ async def test_upsert():
 
 
 async def main():
-    """Основная функция проверки БД."""
+    """Main database check function."""
     print("🚀 Starting database setup check...")
 
     checks = [
@@ -234,7 +237,7 @@ async def main():
             print(f"❌ {name} check failed: {e}")
             results.append((name, False))
 
-    # Итоговый результат
+    # Summary
     print("\n📊 Check Results:")
     all_passed = True
     for name, passed in results:

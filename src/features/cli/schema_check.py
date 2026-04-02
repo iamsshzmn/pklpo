@@ -18,8 +18,10 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 # Use absolute imports for CLI script compatibility
-from src.features.schema.schema_manager import (
-    SchemaManager,  # type: ignore[import-untyped]
+from src.features.application.sync_indicator_schema import SyncIndicatorSchemaUseCase
+from src.features.domain.indicator_schema_registry import IndicatorSchemaRegistry
+from src.features.infrastructure.indicator_schema_synchronizer import (
+    IndicatorSchemaSynchronizer,
 )
 from src.utils.session_utils import get_db_session  # type: ignore[import-untyped]
 
@@ -46,7 +48,7 @@ def check_schema_file() -> dict[str, Any]:
 
     # Check 2: Schema loads
     try:
-        schema_manager = SchemaManager()
+        schema_registry = IndicatorSchemaRegistry()
         results["checks"].append(("Schema loads successfully", "PASS"))
         results["passed"] += 1
     except Exception as e:
@@ -56,8 +58,8 @@ def check_schema_file() -> dict[str, Any]:
         return results
 
     # Check 3: Version present
-    if "version" in schema_manager.schema:
-        version = schema_manager.schema["version"]
+    if "version" in schema_registry.schema:
+        version = schema_registry.schema["version"]
         results["checks"].append((f"Schema version present ({version})", "PASS"))
         results["passed"] += 1
     else:
@@ -66,7 +68,7 @@ def check_schema_file() -> dict[str, Any]:
         results["failed"] += 1
 
     # Check 4: Primary keys defined
-    primary_keys = schema_manager.schema.get("primary_keys", [])
+    primary_keys = schema_registry.schema.get("primary_keys", [])
     if len(primary_keys) >= 3:  # symbol, timeframe, timestamp
         results["checks"].append(
             (f"Primary keys defined ({len(primary_keys)})", "PASS")
@@ -80,7 +82,7 @@ def check_schema_file() -> dict[str, Any]:
         results["failed"] += 1
 
     # Check 5: Indicators defined
-    all_columns = schema_manager.get_all_columns()
+    all_columns = schema_registry.get_all_columns()
     if len(all_columns) > 20:  # Should have many indicators
         results["checks"].append(
             (f"Indicators defined ({len(all_columns)} columns)", "PASS")
@@ -94,11 +96,11 @@ def check_schema_file() -> dict[str, Any]:
 
     # Check 6: No duplicate field names
     field_names = []
-    for pk in schema_manager.schema.get("primary_keys", []):
+    for pk in schema_registry.schema.get("primary_keys", []):
         field_names.append(pk["name"])
-    for field in schema_manager.schema.get("service_fields", []):
+    for field in schema_registry.schema.get("service_fields", []):
         field_names.append(field["name"])
-    for _category, indicators in schema_manager.schema.get("indicators", {}).items():
+    for _category, indicators in schema_registry.schema.get("indicators", {}).items():
         for indicator in indicators:
             field_names.append(indicator["name"])
 
@@ -112,7 +114,7 @@ def check_schema_file() -> dict[str, Any]:
         results["failed"] += 1
 
     # Check 7: Aliases valid
-    aliases = schema_manager.get_aliases()
+    aliases = schema_registry.get_aliases()
     invalid_targets = []
     for alias, target in aliases.items():
         if target not in all_columns:
@@ -157,7 +159,7 @@ def check_schema_file() -> dict[str, Any]:
     return results
 
 
-async def check_database_schema() -> dict[str, Any]:
+async def check_database_schema(*, sync_missing: bool = False) -> dict[str, Any]:
     """
     Check database schema against schema file.
 
@@ -167,12 +169,20 @@ async def check_database_schema() -> dict[str, Any]:
     results = {"checks": [], "errors": [], "warnings": [], "passed": 0, "failed": 0}
 
     try:
-        schema_manager = SchemaManager()
+        schema_registry = IndicatorSchemaRegistry()
+        schema_synchronizer = IndicatorSchemaSynchronizer(schema_registry)
+        sync_use_case = SyncIndicatorSchemaUseCase(schema_synchronizer)
 
         async with get_db_session() as session:
+            sync_result = None
+            if sync_missing:
+                sync_result = await sync_use_case.execute(session)
+                results["checks"].append(("Schema synchronization executed", "PASS"))
+                results["passed"] += 1
+
             # Get DB columns
-            db_columns = await schema_manager._get_db_columns(session)
-            schema_columns = schema_manager.get_all_columns()
+            db_columns = await schema_synchronizer.get_db_columns(session)
+            schema_columns = schema_registry.get_all_columns()
 
             # Check 1: Database accessible
             results["checks"].append(("Database accessible", "PASS"))
@@ -209,6 +219,17 @@ async def check_database_schema() -> dict[str, Any]:
                 results["warnings"].append(
                     f"{len(extra_in_db)} extra columns in DB: {list(extra_in_db)[:10]}"
                 )
+
+            if sync_result and sync_result.get("errors"):
+                results["checks"].append(("Schema synchronization errors", "FAIL"))
+                results["errors"].extend(sync_result["errors"])
+                results["failed"] += 1
+            elif sync_result is not None:
+                added_columns = sync_result.get("added_columns", [])
+                results["checks"].append(
+                    (f"Missing columns synced ({len(added_columns)} added)", "PASS")
+                )
+                results["passed"] += 1
 
             # Check 5: Primary key columns exist
             required_pk = {"symbol", "timeframe", "timestamp"}
@@ -281,6 +302,11 @@ async def async_main():
         "--check-database", action="store_true", help="Also check database schema"
     )
     parser.add_argument(
+        "--sync-database",
+        action="store_true",
+        help="Synchronize missing DB columns before validation",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -295,9 +321,9 @@ async def async_main():
     print_results(file_results, args.verbose)
 
     # Run database checks if requested
-    if args.check_database:
+    if args.check_database or args.sync_database:
         print("\nChecking database schema...")
-        db_results = await check_database_schema()
+        db_results = await check_database_schema(sync_missing=args.sync_database)
         print_results(db_results, args.verbose)
 
         # Combine results

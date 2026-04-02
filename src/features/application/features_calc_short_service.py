@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 if TYPE_CHECKING:
     import pandas as pd
 
+from src.candles.application.quality_pipeline import run_quality_pipeline
+from src.candles.infrastructure.sqlalchemy_pool_adapter import SQLAlchemyPoolAdapter
 from src.features.application.feature_window import (
     check_has_new_ohlcv,
     get_last_calculated_ts,
@@ -22,15 +24,12 @@ from src.features.application.freshness_gate import (
     check_has_work_to_do,
 )
 from src.features.application.save import save_batch
-from src.features.application.save_dependencies import (
-    create_feature_save_dependencies,
-)
+from src.features.bootstrap import create_feature_application_bootstrap
 from src.features.core import compute_features
+from src.features.ports import FeatureSaveDependenciesFactory, FeatureStorageGateway
 from src.features.presets.features_calc_short_v1 import FEATURES_CALC_SHORT_SPECS
+from src.features.storage_contract import IndicatorStorageContract
 from src.logging import get_logger
-from src.candles.application.quality_pipeline import run_quality_pipeline
-from src.candles.infrastructure.sqlalchemy_pool_adapter import SQLAlchemyPoolAdapter
-from src.models import INDICATORS_TABLE_NAME
 
 logger = get_logger("features.application.features_calc_short_service")
 
@@ -52,8 +51,10 @@ async def save_features_batch(
     df_features: pd.DataFrame,
     symbol: str,
     timeframe: str,
+    *,
+    save_dependencies_factory: FeatureSaveDependenciesFactory,
 ) -> int:
-    save_deps = create_feature_save_dependencies(session)
+    save_deps = save_dependencies_factory(session)
     result = await save_batch(
         session=session,
         df=df_features,
@@ -71,6 +72,8 @@ async def process_symbol_features(
     symbol: str,
     timeframes: list[str],
     specs: list[str],
+    storage_gateway: FeatureStorageGateway,
+    save_dependencies_factory: FeatureSaveDependenciesFactory,
     *,
     warmup_bars: int = 500,
 ) -> dict[str, Any]:
@@ -82,7 +85,12 @@ async def process_symbol_features(
         tf_start = time.time()
         timeout = timeout_for_timeframe(timeframe)
         try:
-            last_feature_ts = await get_last_calculated_ts(session, symbol, timeframe)
+            last_feature_ts = await get_last_calculated_ts(
+                session,
+                symbol,
+                timeframe,
+                storage_gateway,
+            )
             has_new, _latest_ohlcv_ts = await check_has_new_ohlcv(
                 session, symbol, timeframe, last_feature_ts
             )
@@ -99,6 +107,7 @@ async def process_symbol_features(
                 symbol,
                 timeframe,
                 last_feature_ts,
+                storage_gateway,
                 warmup_bars=warmup_bars,
             )
             if len(df_ohlcv) == 0:
@@ -121,7 +130,11 @@ async def process_symbol_features(
             )
 
             rows_saved = await save_features_batch(
-                session, df_features, symbol, timeframe
+                session,
+                df_features,
+                symbol,
+                timeframe,
+                save_dependencies_factory=save_dependencies_factory,
             )
             results[timeframe] = {
                 "rows_processed": len(df_ohlcv),
@@ -188,6 +201,8 @@ async def process_all_symbols(
     symbols: list[str] | None,
     timeframes: list[str],
     specs: list[str],
+    storage_gateway: FeatureStorageGateway,
+    save_dependencies_factory: FeatureSaveDependenciesFactory,
     *,
     max_concurrent_symbols: int = 3,
     warmup_bars: int = 500,
@@ -209,6 +224,8 @@ async def process_all_symbols(
                     symbol,
                     timeframes,
                     specs,
+                    storage_gateway,
+                    save_dependencies_factory,
                     warmup_bars=warmup_bars,
                 )
 
@@ -237,6 +254,7 @@ async def run_features_calc_short(
     warmup_bars: int = 500,
 ) -> dict[str, Any]:
     engine = create_async_engine(database_url, pool_pre_ping=True)
+    bootstrap = create_feature_application_bootstrap()
     try:
         if not is_manual_run:
             async with AsyncSession(engine) as session:
@@ -263,6 +281,8 @@ async def run_features_calc_short(
             symbols=symbols,
             timeframes=timeframes,
             specs=FEATURES_CALC_SHORT_SPECS,
+            storage_gateway=bootstrap.storage_gateway,
+            save_dependencies_factory=bootstrap.save_dependencies_factory,
             max_concurrent_symbols=max_concurrent_symbols,
             warmup_bars=warmup_bars,
         )
@@ -320,7 +340,7 @@ async def run_features_calc_short_validate(
                         text(
                             f"""
                             SELECT MAX(timestamp)
-                            FROM {INDICATORS_TABLE_NAME}
+                            FROM {IndicatorStorageContract.table_name}
                             WHERE timeframe = :tf
                             """
                             ,

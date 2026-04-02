@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.features.storage_contract import IndicatorStorageContract
 from src.logging import get_logger
-from src.models import INDICATORS_TABLE_NAME
 
 logger = get_logger("features.application.freshness_gate")
 
@@ -72,7 +72,15 @@ async def check_has_work_to_do(
 
         ohlcv_max_ts_ms = (
             await session.execute(
-                text("SELECT MAX(timestamp) FROM swap_ohlcv_p WHERE timeframe = :tf"),
+                text(
+                    """
+                    SELECT timestamp
+                    FROM swap_ohlcv_p
+                    WHERE timeframe = :tf
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                    """
+                ),
                 {"tf": timeframe},
             )
         ).scalar()
@@ -96,11 +104,12 @@ async def check_has_work_to_do(
             await session.execute(
                 text(
                     f"""
-                    SELECT MAX(timestamp)
-                    FROM {INDICATORS_TABLE_NAME}
+                    SELECT timestamp
+                    FROM {IndicatorStorageContract.table_name}
                     WHERE timeframe = :tf
+                    ORDER BY timestamp DESC
+                    LIMIT 1
                     """
-                    ,
                 ),
                 {"tf": timeframe},
             )

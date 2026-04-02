@@ -4,7 +4,7 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.features.infrastructure.db_operations import fetch_latest_ts, fetch_ohlcv_df
+from ..ports import FeatureStorageGateway
 
 _TIMEFRAME_TO_SECONDS = {
     "1m": 60,
@@ -64,8 +64,9 @@ async def get_last_calculated_ts(
     session: AsyncSession,
     symbol: str,
     timeframe: str,
+    storage_gateway: FeatureStorageGateway,
 ) -> int | None:
-    return await fetch_latest_ts(session, symbol, timeframe)
+    return await storage_gateway.fetch_latest_ts(session, symbol, timeframe)
 
 
 async def check_has_new_ohlcv(
@@ -80,9 +81,11 @@ async def check_has_new_ohlcv(
         await session.execute(
             text(
                 f"""
-                SELECT MAX({ohlcv_timestamp_column})
+                SELECT {ohlcv_timestamp_column}
                 FROM swap_ohlcv_p
                 WHERE symbol = :symbol AND timeframe = :tf
+                ORDER BY {ohlcv_timestamp_column} DESC
+                LIMIT 1
                 """
             ),
             {"symbol": symbol, "tf": timeframe},
@@ -103,6 +106,7 @@ async def get_ohlcv_window(
     symbol: str,
     timeframe: str,
     from_ts: int | None,
+    storage_gateway: FeatureStorageGateway,
     *,
     warmup_bars: int = 500,
     timeframe_limits: dict[str, int] | None = None,
@@ -112,7 +116,7 @@ async def get_ohlcv_window(
     if from_ts:
         warmup_ts = from_ts - (warmup_bars * timeframe_to_seconds(timeframe))
 
-    df = await fetch_ohlcv_df(
+    df = await storage_gateway.fetch_ohlcv_df(
         session,
         symbol=symbol,
         timeframe=timeframe,

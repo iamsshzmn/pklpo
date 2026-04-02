@@ -7,7 +7,6 @@ requiring immediate implementation updates in existing modules.
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -100,50 +99,6 @@ class OHLCVValidator(Protocol):
 
 
 @runtime_checkable
-class FeatureSaveValidator(Protocol):
-    """Protocol for pre-save validation of calculated feature frames."""
-
-    def validate_save_dataframe(
-        self,
-        df: pd.DataFrame,
-        symbol: str,
-        timeframe: str,
-    ) -> dict[str, object]:
-        """Validate a features DataFrame before persistence."""
-        ...
-
-
-@runtime_checkable
-class FeatureSaveObservation(Protocol):
-    """Active observation session for save orchestration."""
-
-    def record_success(self, *, rows_processed: int, rows_saved: int) -> None:
-        """Record successful completion statistics."""
-        ...
-
-    def record_error(self, error: Exception | str) -> None:
-        """Record a failed save attempt."""
-        ...
-
-
-@runtime_checkable
-class FeatureSaveObserver(Protocol):
-    """Protocol for save observability hooks."""
-
-    def observe(
-        self,
-        *,
-        operation: str,
-        symbol: str,
-        timeframe: str,
-        df: pd.DataFrame,
-        log_memory: bool = False,
-    ) -> AbstractContextManager[FeatureSaveObservation]:
-        """Create an observation scope for a save operation."""
-        ...
-
-
-@runtime_checkable
 class FeatureNormalizer(Protocol):
     """Protocol for feature normalization."""
 
@@ -184,76 +139,6 @@ class TimestampValidator(Protocol):
 
         Returns:
             True if timestamp is valid
-        """
-        ...
-
-
-@runtime_checkable
-class IndicatorRepository(Protocol):
-    """
-    Persistence abstraction for batched indicator storage.
-
-    Separates application logic from concrete database implementation,
-    allowing the save pipeline to be tested without real asyncpg access.
-    """
-
-    async def save_batch(
-        self,
-        records: list[dict],
-        symbol: str,
-        timeframe: str,
-    ) -> int:
-        """
-        Save a batch of indicators.
-
-        Args:
-            records: List of dict records with calculated indicators
-            symbol: Trading pair
-            timeframe: Timeframe
-
-        Returns:
-            Number of saved records
-        """
-        ...
-
-    async def save_batch_from_df(
-        self,
-        df: pd.DataFrame,
-        symbol: str,
-        timeframe: str,
-    ) -> int:
-        """
-        Save a batch from a DataFrame.
-
-        Args:
-            df: DataFrame with calculated indicators
-            symbol: Trading pair
-            timeframe: Timeframe
-
-        Returns:
-            Number of saved records
-        """
-        ...
-
-    async def validate_connection(self) -> dict[str, object]:
-        """
-        Validate backend availability and table structure.
-
-        Returns:
-            Dictionary with connection status and schema details.
-        """
-        ...
-
-    async def verify_integrity(
-        self,
-        symbol: str,
-        timeframe: str,
-    ) -> dict[str, object]:
-        """
-        Verify integrity of stored data for a symbol/timeframe pair.
-
-        Returns:
-            Dictionary with integrity check results.
         """
         ...
 

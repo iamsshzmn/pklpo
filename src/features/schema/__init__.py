@@ -1,6 +1,11 @@
-"""Schema management for features module.
+"""Schema management for features module."""
 
-This package contains schema definitions and management utilities.
-"""
+from ..domain.indicator_schema_registry import IndicatorSchemaRegistry
+from ..infrastructure.indicator_schema_synchronizer import IndicatorSchemaSynchronizer
+from .schema_manager import SchemaManager
 
-__all__ = ["schema_manager"]
+__all__ = [
+    "IndicatorSchemaRegistry",
+    "IndicatorSchemaSynchronizer",
+    "SchemaManager",
+]

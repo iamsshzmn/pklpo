@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.features.observability.prometheus import get_metrics as get_prom_metrics
+from src.features.storage_contract import IndicatorStorageContract
 from src.logging import (
     LogAggregator,
     LogCategory,
@@ -1010,7 +1011,7 @@ async def build_and_execute_upsert(
     model_class,
     records: list[dict[str, Any]],
     db_cols: set[str],
-    pk: tuple[str, ...] = ("symbol", "timeframe", "timestamp"),
+    pk: tuple[str, ...] = IndicatorStorageContract.identity_fields,
     required_fields: set[str] | None = None,
 ) -> int:
     """
@@ -1031,7 +1032,7 @@ async def build_and_execute_upsert(
     with LogAggregator(LogCategory.INSERT, "upsert") as agg:
         # 1.
         if required_fields is None:
-            required_fields = {"symbol", "timeframe", "timestamp", "calculated_at"}
+            required_fields = IndicatorStorageContract.required_fields_set()
         validate_upsert_data(records, db_cols, required_fields)
 
         # 2.

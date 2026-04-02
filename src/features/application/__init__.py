@@ -3,4 +3,9 @@
 This package contains application-level logic and batch processing.
 """
 
-__all__ = ["batch_processor"]
+from .sync_indicator_schema import SyncIndicatorSchemaUseCase
+
+__all__ = [
+    "SyncIndicatorSchemaUseCase",
+    "batch_processor",
+]

@@ -49,7 +49,7 @@ def cmd_calculate(args):
         if args.legacy:
             logger.info("Using legacy (non-streaming) calculation method")
             # Use legacy method - direct calculation without streaming
-            from .core import compute_features
+            from ..core import compute_features
 
             features_df = compute_features(
                 df_ohlcv, volatility_normalize=args.volatility_normalize

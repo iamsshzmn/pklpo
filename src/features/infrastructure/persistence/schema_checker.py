@@ -13,7 +13,8 @@ from src.logging import (
     get_category_logger,
     should_log,
 )
-from src.models import INDICATORS_TABLE_NAME
+
+from ...storage_contract import IndicatorStorageContract
 
 logger = get_category_logger(LogCategory.SCHEMA)
 
@@ -39,7 +40,10 @@ async def check_unique_index(session: AsyncSession) -> None:
             AND indexdef LIKE '%UNIQUE%'
         """
         )
-        result = await session.execute(index_query, {"table_name": INDICATORS_TABLE_NAME})
+        result = await session.execute(
+            index_query,
+            {"table_name": IndicatorStorageContract.table_name},
+        )
         indexes = [row[0] for row in result.all()]
 
         #
@@ -78,11 +82,15 @@ async def check_schema_and_search_path(session: AsyncSession) -> None:
         """
         )
         result = await session.execute(
-            schema_query, {"table_name": INDICATORS_TABLE_NAME}
+            schema_query, {"table_name": IndicatorStorageContract.table_name}
         )
         columns = result.all()
 
-        logger.debug("public.%s: %d columns", INDICATORS_TABLE_NAME, len(columns))
+        logger.debug(
+            "public.%s: %d columns",
+            IndicatorStorageContract.table_name,
+            len(columns),
+        )
 
     except Exception as e:
         logger.error(f"Failed to check schema: {e}")
@@ -107,7 +115,7 @@ async def load_db_columns(session: AsyncSession) -> set[str]:
         AND table_schema = 'public'
     """
         ),
-        {"table_name": INDICATORS_TABLE_NAME},
+        {"table_name": IndicatorStorageContract.table_name},
     )
     db_cols = {row[0] for row in result.all()}
     if should_log(LogCategory.DIAG, Verbosity.DEBUG):
@@ -137,11 +145,14 @@ async def reflect_indicators_table(session: AsyncSession) -> Table:
     def _reflect_table(sync_conn):
         """reflection   async ."""
         insp = inspect(sync_conn)
-        columns = insp.get_columns(INDICATORS_TABLE_NAME, schema="public")
+        columns = insp.get_columns(
+            IndicatorStorageContract.table_name,
+            schema="public",
+        )
 
         #
         table = Table(
-            INDICATORS_TABLE_NAME,
+            IndicatorStorageContract.table_name,
             metadata,
             schema="public",
         )
@@ -225,7 +236,7 @@ async def check_db_state(
         count_query = text(
             f"""
             SELECT COUNT(*), MAX(timestamp)
-            FROM public.{INDICATORS_TABLE_NAME}
+            FROM public.{IndicatorStorageContract.table_name}
             WHERE symbol = :symbol AND timeframe = :timeframe
         """
         )

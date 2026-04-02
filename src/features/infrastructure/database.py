@@ -6,6 +6,8 @@ Infrastructure: database helpers extracted from calc_indicators.py.
 
 from __future__ import annotations
 
+from ..storage_contract import IndicatorStorageContract
+
 # ============================================================================
 #
 # ============================================================================
@@ -38,7 +40,7 @@ INDICATOR_COLUMNS = {
 }
 
 #
-REQUIRED_FIELDS = {"timestamp", "symbol", "timeframe"}
+REQUIRED_FIELDS = IndicatorStorageContract.identity_fields_set()
 
 # ============================================================================
 #

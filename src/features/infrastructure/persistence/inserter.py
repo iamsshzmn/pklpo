@@ -10,10 +10,17 @@ This file now contains only orchestration logic (~100 lines).
 """
 
 import os
+from datetime import UTC, datetime
 
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.db.indicators_partition.application.partition_policy import (
+    MonthlyPartitionPolicy,
+)
+from src.db.indicators_partition.infrastructure import (
+    PostgresIndicatorsPartitionMaintenanceAdapter,
+)
 from src.logging import (
     LogAggregator,
     LogCategory,
@@ -22,9 +29,9 @@ from src.logging import (
     should_log,
 )
 
+from ...domain.indicator_schema_registry import IndicatorSchemaRegistry
 from ...domain.strategy import get_max_lookback_for_strategies
 from ...observability.prometheus import get_metrics as get_prom_metrics
-from ...schema.schema_manager import SchemaManager
 from .batch_builder import (
     build_batch_data,
     filter_batch_by_schema,
@@ -53,6 +60,42 @@ PK_FIELDS = ("symbol", "timeframe", "timestamp")
 
 # Environment variable to disable warmup trimming (for debugging)
 SKIP_WARMUP_TRIM = os.getenv("FEATURES_SKIP_WARMUP_TRIM", "false").lower() == "true"
+
+
+def _month_start(dt: datetime) -> datetime:
+    return datetime(dt.year, dt.month, 1, tzinfo=UTC)
+
+
+def _add_month(dt: datetime) -> datetime:
+    month_index = dt.month
+    year = dt.year + (1 if month_index == 12 else 0)
+    month = 1 if month_index == 12 else month_index + 1
+    return datetime(year, month, 1, tzinfo=UTC)
+
+
+async def _ensure_indicator_monthly_partitions(
+    session: AsyncSession,
+    ind_df: pd.DataFrame,
+) -> None:
+    if "timestamp" not in ind_df.columns:
+        return
+
+    timestamps = pd.to_numeric(ind_df["timestamp"], errors="coerce").dropna()
+    if timestamps.empty:
+        return
+
+    start_dt = _month_start(datetime.fromtimestamp(int(timestamps.min()) / 1000, tz=UTC))
+    end_dt = _month_start(datetime.fromtimestamp(int(timestamps.max()) / 1000, tz=UTC))
+    policy = MonthlyPartitionPolicy()
+    adapter = PostgresIndicatorsPartitionMaintenanceAdapter(session)
+
+    await adapter.ensure_parent_exists()
+    await adapter.assert_parent_upsert_constraint()
+
+    current = start_dt
+    while current <= end_dt:
+        await adapter.ensure_partition(policy.build_partition_spec(current))
+        current = _add_month(current)
 
 
 def _calculate_warmup_rows(ind_df: pd.DataFrame) -> int:
@@ -218,10 +261,11 @@ async def insert_indicators(
                 return 0
 
         # 3. Initialize schema manager
-        schema_manager = SchemaManager()
+        schema_registry = IndicatorSchemaRegistry()
 
         # 4. Prepare DataFrame
         ind_df = _prepare_dataframe(ind_df, symbol, timeframe)
+        await _ensure_indicator_monthly_partitions(session, ind_df)
 
         # 5. Load schema (cached)
         schema_info = await get_or_load_schema(
@@ -262,7 +306,7 @@ async def insert_indicators(
         batch_data = normalize_record_names(batch_data, db_cols)
 
         # 9. Validate with schema manager
-        validation = schema_manager.validate_data(batch_data)
+        validation = schema_registry.validate_data(batch_data)
         if not validation["valid"]:
             raise ValueError(f"Data validation failed: {validation['errors']}")
 
@@ -289,7 +333,7 @@ async def insert_indicators(
                     records=validated_records,
                     db_columns=db_cols,
                     pk=PK_FIELDS,
-                    required_fields=schema_manager.get_required_fields(),
+                    required_fields=schema_registry.get_required_fields(),
                 )
 
             # Record rows written and batch size
