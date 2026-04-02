@@ -1,7 +1,7 @@
 # Architecture Guide
 
 A set of architectural rules and principles for building clean, maintainable software systems.
-Based on Robert C. Martin's *Clean Architecture* (2017) and vibe coding practices.
+Based on Robert C. Martin's *Clean Architecture* (2017) and *Clean Code* (2008).
 
 ---
 
@@ -40,7 +40,7 @@ A contract between caller and callee must be honoured by every implementation.
 
 ### ISP — Interface Segregation Principle
 Do not depend on code you don't use.
-Split fat interfaces into focused protocols.
+Split fat interfaces into focused, narrow interfaces.
 Callers import only the slice they need.
 
 ### DIP — Dependency Inversion Principle
@@ -61,7 +61,7 @@ Group classes that are released together.
 ### CCP — Common Closure Principle
 Classes that change for the same reason at the same time belong together.
 Classes that change for different reasons belong apart.
-(SRP applied to components)
+(SRP applied to components — gather together what changes together)
 
 ### CRP — Common Reuse Principle
 Do not force users of a component to depend on things they don't need.
@@ -183,6 +183,7 @@ Cycle: **Red → Green → Refactor**
 3. Refactor without breaking the test
 
 TDD does not slow development — it eliminates the disorder caused by debugging untested code.
+Tests are the specification, not the verification.
 
 ### Design Rules
 

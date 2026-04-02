@@ -665,6 +665,19 @@ MIT License
 
 ---
 
+## Agent Workspace
+
+The repo includes a shared Codex and Claude Code baseline:
+
+- `AGENTS.md` for project-wide agent rules
+- `agent_workspace/skills/` for reusable task skills
+- `agent_workspace/hooks/` for lightweight validation and safety hooks
+- `.claude/settings.json` for Claude Code hook wiring
+
+See [docs/agent-workspace.md](docs/agent-workspace.md) for setup details and extension guidance.
+
+---
+
 ## Поддержка
 
 Для вопросов и предложений создавайте issues в репозитории.
