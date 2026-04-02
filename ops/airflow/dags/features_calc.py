@@ -40,14 +40,14 @@ sys.path.insert(0, "/opt/airflow/project")
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-# Import alerting module (FEAT-002)
+# Import alerting callbacks through the public features bootstrap boundary.
 try:
-    from src.features.infrastructure.alerts import (
-        combined_failure_callback,
-        combined_sla_miss_callback,
-        success_callback,
-    )
+    from src.features.bootstrap import create_feature_airflow_callbacks
 
+    callbacks = create_feature_airflow_callbacks()
+    combined_failure_callback = callbacks.on_failure_callback
+    combined_sla_miss_callback = callbacks.sla_miss_callback
+    success_callback = callbacks.on_success_callback
     ALERTS_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Warning: Could not import alerts module: {e}")

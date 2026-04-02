@@ -20,7 +20,7 @@ try:
     from tqdm import tqdm
 except Exception:  # pragma: no cover - optional progress dependency
 
-    class tqdm:  # type: ignore[no-redef]
+    class tqdm:  # type: ignore[no-redef]  # noqa: N801
         def __init__(self, iterable=None, total=None, **kwargs):
             self.iterable = iterable
             self.total = total
@@ -46,17 +46,18 @@ except Exception:  # pragma: no cover - optional progress dependency
             return None
 
 
-from src.features import compute_features
-from src.features.infrastructure.database import (
-    ensure_columns_exist,
-    insert_indicators as infra_insert_indicators,
+from src.features.api import (
+    FEATURE_SPECS,
+    IndicatorStorageContract,
+    compute_features,
+    create_feature_application_bootstrap,
+    save_batch,
 )
-from src.features.specs import FEATURE_SPECS
 from src.logging import get_features_logger, log_features_summary
-from src.models import INDICATORS_TABLE_NAME
 from src.utils.session_utils import get_db_session
 
 logger = get_features_logger()
+INDICATORS_TABLE_NAME = IndicatorStorageContract.table_name
 
 
 def register(subparsers):
@@ -570,9 +571,9 @@ async def _refill_null_indicators(
     )
 
     # Validate indicator names to avoid SQL injection.
-    from src.features.infrastructure.models import Indicator
-
-    valid_columns = {col.name for col in Indicator.__table__.columns}
+    valid_columns = {
+        name for name in FEATURE_SPECS if IndicatorStorageContract.is_feature_column(name)
+    }
     invalid_inds = [ind for ind in null_indicators if ind not in valid_columns]
     if invalid_inds:
         logger.error(f"Invalid indicators not present in schema: {invalid_inds}")
@@ -663,8 +664,6 @@ async def _refill_null_indicators(
         logger.info(f"Loaded {len(df_ohlcv)} OHLCV rows for refill")
 
         # Calculate only the requested indicators.
-        from src.features.specs import FEATURE_SPECS
-
         refill_specs = [
             FEATURE_SPECS[ind] for ind in null_indicators if ind in FEATURE_SPECS
         ]
@@ -672,8 +671,6 @@ async def _refill_null_indicators(
         if not refill_specs:
             logger.warning(f"Requested indicators are not available: {null_indicators}")
             return
-
-        from src.features import compute_features
 
         features_df = compute_features(
             df_ohlcv, specs=refill_specs, volatility_normalize=False
@@ -871,8 +868,6 @@ async def _process_symbol_timeframe(
 
         # Identify missing expected specs.
         try:
-            from src.features.specs import FEATURE_SPECS
-
             expected = set(FEATURE_SPECS.keys())
             present = set(all_cols)
             missing = sorted(expected - present)[:20]
@@ -887,6 +882,7 @@ async def _process_symbol_timeframe(
 
     # Save results through the batch UPSERT path.
     try:
+        bootstrap = create_feature_application_bootstrap()
         async with get_db_session() as session:
             # Keep only ts and indicator columns, excluding OHLCV/time columns.
             cols_exclude = {"open", "high", "low", "close", "volume", "timestamp"}
@@ -895,13 +891,25 @@ async def _process_symbol_timeframe(
             # Ensure ts exists in seconds.
             if "ts" not in ind_df.columns and "timestamp" in features_df.columns:
                 ind_df["ts"] = (
-                    features_df["timestamp"].astype("int64") // 1000
+                features_df["timestamp"].astype("int64") // 1000
                 ).astype("int64")
             indicator_cols = [c for c in ind_df.columns if c not in {"ts", "symbol", "timeframe", "timestamp"}]
-            await ensure_columns_exist(session, INDICATORS_TABLE_NAME, indicator_cols)
-            saved_count = await infra_insert_indicators(
-                session, ind_df, symbol, timeframe
+            await bootstrap.storage_gateway.ensure_indicator_columns(
+                session,
+                INDICATORS_TABLE_NAME,
+                indicator_cols,
             )
+            save_deps = bootstrap.save_dependencies_factory(session)
+            save_result = await save_batch(
+                session,
+                ind_df,
+                symbol,
+                timeframe,
+                repository=save_deps.repository,
+                observer=save_deps.observer,
+                commit=True,
+            )
+            saved_count = int(save_result["rows_saved"])
     except Exception as e:
         logger.error(f"Batch UPSERT failed: {e}")
         # Propagate the error so the DAG fails instead of hiding the insert problem.
@@ -1001,7 +1009,6 @@ async def _get_ohlcv_data(
         OHLCV DataFrame or None if no data is available
     """
     from src.features.domain.strategy import get_max_lookback_for_strategies
-    from src.features.specs import FEATURE_SPECS
     from src.features.utils.time_utils import timeframe_to_ms
 
     async with get_db_session() as session:
