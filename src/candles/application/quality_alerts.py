@@ -7,13 +7,16 @@ from __future__ import annotations
 import logging
 import os
 import smtplib
-from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from email.mime.text import MIMEText
+from typing import TYPE_CHECKING
 
 from src.alerts.slack_webhook import create_slack_notifier
 
 from ..domain.quality import CheckResult, QualityReport, Severity
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 

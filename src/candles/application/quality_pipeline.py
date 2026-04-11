@@ -4,13 +4,15 @@ End-to-end quality pipeline: checks -> store -> alerts.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from ..domain.quality import QualityReport
 from ..infrastructure.quality_repository import QualityMetricsRepository
 from ..observability.prometheus import push_quality_metrics
 from .quality_alerts import dispatch_quality_alerts
 from .quality_checks import run_all_checks
+
+if TYPE_CHECKING:
+    from ..domain.quality import QualityReport
 
 
 class QualityPoolPort(Protocol):
