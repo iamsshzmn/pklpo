@@ -49,10 +49,7 @@ class PositionLimit:
             return False
 
         position_pct = notional_value / account_balance
-        if position_pct > float(self.max_position_size_pct):
-            return False
-
-        return True
+        return not position_pct > float(self.max_position_size_pct)
 
 
 @dataclass

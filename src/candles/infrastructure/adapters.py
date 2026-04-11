@@ -29,6 +29,11 @@ def build_market_data_adapter(
             f"Unsupported candles adapter '{adapter_name}'. The only supported "
             "runtime adapter is 'ccxt'."
         )
+    timeout_seconds = cfg.get("timeout_seconds")
+    if timeout_seconds is None:
+        timeout_seconds = 30
+
     return CcxtOKXAdapter(
-        max_requests_per_second=int(cfg.get("max_requests_per_second", 80))
+        max_requests_per_second=int(cfg.get("max_requests_per_second", 80)),
+        timeout_seconds=float(timeout_seconds),
     )

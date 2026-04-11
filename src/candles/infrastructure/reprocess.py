@@ -120,7 +120,8 @@ def get_run_window(
 
     if conf.reprocess:
         # Reprocess: используем явное окно
-        assert conf.t0 is not None and conf.t1 is not None
+        assert conf.t0 is not None
+        assert conf.t1 is not None
         t0 = floor_to_tf(conf.t0, timeframe_minutes)
         t1 = floor_to_tf(conf.t1, timeframe_minutes)
         mode: Mode = "reprocess"

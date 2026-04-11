@@ -7,7 +7,6 @@ atomic counters protected by asyncio.Lock.
 from __future__ import annotations
 
 import asyncio
-import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -39,7 +38,7 @@ class ReservoirSampling:
         if not self._samples:
             return 0.0
         ordered = sorted(self._samples)
-        idx = int(round((len(ordered) - 1) * pct / 100.0))
+        idx = round((len(ordered) - 1) * pct / 100.0)
         return ordered[min(idx, len(ordered) - 1)]
 
     @property

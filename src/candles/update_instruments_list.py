@@ -6,8 +6,6 @@ Keeps BTC and ETH first, appends the rest in alphabetical order.
 
 import asyncio
 
-from src.candles.instruments_service import refresh_instruments_list
-from src.candles.repository import SwapCandlesRepository
 from src.logging import get_logger, setup_logging
 
 logger = get_logger("candles.update_instruments_list")
@@ -15,11 +13,9 @@ logger = get_logger("candles.update_instruments_list")
 
 async def update_instruments_list() -> None:
     """
-    Refresh instruments_list.json from DB.
-    Uses the shared instruments service to keep runtime and helper behavior aligned.
+    Keep instruments_list.json fixed and skip any automatic refresh.
     """
-    repository = SwapCandlesRepository()
-    await refresh_instruments_list(repository=repository, logger=logger)
+    logger.info("Instrument list is fixed; automatic update is disabled")
 
 
 async def main():

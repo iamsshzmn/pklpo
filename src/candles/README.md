@@ -150,6 +150,7 @@ sequenceDiagram
 | Airflow DAG | `interfaces.airflow_sync.run_catalog_refresh_job` | Refresh instrument catalog |
 | Airflow DAG | `interfaces.airflow_sync.run_smoke_validate` | Post-sync smoke test |
 | Project CLI | `python -m src.cli.main swap-sync` | Manual sync trigger |
+| Project CLI | `python -m src.cli.main swap-repair` | Historical backfill / gap repair with detect-only, dry-run, apply |
 | Project CLI | `python -m src.cli.main update-list` | Update instruments list |
 | Diagnostic CLI | `python -m src.candles.interfaces.cli` | Status, details, export, cleanup |
 | Python API | `src.candles.api.refresh_okx_meta` | Refresh market metadata cache |
@@ -161,6 +162,7 @@ sequenceDiagram
 src/candles/
 ├── application/
 │   ├── metadata/              # Market metadata use cases and DTOs
+│   ├── repair/                # Historical backfill / gap repair use cases and DTOs
 │   ├── sync/                  # Core sync use case, DTOs, retry policy, ports
 │   ├── api.py                 # MarketMetaAPI facade (metadata, validation, risk)
 │   ├── quality_checks.py      # Individual quality checks (freshness, coverage, fill-rate)
@@ -191,6 +193,7 @@ src/candles/
 ├── interfaces/
 │   ├── airflow_sync.py        # Airflow task functions (catalog refresh, sync, validate)
 │   ├── cli.py                 # Standalone diagnostic CLI (status, details, export, cleanup)
+│   ├── repair.py              # Wires repair/backfill use cases to OKX + DB adapters
 │   └── swap_sync.py           # Wires application layer to infra adapters
 ├── migrations/                # SQL: 001..006 (tables, indexes, data quality metrics)
 ├── observability/
@@ -269,7 +272,7 @@ Observability env vars:
 | `OBSERVABILITY_PROMETHEUS_ENABLED` | Enable Prometheus push (`true`/`false`) |
 | `OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL` | Pushgateway URL |
 | `OBSERVABILITY_JOB_NAME` | Job name for pushgateway (default: `data_quality_pipeline`) |
-| `INSTRUMENTS_CACHE_DIR` | Directory for instruments cache file (default: `/tmp/pklpo`) |
+| `INSTRUMENTS_CACHE_DIR` | Runtime instruments cache directory (default: `/tmp/pklpo`) |
 
 ## Database tables
 
@@ -371,7 +374,7 @@ ruff check src/candles/
 ## Known limitations
 
 - Only `ccxt` adapter is implemented; direct OKX REST was removed
-- `instruments_list.json` / `instruments_list_backup.json` are committed to the repo as cache artifacts
+- `src/candles/instruments_list.json` is the curated default symbol universe for sync runs that omit explicit `symbols`; `INSTRUMENTS_CACHE_DIR` remains the runtime cache/fallback for refreshed catalog data
 - The upsert in `repository.py` overwrites all fields on conflict, which may null-out previously-fetched `funding_rate`/`open_interest` if a later sync runs without `extra_data=True`
 - `application/sync_use_cases.py` duplicates mode/freshness logic alongside the new `application/sync/*` layer — consolidation pending
 - The `cli/` subdirectory contains a standalone legacy CLI for market metadata ops, not connected to the main project CLI

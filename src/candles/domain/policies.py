@@ -7,9 +7,11 @@ import enum
 import logging
 import random
 import time
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +70,7 @@ class CircuitBreaker:
 
     def record_failure(self) -> None:
         self._consecutive_failures += 1
-        if self._state is CircuitState.HALF_OPEN:
-            self._transition(CircuitState.OPEN)
-        elif self._consecutive_failures >= self.failure_threshold:
+        if self._state is CircuitState.HALF_OPEN or self._consecutive_failures >= self.failure_threshold:
             self._transition(CircuitState.OPEN)
 
     def _transition(self, new_state: CircuitState) -> None:
@@ -168,5 +168,5 @@ async def retry_io(
             await asyncio.sleep(sleep_sec)
 
     # Should not reach here, but satisfy type checker
-    assert last_exc is not None  # noqa: S101
+    assert last_exc is not None
     raise last_exc

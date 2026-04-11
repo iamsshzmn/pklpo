@@ -1,8 +1,94 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+class MarketDataFailureKind(StrEnum):
+    TIMEOUT = "timeout"
+    RATE_LIMIT = "rate_limit"
+    TRANSIENT = "transient"
+    FATAL = "fatal"
+
+
+_TIMEOUT_CLASS_NAMES = {
+    "TimeoutError",
+    "RequestTimeout",
+    "ClientTimeoutError",
+    "ConnectTimeoutError",
+    "ReadTimeout",
+    "ServerTimeoutError",
+    "TimeoutException",
+}
+_RATE_LIMIT_CLASS_NAMES = {
+    "RateLimitExceeded",
+    "DDoSProtection",
+    "TooManyRequests",
+}
+_TIMEOUT_MESSAGE_MARKERS = (
+    "timeout",
+    "timed out",
+    "request timed out",
+    "connect timeout",
+    "read timeout",
+)
+_RATE_LIMIT_MESSAGE_MARKERS = (
+    "429",
+    "too many requests",
+    "50011",
+    "rate limit",
+    "rate limited",
+)
+_TRANSIENT_MESSAGE_MARKERS = (
+    "5xx",
+    "temporarily",
+    "temporary",
+    "connection reset",
+    "connection refused",
+)
+
+
+def _iter_exception_chain(error: BaseException) -> list[BaseException]:
+    chain: list[BaseException] = []
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        chain.append(current)
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return chain
+
+
+def _message_matches(message: str, markers: tuple[str, ...]) -> bool:
+    normalized = message.lower()
+    return any(marker in normalized for marker in markers)
+
+
+def classify_market_data_failure(error: BaseException) -> MarketDataFailureKind:
+    """Classify market-data failures before the retry decision is made."""
+    for current in _iter_exception_chain(error):
+        name = type(current).__name__
+        message = str(current)
+
+        if name in _TIMEOUT_CLASS_NAMES or _message_matches(
+            message, _TIMEOUT_MESSAGE_MARKERS
+        ):
+            return MarketDataFailureKind.TIMEOUT
+
+        if name in _RATE_LIMIT_CLASS_NAMES or _message_matches(
+            message, _RATE_LIMIT_MESSAGE_MARKERS
+        ):
+            return MarketDataFailureKind.RATE_LIMIT
+
+        if _message_matches(message, _TRANSIENT_MESSAGE_MARKERS):
+            return MarketDataFailureKind.TRANSIENT
+
+    return MarketDataFailureKind.FATAL
 
 
 @dataclass(frozen=True)
@@ -27,6 +113,9 @@ class RetryPolicy:
     random_uniform: Callable[[float, float], float] = random.uniform
 
     retriable_markers: tuple[str, ...] = (
+        "timeout",
+        "timed out",
+        "request timed out",
         "429",
         "Too Many Requests",
         "50011",
@@ -46,6 +135,16 @@ class RetryPolicy:
 
     def is_rate_limited(self, message: str) -> bool:
         return any(marker in message for marker in self.rate_limit_markers)
+
+    def is_retriable_failure(self, failure_kind: MarketDataFailureKind) -> bool:
+        return failure_kind in {
+            MarketDataFailureKind.TIMEOUT,
+            MarketDataFailureKind.RATE_LIMIT,
+            MarketDataFailureKind.TRANSIENT,
+        }
+
+    def is_rate_limited_failure(self, failure_kind: MarketDataFailureKind) -> bool:
+        return failure_kind is MarketDataFailureKind.RATE_LIMIT
 
     def can_retry(self, attempts: int) -> bool:
         return attempts < self.max_retries

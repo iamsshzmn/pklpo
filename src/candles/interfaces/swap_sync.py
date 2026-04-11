@@ -5,7 +5,6 @@ Directly wires the application layer to infrastructure adapters.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from src.candles.application.sync import (
@@ -19,11 +18,13 @@ from src.candles.application.sync import (
 from src.candles.domain.sync_config import DEFAULT_CONFIG, SWAP_BARS, SyncConfig
 from src.candles.infrastructure.adapters import build_market_data_adapter
 from src.candles.instruments_service import (
+    load_symbols_from_file,
     refresh_instruments_list,
     resolve_instruments_cache_file,
+    resolve_repo_instruments_file,
 )
 from src.candles.load_instruments import load_instruments
-from src.candles.observability.tracer import trace_event
+from src.candles.observability.tracer import trace_event, trace_sync_run
 from src.candles.repository import SwapCandlesRepository
 from src.logging import get_logger
 
@@ -133,17 +134,17 @@ class _InstrumentCatalogPort:
     async def refresh_catalog(self) -> list[str]:
         return await refresh_instruments_list(repository=self._repository, logger=logger)
 
+    async def load_curated_symbols(self) -> list[str]:
+        repo_symbols = load_symbols_from_file(resolve_repo_instruments_file(), logger=logger)
+        if repo_symbols:
+            logger.info("Loaded %s symbols from repo instruments list", len(repo_symbols))
+        return repo_symbols
+
     async def load_cached_symbols(self) -> list[str]:
-        instruments_file = resolve_instruments_cache_file()
-        if not instruments_file.exists():
-            return []
-        try:
-            with open(instruments_file, encoding="utf-8") as handle:
-                symbols: list[str] = json.load(handle)
-        except Exception as exc:
-            logger.warning("Failed to read symbols from cache file (%s)", exc)
-            return []
-        return symbols
+        cache_symbols = load_symbols_from_file(resolve_instruments_cache_file(), logger=logger)
+        if cache_symbols:
+            logger.info("Loaded %s symbols from runtime cache", len(cache_symbols))
+        return cache_symbols
 
     async def list_symbols(self) -> list[str]:
         return await self._repository.list_swap_symbols()
@@ -187,6 +188,8 @@ def _build_runtime_config(config: dict[str, Any] | SyncConfig | None) -> tuple[S
         **validated.model_dump(),
         **raw_config,
     }
+    if runtime_config.get("timeout_seconds") is None:
+        runtime_config["timeout_seconds"] = 30
     return validated, runtime_config
 
 
@@ -250,8 +253,6 @@ async def sync_swap_candles(
     """Run candle sync using the canonical typed runtime configuration."""
     sync_config, runtime_config = _build_runtime_config(config)
     repository = SwapCandlesRepository()
-    market_adapter = _build_market_adapter(runtime_config)
-
     mode_str = runtime_config.get("mode")
     request = SyncJobRequest(
         mode=_resolve_execution_mode(mode_str if isinstance(mode_str, str) else None),
@@ -265,19 +266,26 @@ async def sync_swap_candles(
         provider_id=str(runtime_config.get("adapter") or "ccxt"),
         provider_options=runtime_config,
     )
-    result = await run_candle_sync(
-        request,
-        market_data=_MarketDataPortAdapter(market_adapter),
-        candle_store=_CandleStorePortAdapter(repository),
-        instrument_catalog=_InstrumentCatalogPort(repository),
-        retry_policy=RetryPolicy(
-            max_retries=request.max_retries,
-            retry_delay=request.retry_delay,
-            batch_size=request.batch_size,
-        ),
-        telemetry=_TracingTelemetryAdapter(),
-    )
-    return _stats_from_result(result)
+
+    with trace_sync_run(mode=request.mode.value, symbols_count=len(request.symbols)):
+        market_adapter = _build_market_adapter(runtime_config)
+        result = await run_candle_sync(
+            request,
+            market_data=_MarketDataPortAdapter(market_adapter),
+            candle_store=_CandleStorePortAdapter(repository),
+            instrument_catalog=_InstrumentCatalogPort(repository),
+            retry_policy=RetryPolicy(
+                max_retries=request.max_retries,
+                retry_delay=request.retry_delay,
+                batch_size=request.batch_size,
+            ),
+            telemetry=_TracingTelemetryAdapter(),
+        )
+
+    stats = _stats_from_result(result)
+    if hasattr(market_adapter, "snapshot_init_metrics"):
+        stats["adapter_init"] = market_adapter.snapshot_init_metrics()
+    return stats
 
 
 __all__ = ["run_catalog_refresh_via_application", "sync_swap_candles"]

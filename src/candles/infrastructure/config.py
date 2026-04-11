@@ -394,15 +394,15 @@ class MarketMetaConfig:
             field_type = field_info.type
 
             # Преобразуем тип
-            if field_type == bool:
+            if field_type is bool:
                 # Поддерживаем различные форматы boolean
                 if value.lower() in ["true", "1", "yes", "on"]:
                     setattr(obj, field_name, True)
                 elif value.lower() in ["false", "0", "no", "off"]:
                     setattr(obj, field_name, False)
-            elif field_type == int:
+            elif field_type is int:
                 setattr(obj, field_name, int(value))
-            elif field_type == float:
+            elif field_type is float:
                 setattr(obj, field_name, float(value))
             else:
                 setattr(obj, field_name, value)

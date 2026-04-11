@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import text
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sqlalchemy.engine import Engine
 
 DataType = Literal["funding", "oi", "l2"]
@@ -93,7 +94,7 @@ class RawIngestor:
                 f"[DRY-RUN] Будет записано {len(prepared)} записей в raw.market_data_ext_raw"
             )
             print(f"  data_type: {data_type}")
-            print(f"  symbols: {set(r['symbol'] for r in prepared)}")
+            print(f"  symbols: { {r['symbol'] for r in prepared} }")
             if prepared:
                 print(
                     f"  ts range: {min(r['ts'] for r in prepared)} - {max(r['ts'] for r in prepared)}"

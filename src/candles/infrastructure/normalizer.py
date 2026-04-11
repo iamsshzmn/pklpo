@@ -12,10 +12,11 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
 from .logging_config import get_logger
-from .ohlcv_aligner import OHLCVAligner
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
+
+    from .ohlcv_aligner import OHLCVAligner
 
 logger = get_logger("market_data_normalizer")
 

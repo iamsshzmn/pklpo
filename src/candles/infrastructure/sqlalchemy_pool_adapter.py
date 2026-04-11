@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import re
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 _PG_PLACEHOLDER_RE = re.compile(r"\$(\d+)")
 

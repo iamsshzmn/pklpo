@@ -142,10 +142,7 @@ class InstrumentMetadata:
         if self.tick_size and not self.tick_size.validate_price(price):
             return False
 
-        if self.lot_size and not self.lot_size.validate_quantity(quantity):
-            return False
-
-        return True
+        return not (self.lot_size and not self.lot_size.validate_quantity(quantity))
 
     def calculate_notional_value(self, price: float, quantity: float) -> Decimal:
         """Рассчитывает номинальную стоимость позиции"""

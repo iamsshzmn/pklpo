@@ -73,6 +73,8 @@ def build_sync_config(
         base_config["extra_data"] = conf["extra_data"]
     if "max_concurrent_symbols" in conf:
         base_config["max_concurrent_symbols"] = conf["max_concurrent_symbols"]
+    if "timeout_seconds" in conf:
+        base_config["timeout_seconds"] = conf["timeout_seconds"]
     if "symbols" in conf:
         base_config["symbols"] = conf["symbols"]
 
@@ -80,6 +82,7 @@ def build_sync_config(
     base_config["batch_size"] = 300
     base_config["max_retries"] = 5
     base_config["retry_delay"] = 1.5
+    base_config["timeout_seconds"] = base_config.get("timeout_seconds", 30)
 
     return base_config
 
@@ -162,11 +165,14 @@ def format_stats_for_xcom(
 ) -> dict[str, Any]:
     """Build the compact stats dict written to XCom by swap_sync_task."""
     endpoint_stats = stats.get("endpoint_stats", {})
+    adapter_init = stats.get("adapter_init", {}) or {}
     api_429_count = 0
+    api_timeout_count = 0
     if isinstance(endpoint_stats, dict):
         for endpoint_data in endpoint_stats.values():
             if isinstance(endpoint_data, dict):
                 api_429_count += endpoint_data.get("rate_limit", 0)
+                api_timeout_count += endpoint_data.get("timeout", 0)
 
     return {
         "mode": config.get("mode", "unknown"),
@@ -179,8 +185,9 @@ def format_stats_for_xcom(
         "errors_count": stats.get("errors_count", 0),
         "candles_per_second": round(stats.get("candles_per_second", 0), 2),
         "api_429_count": api_429_count,
-        "api_timeout_count": 0,
+        "api_timeout_count": api_timeout_count,
         "today_fill": stats.get("today_fill", {}),
+        "adapter_init": adapter_init,
     }
 
 

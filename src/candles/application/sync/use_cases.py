@@ -14,13 +14,17 @@ from sqlalchemy import exc as sa_exc
 from ...domain.timeframes import TF_TO_MS
 from ...observability.metrics import ReservoirSampling
 from .dto import SyncJobRequest, SyncJobResult, SyncRun, SyncRunStatus
+from .policy import (
+    MarketDataFailureKind,
+    RetryPolicy,
+    classify_market_data_failure,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEFRAMES = tuple(TF_TO_MS.keys())
 
 if TYPE_CHECKING:
-    from .policy import RetryPolicy
     from .ports import (
         CandleStorePort,
         InstrumentCatalogPort,
@@ -98,13 +102,9 @@ class _AdditionalDataLoader:
     def __init__(self, market_data: MarketDataPort) -> None:
         self._market_data = market_data
         self._stats: dict[str, dict[str, float]] = {
-            "funding": {"ok": 0, "retries": 0, "rate_limit": 0, "errors": 0},
-            "open_interest": {"ok": 0, "retries": 0, "rate_limit": 0, "errors": 0},
+            "funding": {"ok": 0, "retries": 0, "rate_limit": 0, "timeout": 0, "errors": 0},
+            "open_interest": {"ok": 0, "retries": 0, "rate_limit": 0, "timeout": 0, "errors": 0},
         }
-
-    @staticmethod
-    def _is_rate_limited(message: str) -> bool:
-        return any(marker in message for marker in ("429", "Too Many Requests", "50011"))
 
     async def fetch_for_symbol(self, symbol: str) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -115,10 +115,14 @@ class _AdditionalDataLoader:
                 self._stats["funding"]["ok"] += 1
                 out["funding_rate"] = funding[symbol]
         except Exception as exc:
-            if self._is_rate_limited(str(exc)):
+            failure_kind = classify_market_data_failure(exc)
+            if failure_kind is MarketDataFailureKind.RATE_LIMIT:
                 self._stats["funding"]["rate_limit"] += 1
                 self._stats["funding"]["retries"] += 1
                 logger.warning("Funding rate fetch rate-limited for %s: %s", symbol, exc)
+            elif failure_kind is MarketDataFailureKind.TIMEOUT:
+                self._stats["funding"]["timeout"] += 1
+                logger.warning("Funding rate fetch timed out for %s: %s", symbol, exc)
             else:
                 self._stats["funding"]["errors"] += 1
                 logger.warning("Funding rate fetch failed for %s: %s", symbol, exc)
@@ -129,10 +133,14 @@ class _AdditionalDataLoader:
                 self._stats["open_interest"]["ok"] += 1
                 out["open_interest"] = open_interest[symbol]
         except Exception as exc:
-            if self._is_rate_limited(str(exc)):
+            failure_kind = classify_market_data_failure(exc)
+            if failure_kind is MarketDataFailureKind.RATE_LIMIT:
                 self._stats["open_interest"]["rate_limit"] += 1
                 self._stats["open_interest"]["retries"] += 1
                 logger.warning("Open interest fetch rate-limited for %s: %s", symbol, exc)
+            elif failure_kind is MarketDataFailureKind.TIMEOUT:
+                self._stats["open_interest"]["timeout"] += 1
+                logger.warning("Open interest fetch timed out for %s: %s", symbol, exc)
             else:
                 self._stats["open_interest"]["errors"] += 1
                 logger.warning("Open interest fetch failed for %s: %s", symbol, exc)
@@ -149,7 +157,7 @@ class _SyncStats:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self.endpoint_stats: dict[str, dict[str, float]] = {
-            "candles": {"ok": 0, "retries": 0, "rate_limit": 0},
+            "candles": {"ok": 0, "retries": 0, "rate_limit": 0, "timeout": 0},
         }
         self.db_write_latencies = ReservoirSampling(max_size=1000)
         self.db_write_batch_sizes = ReservoirSampling(max_size=1000)
@@ -158,11 +166,18 @@ class _SyncStats:
         async with self._lock:
             self.endpoint_stats["candles"]["ok"] += 1
 
-    async def record_fetch_retry(self, rate_limited: bool = False) -> None:
+    async def record_fetch_retry(
+        self,
+        *,
+        rate_limited: bool = False,
+        timed_out: bool = False,
+    ) -> None:
         async with self._lock:
             self.endpoint_stats["candles"]["retries"] += 1
             if rate_limited:
                 self.endpoint_stats["candles"]["rate_limit"] += 1
+            if timed_out:
+                self.endpoint_stats["candles"]["timeout"] += 1
 
     async def record_db_write(self, latency_sec: float, batch_size: int) -> None:
         async with self._lock:
@@ -216,13 +231,17 @@ class RunCandleSyncUseCase:
         if requested_symbols:
             return list(requested_symbols)
 
-        refreshed = await self._instrument_catalog.refresh_catalog()
-        if refreshed:
-            return refreshed
+        curated = await self._instrument_catalog.load_curated_symbols()
+        if curated:
+            return curated
 
         cached = await self._instrument_catalog.load_cached_symbols()
         if cached:
             return cached
+
+        refreshed = await self._instrument_catalog.refresh_catalog()
+        if refreshed:
+            return refreshed
 
         return await self._instrument_catalog.list_symbols()
 
@@ -279,15 +298,16 @@ class RunCandleSyncUseCase:
                 await stats.record_fetch_ok()
                 break
             except Exception as exc:
-                message = str(exc)
+                failure_kind = classify_market_data_failure(exc)
                 if (
-                    not self._retry_policy.is_retriable(message)
+                    not self._retry_policy.is_retriable_failure(failure_kind)
                     or not self._retry_policy.can_retry(attempts)
                 ):
                     raise
                 attempts += 1
                 await stats.record_fetch_retry(
-                    rate_limited=self._retry_policy.is_rate_limited(message),
+                    rate_limited=self._retry_policy.is_rate_limited_failure(failure_kind),
+                    timed_out=failure_kind is MarketDataFailureKind.TIMEOUT,
                 )
                 if self._telemetry is not None:
                     self._telemetry.event(
@@ -295,8 +315,11 @@ class RunCandleSyncUseCase:
                         symbol=symbol,
                         timeframe=timeframe,
                         attempt=attempts,
-                        rate_limited=self._retry_policy.is_rate_limited(message),
-                        error=message,
+                        rate_limited=self._retry_policy.is_rate_limited_failure(
+                            failure_kind
+                        ),
+                        failure_kind=failure_kind.value,
+                        error=str(exc),
                     )
                 await asyncio.sleep(self._retry_policy.next_sleep(delay))
                 delay = self._retry_policy.bump_delay(delay)
@@ -426,11 +449,14 @@ class RunCandleSyncUseCase:
                 raise
             symbols = await self._filter_supported_symbols(symbols)
             semaphore = asyncio.Semaphore(request.max_concurrent_symbols)
+            abort_requested = asyncio.Event()
 
             async def _run_symbol(symbol: str) -> None:
                 nonlocal total_candles_synced, total_symbols_processed, errors_count
 
                 async with semaphore:
+                    if abort_requested.is_set():
+                        return
                     if self._telemetry is not None:
                         self._telemetry.event(
                             "symbol_started",
@@ -457,6 +483,7 @@ class RunCandleSyncUseCase:
                     except Exception as exc:
                         errors_count += 1
                         if isinstance(exc, DatabaseUnavailableError) or _is_db_outage_error(exc):
+                            abort_requested.set()
                             logger.exception(
                                 "Database unavailable during swap sync; aborting remaining symbols"
                             )

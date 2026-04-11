@@ -19,6 +19,7 @@ class SyncConfig(BaseModel, frozen=True):
     batch_size: int = Field(300, ge=50, le=1000)
     max_retries: int = Field(3, ge=0, le=10)
     retry_delay: float = Field(1.0, ge=0.1, le=30.0)
+    timeout_seconds: float = Field(30.0, gt=0.0, le=300.0)
     max_concurrent_symbols: int = Field(3, ge=1, le=50)
     extra_data: bool = False
     use_ccxt: bool = True
@@ -36,6 +37,7 @@ class SyncConfig(BaseModel, frozen=True):
             "batch_size": "CANDLES_BATCH_SIZE",
             "max_retries": "CANDLES_MAX_RETRIES",
             "retry_delay": "CANDLES_RETRY_DELAY",
+            "timeout_seconds": "OKX_TIMEOUT_SECONDS",
             "max_concurrent_symbols": "CANDLES_MAX_CONCURRENT",
             "extra_data": "CANDLES_EXTRA_DATA",
             "use_ccxt": "CANDLES_USE_CCXT",

@@ -156,7 +156,10 @@ class SwapCandlesRepository:
                 except Exception:
                     await session.rollback()
                     raise
-            return result.rowcount if result.rowcount >= 0 else len(rows)
+            rowcount = getattr(result, "rowcount", None)
+            if rowcount is None:
+                return len(rows)
+            return rowcount if rowcount >= 0 else len(rows)
 
         return int(await self._run_with_db_retry(_operation))
 

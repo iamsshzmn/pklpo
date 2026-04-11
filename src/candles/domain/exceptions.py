@@ -337,9 +337,7 @@ def is_retryable_error(error: Exception) -> bool:
         return True
     if isinstance(error, OKXRateLimitError):
         return True
-    if isinstance(error, MetadataStaleError):
-        return True
-    return False
+    return bool(isinstance(error, MetadataStaleError))
 
 
 def get_error_context(error: MarketMetaError) -> dict[str, Any]:

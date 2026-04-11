@@ -12,8 +12,19 @@ if TYPE_CHECKING:
 PRIORITY_SYMBOLS = ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
 
 
+def resolve_repo_instruments_file() -> Path:
+    """Return the repo-local curated instruments list for default sync runs."""
+    return Path(__file__).resolve().with_name("instruments_list.json")
+
+
 def resolve_instruments_cache_file(cache_dir: Path | None = None) -> Path:
-    """Resolve path to instruments cache file and ensure directory exists."""
+    """Resolve the runtime instrument cache file and ensure its directory exists.
+
+    Runtime cache lives under ``INSTRUMENTS_CACHE_DIR`` (or the explicit
+    ``cache_dir`` override). It is separate from the curated repo-local
+    ``src/candles/instruments_list.json`` list used by application-layer
+    symbol selection policy.
+    """
     target_dir = cache_dir
     if target_dir is None:
         env_dir = os.getenv("INSTRUMENTS_CACHE_DIR")
@@ -26,6 +37,34 @@ def resolve_instruments_cache_file(cache_dir: Path | None = None) -> Path:
     return target_dir / "instruments_list.json"
 
 
+def load_symbols_from_file(instruments_file: Path, *, logger: Any | None = None) -> list[str]:
+    """Load a symbol list from JSON file, returning [] on invalid content."""
+    if not instruments_file.exists():
+        return []
+
+    try:
+        with open(instruments_file, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception as exc:
+        if logger is not None:
+            logger.warning("Failed to read symbols from %s (%s)", instruments_file, exc)
+        return []
+
+    if not isinstance(payload, list):
+        if logger is not None:
+            logger.warning("Invalid symbols payload in %s: expected list", instruments_file)
+        return []
+
+    symbols: list[str] = []
+    for item in payload:
+        if item is None:
+            continue
+        normalized = item.strip() if isinstance(item, str) else str(item).strip()
+        if normalized and normalized.lower() not in {"none", "null"}:
+            symbols.append(normalized)
+    return symbols
+
+
 async def refresh_instruments_list(
     *,
     repository: InstrumentCatalogQueryPort,
@@ -33,7 +72,7 @@ async def refresh_instruments_list(
     cache_dir: Path | None = None,
 ) -> list[str]:
     """
-    Refresh instruments list in cache file.
+    Refresh the runtime instruments cache file from the repository.
 
     Keeps BTC/ETH first and appends remaining symbols alphabetically.
     Returns resulting list.
@@ -76,13 +115,18 @@ async def refresh_instruments_list(
         logger.info("Removed symbols: %s", sorted(removed))
 
     if added or removed:
-        try:
-            with open(instruments_file, "w", encoding="utf-8") as f:
-                json.dump(new_symbols, f, indent=2, ensure_ascii=False)
-            logger.info("Instrument list updated and saved to %s", instruments_file)
-        except Exception as exc:
-            logger.error("Failed to save instrument list: %s", exc)
-            raise
+        # Auto-update is intentionally disabled to keep the instrument list fixed.
+        # try:
+        #     with open(instruments_file, "w", encoding="utf-8") as f:
+        #         json.dump(new_symbols, f, indent=2, ensure_ascii=False)
+        #     logger.info("Instrument list updated and saved to %s", instruments_file)
+        # except Exception as exc:
+        #     logger.error("Failed to save instrument list: %s", exc)
+        #     raise
+        logger.info(
+            "Instrument list changes detected, but auto-update is disabled for %s",
+            instruments_file,
+        )
     else:
         logger.debug("Instrument list is up to date")
 

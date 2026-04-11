@@ -49,7 +49,7 @@ _instance: OKXCredentials | None = None
 
 def get_credentials() -> OKXCredentials:
     """Return cached credentials, loading from env on first call."""
-    global _instance  # noqa: PLW0603
+    global _instance
     if _instance is None:
         _instance = OKXCredentials.from_env()
     return _instance

@@ -16,6 +16,10 @@ from src.candles.interfaces.swap_sync import (
     run_catalog_refresh_via_application,
     sync_swap_candles,
 )
+from src.candles.observability.prometheus import (
+    push_swap_smoke_metrics,
+    push_swap_sync_metrics,
+)
 from src.utils.session_utils import get_db_session
 
 if TYPE_CHECKING:
@@ -49,6 +53,9 @@ async def run_refresh_okx_meta(request: AirflowSyncRequest) -> dict[str, Any]:
 async def run_swap_sync(request: AirflowSyncRequest) -> dict[str, Any]:
     config = build_sync_config(dict(request.conf), request.logical_date)
     mode = config["mode"]
+    timeout_seconds = config.get("timeout_seconds")
+    if timeout_seconds is None:
+        timeout_seconds = 30
 
     if request.is_manual:
         should_skip = False
@@ -71,9 +78,12 @@ async def run_swap_sync(request: AirflowSyncRequest) -> dict[str, Any]:
             "max_concurrent_symbols": config.get("max_concurrent_symbols", 1),
             "max_retries": config.get("max_retries", 5),
             "retry_delay": config.get("retry_delay", 1.5),
+            "timeout_seconds": timeout_seconds,
         },
     )
-    return format_stats_for_xcom(stats, config)
+    payload = format_stats_for_xcom(stats, config)
+    push_swap_sync_metrics(payload)
+    return payload
 
 
 async def run_smoke_validate(request: AirflowSyncRequest) -> dict[str, Any]:
@@ -82,8 +92,10 @@ async def run_smoke_validate(request: AirflowSyncRequest) -> dict[str, Any]:
     extra_data_enabled = config.get("extra_data", False)
 
     async with get_db_session() as session:
-        return await run_smoke_validation_use_case(
+        result = await run_smoke_validation_use_case(
             session,
             mode,
             extra_data_enabled,
         )
+    push_swap_smoke_metrics(result)
+    return result

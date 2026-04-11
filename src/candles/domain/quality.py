@@ -10,11 +10,11 @@ Domain модели для проверок качества данных.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     """Уровень критичности проверки."""
 
     OK = "ok"
@@ -44,7 +44,6 @@ class Thresholds:
             if value > self.warn:
                 return Severity.WARN
             return Severity.OK
-        # lt
         if value < self.critical:
             return Severity.CRITICAL
         if value < self.warn:
@@ -52,18 +51,15 @@ class Thresholds:
         return Severity.OK
 
 
-# Дефолтные пороги из плана
 FRESHNESS_THRESHOLDS = Thresholds(warn=5.0, critical=15.0, direction="gt")
 COVERAGE_THRESHOLDS = Thresholds(warn=90.0, critical=70.0, direction="lt")
 SMOKE_THRESHOLDS = Thresholds(warn=9.0, critical=8.0, direction="lt")
 DUPLICATE_RATE_THRESHOLDS = Thresholds(warn=0.01, critical=0.1, direction="gt")
 
-# Fill-rate пороги
 FUNDING_FILL_THRESHOLDS = Thresholds(warn=95.0, critical=80.0, direction="lt")
 OI_FILL_THRESHOLDS = Thresholds(warn=95.0, critical=80.0, direction="lt")
 L2_FILL_THRESHOLDS = Thresholds(warn=50.0, critical=20.0, direction="lt")
 
-# Event freshness пороги (минуты)
 FUNDING_EVENT_LAG_THRESHOLDS = Thresholds(warn=30.0, critical=120.0, direction="gt")
 OI_EVENT_LAG_THRESHOLDS = Thresholds(warn=30.0, critical=120.0, direction="gt")
 L2_EVENT_LAG_THRESHOLDS = Thresholds(warn=10.0, critical=60.0, direction="gt")
@@ -127,6 +123,18 @@ class QualityReport:
     def critical_results(self) -> list[CheckResult]:
         """Список критических результатов."""
         return [r for r in self.results if r.is_critical]
+
+    def summary(self) -> dict[str, int]:
+        """Сводка по количеству результатов на каждый severity."""
+        counts = {"ok": 0, "warn": 0, "critical": 0}
+        for result in self.results:
+            counts[str(result.severity)] += 1
+        return {
+            "total": len(self.results),
+            "ok": counts["ok"],
+            "warn": counts["warn"],
+            "critical": counts["critical"],
+        }
 
     def add(self, result: CheckResult) -> None:
         """Добавить результат проверки."""

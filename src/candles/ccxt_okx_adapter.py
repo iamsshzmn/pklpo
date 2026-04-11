@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
 from typing import Any
 
 from aiolimiter import AsyncLimiter
 
+from src.candles.application.sync.policy import (
+    MarketDataFailureKind,
+    classify_market_data_failure,
+)
 from src.candles.domain.timeframes import TF_TO_MS
+from src.candles.observability.tracer import trace_event
+
+logger = logging.getLogger(__name__)
 
 try:
     import ccxt.async_support as ccxt
@@ -35,22 +45,46 @@ def _to_ccxt_symbol(inst_id: str) -> str:
 class CcxtOKXAdapter:
     """CCXT-backed market data adapter for the candles sync runtime."""
 
-    def __init__(self, max_requests_per_second: int = 80) -> None:
+    _RETRIABLE_INIT_KINDS = frozenset({
+        MarketDataFailureKind.TIMEOUT,
+        MarketDataFailureKind.RATE_LIMIT,
+        MarketDataFailureKind.TRANSIENT,
+    })
+
+    def __init__(
+        self,
+        max_requests_per_second: int = 80,
+        timeout_seconds: float | None = None,
+        max_init_retries: int = 3,
+        init_retry_delay: float = 2.0,
+    ) -> None:
         if ccxt is None:
             raise RuntimeError(
                 "ccxt is not installed. Install `ccxt` or disable use_ccxt."
             )
-        self._exchange = ccxt.okx(
-            {
-                "enableRateLimit": True,
-            }
-        )
+        effective_timeout_seconds = 30 if timeout_seconds is None else timeout_seconds
+        self._timeout_ms = int(effective_timeout_seconds * 1000)
+        self._max_requests_per_second = max_requests_per_second
+        self._exchange_config: dict[str, Any] = {
+            "enableRateLimit": True,
+            "timeout": self._timeout_ms,
+        }
+        self._exchange = ccxt.okx(self._exchange_config)
+        self._max_init_retries = max_init_retries
+        self._init_retry_delay = init_retry_delay
         # Adapter-local traffic shaping. Orchestrator should not depend on limiter internals.
         self._global_limiter = AsyncLimiter(max_requests_per_second, 1)
         self._candles_limiter = AsyncLimiter(16, 1)
         self._extra_data_limiter = AsyncLimiter(3, 1)
         self._instrument_limiters: dict[str, AsyncLimiter] = {}
         self._funding_instrument_limiters: dict[str, AsyncLimiter] = {}
+        self._init_metrics: dict[str, Any] = {
+            "load_markets_attempts": 0,
+            "load_markets_retries": 0,
+            "load_markets_duration_ms": 0.0,
+            "load_markets_failure_kind": None,
+            "load_markets_succeeded": False,
+        }
 
     def _instrument_limiter(self, symbol: str) -> AsyncLimiter:
         if symbol not in self._instrument_limiters:
@@ -62,9 +96,100 @@ class CcxtOKXAdapter:
             self._funding_instrument_limiters[symbol] = AsyncLimiter(2, 1)
         return self._funding_instrument_limiters[symbol]
 
+    async def _recreate_exchange(self) -> None:
+        """Close current exchange and create a fresh instance."""
+        try:
+            await self._exchange.close()
+        except Exception:
+            logger.debug("Ignoring error closing exchange during retry cleanup", exc_info=True)
+        self._exchange = ccxt.okx(self._exchange_config)
+
+    def snapshot_init_metrics(self) -> dict[str, Any]:
+        return dict(self._init_metrics)
+
     async def __aenter__(self) -> CcxtOKXAdapter:
-        await self._exchange.load_markets()
-        return self
+        last_error: BaseException | None = None
+        for attempt in range(1 + self._max_init_retries):
+            t0 = time.monotonic()
+            trace_event(
+                "load_markets.start",
+                attempt=attempt + 1,
+                max_attempts=1 + self._max_init_retries,
+                timeout_ms=self._timeout_ms,
+            )
+            try:
+                await self._exchange.load_markets()
+                elapsed_ms = (time.monotonic() - t0) * 1000
+                self._init_metrics.update(
+                    {
+                        "load_markets_attempts": attempt + 1,
+                        "load_markets_retries": attempt,
+                        "load_markets_duration_ms": elapsed_ms,
+                        "load_markets_failure_kind": None,
+                        "load_markets_succeeded": True,
+                    }
+                )
+                trace_event(
+                    "load_markets.success",
+                    attempt=attempt + 1,
+                    retries=attempt,
+                    duration_ms=round(elapsed_ms, 3),
+                )
+                logger.info(
+                    "load_markets succeeded (attempt=%d, elapsed_ms=%.0f)",
+                    attempt + 1,
+                    elapsed_ms,
+                )
+                return self
+            except Exception as exc:
+                elapsed_ms = (time.monotonic() - t0) * 1000
+                failure_kind = classify_market_data_failure(exc)
+                self._init_metrics.update(
+                    {
+                        "load_markets_attempts": attempt + 1,
+                        "load_markets_retries": attempt,
+                        "load_markets_duration_ms": elapsed_ms,
+                        "load_markets_failure_kind": failure_kind.value,
+                        "load_markets_succeeded": False,
+                    }
+                )
+                trace_event(
+                    "load_markets.failure",
+                    attempt=attempt + 1,
+                    max_attempts=1 + self._max_init_retries,
+                    failure_kind=failure_kind.value,
+                    duration_ms=round(elapsed_ms, 3),
+                    retriable=failure_kind in self._RETRIABLE_INIT_KINDS,
+                )
+                logger.warning(
+                    "load_markets failed (attempt=%d/%d, kind=%s, elapsed_ms=%.0f): %s",
+                    attempt + 1,
+                    1 + self._max_init_retries,
+                    failure_kind.value,
+                    elapsed_ms,
+                    exc,
+                )
+                if failure_kind not in self._RETRIABLE_INIT_KINDS:
+                    raise
+                last_error = exc
+                if attempt < self._max_init_retries:
+                    await self._recreate_exchange()
+                    await asyncio.sleep(self._init_retry_delay * (attempt + 1))
+
+        # All retries exhausted — close the last exchange to prevent resource leak
+        # (__aexit__ won't run because __aenter__ is failing).
+        trace_event(
+            "load_markets.exhausted",
+            attempts=1 + self._max_init_retries,
+            retries=self._max_init_retries,
+            failure_kind=self._init_metrics.get("load_markets_failure_kind"),
+        )
+        try:
+            await self._exchange.close()
+        except Exception:
+            logger.debug("Ignoring error closing exchange after exhausted retries", exc_info=True)
+        assert last_error is not None
+        raise last_error
 
     async def __aexit__(self, *exc: Any) -> None:
         await self._exchange.close()

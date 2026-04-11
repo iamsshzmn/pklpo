@@ -18,7 +18,7 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
-from .tracer import CorrelationLogFilter, get_correlation_id
+from .tracer import CorrelationLogFilter
 
 CANDLES_LOGGER_NAME = "src.candles"
 
