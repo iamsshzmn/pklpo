@@ -147,6 +147,7 @@ ignore = [
     "RUF001",  # ambiguous unicode (кириллица в строках - нормально для русских проектов)
     "RUF002",  # ambiguous unicode (кириллица в docstrings - нормально для русских проектов)
     "RUF003",  # ambiguous unicode (кириллица в комментариях - нормально для русских проектов)
+    "N803",  # аргументы с заглавными буквами (T, X - математические обозначения в backtest/ML)
     "N806",  # переменные с заглавными буквами (Q1, Q3, IQR, P_last - математические обозначения)
     "N815",  # mixedCase в классах (API контракты: minSz, maxSz, minNotional)
     "N999",  # невалидные имена модулей (старые директории с пробелами)
@@ -159,6 +160,7 @@ ignore = [
     "E722",  # bare except (намеренное в некоторых обработчиках ошибок)
     "B026",  # star-arg unpacking после keyword (намеренное в некоторых API)
     "N818",  # имена исключений без Error suffix (legacy код)
+    "SIM102",  # collapsible-if (nested if часто читаемее с guard clauses и комментариями)
     "SIM105",  # contextlib.suppress вместо try-except-pass (предпочтение стиля)
     "SIM101",  # множественные isinstance (читаемость важнее)
     "RUF006",  # сохранение ссылки на asyncio.create_task (не всегда необходимо)
@@ -205,20 +207,10 @@ exclude = [
     "features_archive",
     "tests_archive",
     "src/features/cli/.*",  # CLI scripts use dynamic paths
-    "src/features/calc.py",  # Legacy file, may have path issues
-    "src/features/calc_combinations.py",  # Has path issues with indicator_groups
     "src/features/tests/.*",  # Test files use dynamic imports
     "src/features/infrastructure/alerts.py",  # Has path issues with dynamic imports
     "src/features/indicator_groups/.*",  # Source file found twice under different module names
-    "src/features/strategy.py",  # Source file found twice under different module names
-    "src/features/demo.py",  # Demo script with incorrect imports
     "src/features/infrastructure/database.py",  # Source file found twice under different module names
-    "src/features/logging_config.py",  # Source file found twice under different module names
-    "src/features/specs.py",  # Source file found twice under different module names
-    "src/indicators \\(old\\)/.*",  # Old indicators directory with spaces
-    "src/mtf \\(old\\)/.*",  # Old mtf directory with spaces
-    "src/okx \\(old\\)/.*",  # Old okx directory with spaces
-    "src/signals \\(old\\)/.*",  # Old signals directory with spaces
 ]
 
 [[tool.mypy.overrides]]
@@ -276,45 +268,6 @@ module = [
 follow_imports = "skip"
 ignore_errors = true
 
-[[tool.mypy.overrides]]
-module = [
-    "features.strategy",
-    "src.features.strategy",
-]
-follow_imports = "skip"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = [
-    "features.calc",
-    "src.features.calc",
-]
-follow_imports = "skip"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = [
-    "features.infrastructure.database",
-    "src.features.infrastructure.database",
-]
-follow_imports = "skip"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = [
-    "features.logging_config",
-    "src.features.logging_config",
-]
-follow_imports = "skip"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = [
-    "features.specs",
-    "src.features.specs",
-]
-follow_imports = "skip"
-ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = [
@@ -324,12 +277,6 @@ module = [
 follow_imports = "skip"
 ignore_errors = true
 
-[[tool.mypy.overrides]]
-module = [
-    "config",
-]
-follow_imports = "skip"
-ignore_errors = true
 
 [tool.coverage.run]
 source = ["src"]

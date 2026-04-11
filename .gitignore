@@ -100,6 +100,7 @@ backups/
 *.backup
 *_backup.json
 *.bundle
+tests/
 
 # Temp files
 *.tmp
@@ -137,12 +138,7 @@ src/features/README/
 src/**/*_REPORT.md
 src/**/*_SUMMARY.md
 
-# Tests — only allow tests/db/test_indicators_partition_maintenance*.py
-tests/*
-!tests/db/
-tests/db/*
-!tests/db/test_indicators_partition_maintenance.py
-!tests/db/test_indicators_partition_maintenance_dag.py
+# Tests — track everything, ignore only legacy in-source tests
 src/**/tests/
 src/**/test_*.py
 /benchmarks
