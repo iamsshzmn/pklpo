@@ -36,7 +36,7 @@
   "mode": "fast",              // "fast" | "slow" | "ext" | "bootstrap"
   "extra_data": false,         // bool, подтягивать funding_rate/open_interest
   "timeframes": ["1m", "5m"],  // list[str], переопределяет режим
-  "symbols": ["BTC-USDT-SWAP"], // list[str], опционально
+  "symbols": ["BTC-USDT-SWAP"], // list[str], опционально; иначе используется curated repo list
   "refresh_instruments": false, // bool, принудительное обновление инструментов
   "max_concurrent_symbols": 10  // int, опционально
 }
@@ -296,7 +296,7 @@ airflow connections add pklpo_db \
 - `market_meta_file_log` (default: "true")
 - `market_meta_log_level` (default: "DEBUG")
 - `market_meta_data_dir` (default: "/tmp/pklpo/data")
-- `instruments_cache_dir` (default: "/tmp/pklpo")
+- `instruments_cache_dir` (default: "/tmp/pklpo") - runtime cache directory for refreshed catalog fallback; default symbol universe for `swap_sync` without explicit `symbols` comes from repo-local `src/candles/instruments_list.json`
 
 ### Временные директории
 

@@ -8,6 +8,7 @@ The baseline is intentionally small and operational:
 
 - `AGENTS.md` holds project-wide working rules
 - `agent_workspace/skills/` holds reusable task skills
+- `agent_workspace/prompts/` holds reusable prompt templates for Claude Extension or manual use
 - `agent_workspace/hooks/` holds deterministic lifecycle hooks
 - `.claude/settings.json` wires Claude Code to the shared hooks
 
@@ -25,6 +26,10 @@ The shared skills are instruction-first and short enough to stay reusable:
 | `bug-investigator` | Reproduction and root-cause isolation | Straightforward feature work |
 | `refactor-reviewer` | Regression-focused review of structural changes | Tiny localized edits |
 | `release-notes-writer` | Operator-facing summaries of verified changes | Unstable or unverified work |
+| `architecture-checker` | Architecture and boundary review against the current tree | Straightforward implementation work |
+| `strategy-debate` | Two-voice Claude and Codex debate for trade-offs and positioning | Factual lookup or sensitive inputs |
+| `creator-critic` | Breadth-first option generation followed by structured critique | Narrow deterministic implementation work |
+| `options-challenge` | Hard comparison and ranking across several plausible paths | Single obvious choice with no real trade-off |
 
 The manifest is `agent_workspace/skills/manifest.yaml`. Each skill includes:
 
@@ -32,6 +37,18 @@ The manifest is `agent_workspace/skills/manifest.yaml`. Each skill includes:
 - `Do not use when`
 - short reusable instructions
 - optional delegation notes only when the split is bounded
+
+## Prompt Templates
+
+`agent_workspace/prompts/` currently includes reusable manual prompt variants for the new debate workflows:
+
+- `strategy-debate-prompt.md`
+- `creator-critic-prompt.md`
+- `options-challenge-prompt.md`
+
+These are documentation assets, not automatically wired hooks. They do not need registration in `.claude/settings.json`.
+
+The debate-oriented skills assume Codex is available in the current Claude Code session. That dependency is expressed inside each `SKILL.md` and does not require separate hook configuration in this repo.
 
 ## Hooks
 
