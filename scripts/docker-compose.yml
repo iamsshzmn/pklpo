@@ -4,12 +4,15 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.app
     container_name: pklpo_app
+    working_dir: /workspace
+    command: ["sleep", "infinity"]
     volumes:
-      - ../src:/app
+      - ..:/workspace
     env_file:
       - ../.env
     depends_on:
-      - db
+      db:
+        condition: service_started
     networks:
       - pklpo_network
 
@@ -17,8 +20,6 @@ services:
     image: postgres:16.3
     container_name: pklpo_db
     restart: always
-    env_file:
-      - ../.env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-pklpo}
       POSTGRES_USER: ${POSTGRES_USER:-pklpo_user}
@@ -27,14 +28,17 @@ services:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     networks:
       - pklpo_network
 
   pgadmin:
     image: dpage/pgadmin4:9.13
     container_name: pklpo_pgadmin
-    env_file:
-      - ../.env
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
@@ -53,8 +57,6 @@ services:
     image: metabase/metabase:v0.57.6.x
     container_name: pklpo_metabase
     restart: always
-    env_file:
-      - ../.env
     environment:
       MB_DB_TYPE: postgres
       MB_DB_DBNAME: metabase
@@ -81,5 +83,4 @@ volumes:
 
 networks:
   pklpo_network:
-    external: true
-    name: pklpo_pklpo_network
+    name: pklpo_network

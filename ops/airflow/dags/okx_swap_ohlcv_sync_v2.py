@@ -24,6 +24,7 @@ Schedule
 """
 
 import asyncio
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,28 @@ def _normalize_async_database_uri(uri: str) -> str:
     return uri
 
 
+def _project_env_default(name: str, fallback: str) -> str:
+    raw = os.environ.get(name)
+    if raw not in {None, ""}:
+        return raw
+
+    candidates = [
+        Path("/opt/airflow/project/.env"),
+        Path(__file__).resolve().parents[3] / ".env",
+    ]
+    for env_path in candidates:
+        if not env_path.exists():
+            continue
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            if key.strip() == name:
+                return value.strip().strip("'\"")
+    return fallback
+
+
 def get_dag_env() -> dict[str, str]:
     """Pull secrets from Airflow Connection 'pklpo_db' and non-secret vars from Variables."""
     from airflow.hooks.base import BaseHook
@@ -91,6 +114,24 @@ def get_dag_env() -> dict[str, str]:
     )
     env["INSTRUMENTS_CACHE_DIR"] = Variable.get(
         "instruments_cache_dir", default_var="/tmp/pklpo"  # noqa: S108
+    )
+    env["OBSERVABILITY_PROMETHEUS_ENABLED"] = Variable.get(
+        "observability_prometheus_enabled",
+        default_var=_project_env_default("OBSERVABILITY_PROMETHEUS_ENABLED", "false"),
+    )
+    env["OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL"] = Variable.get(
+        "observability_prometheus_pushgateway_url",
+        default_var=_project_env_default(
+            "OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", "http://pushgateway:9091"
+        ),
+    )
+    env["OBSERVABILITY_JOB_NAME"] = Variable.get(
+        "observability_job_name",
+        default_var=_project_env_default("OBSERVABILITY_JOB_NAME", "data_quality_pipeline"),
+    )
+    env["OBSERVABILITY_METRICS_PREFIX"] = Variable.get(
+        "observability_metrics_prefix",
+        default_var=_project_env_default("OBSERVABILITY_METRICS_PREFIX", "pklpo"),
     )
     return env
 

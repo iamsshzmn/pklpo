@@ -1,21 +1,19 @@
 FROM python:3.11.9-slim-bookworm
 
-WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/workspace
 
-# 1. apt-get update отдельно
-RUN apt-get update
+WORKDIR /workspace
 
-# 2. Установка build-essential отдельно
-RUN apt-get install -y build-essential
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# 3. Очистка кэша apt
-RUN rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml README.md ./
+COPY src ./src
 
-# Копируем зависимости
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --upgrade pip \
+    && python -m pip install --no-cache-dir .
 
-# Копируем код
-COPY ./src/ /app
-
-CMD ["sleep", "infinity"]
+CMD ["python", "-m", "src.cli.main", "--help"]
