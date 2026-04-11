@@ -11,7 +11,7 @@ Determines overall market state using basket of top-K symbols by volume:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -19,12 +19,13 @@ import numpy as np
 if TYPE_CHECKING:
     import pandas as pd
 
-from .config import RegimeClassifierConfig
+    from .config import RegimeClassifierConfig
+
 
 EPS = 1e-12
 
 
-class RegimeType(str, Enum):
+class RegimeType(StrEnum):
     """Market regime classification."""
 
     TREND_UP = "TREND_UP"
@@ -149,10 +150,7 @@ class RegimeClassifier:
 
         # TREND check
         elif adx_median >= self.config.adx_trend_threshold:
-            if ema_slope > 0:
-                regime = RegimeType.TREND_UP
-            else:
-                regime = RegimeType.TREND_DOWN
+            regime = RegimeType.TREND_UP if ema_slope > 0 else RegimeType.TREND_DOWN
             strength = min(1.0, adx_median / 100.0)
 
         # RANGE check

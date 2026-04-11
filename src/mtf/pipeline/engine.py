@@ -301,9 +301,7 @@ class PipelineEngine:
             return False
         if self.config.triggers_enabled and not self.triggers_builder:
             return False
-        if self.config.consensus_enabled and not self.consensus_builder:
-            return False
-        return True
+        return not (self.config.consensus_enabled and not self.consensus_builder)
 
     def get_metrics(self) -> PipelineMetrics:
         """Получение метрик"""

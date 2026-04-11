@@ -100,12 +100,7 @@ class IntegrationConfigManager:
             return False
 
         # Проверка уведомлений
-        if self._config.notifications_enabled and not any(
-            [self._config.slack_webhook_url, self._config.email_smtp_server]
-        ):
-            return False
-
-        return True
+        return not (self._config.notifications_enabled and not any([self._config.slack_webhook_url, self._config.email_smtp_server]))
 
     def get_okx_config(self) -> dict[str, Any]:
         """Получение конфигурации OKX API"""

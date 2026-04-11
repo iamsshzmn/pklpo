@@ -27,10 +27,9 @@ Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.12
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from itertools import combinations
 from math import comb
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -39,6 +38,9 @@ from sklearn.metrics import check_scoring
 from sklearn.model_selection import BaseCrossValidator
 
 from src.ml.validation.purged_kfold import _n_samples
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class CombinatorialPurgedCV(BaseCrossValidator):

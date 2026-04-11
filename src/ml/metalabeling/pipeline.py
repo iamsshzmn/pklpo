@@ -15,17 +15,20 @@ Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.10
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import joblib
 import numpy as np
-import pandas as pd
 from sklearn.base import clone
 from sklearn.calibration import CalibratedClassifierCV
 
-from src.core.run_context import RunContext
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    import pandas as pd
+
+    from src.core.run_context import RunContext
 
 
 class MetaLabeler:

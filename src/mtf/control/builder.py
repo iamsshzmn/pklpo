@@ -154,13 +154,7 @@ class ControlBuilder:
         if request.action not in self.get_supported_actions():
             return False
 
-        if (
-            request.target_component
-            and request.target_component not in self.get_supported_components()
-        ):
-            return False
-
-        return True
+        return not (request.target_component and request.target_component not in self.get_supported_components())
 
     async def process_with_retry(
         self, request: ControlRequest, max_retries: int | None = None

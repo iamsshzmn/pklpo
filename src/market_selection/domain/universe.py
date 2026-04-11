@@ -11,15 +11,18 @@ Manages the trading universe:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
-from .config import UniverseConfig
 from .quality_gate import ReasonFlag
-from .regime import GlobalRegime
-from .scoring import FinalScore
+
+if TYPE_CHECKING:
+    from .config import UniverseConfig
+    from .regime import GlobalRegime
+    from .scoring import FinalScore
 
 
-class UniverseStatus(str, Enum):
+class UniverseStatus(StrEnum):
     """Status of a universe version."""
 
     BUILDING = "building"
@@ -241,7 +244,7 @@ class UniverseManager:
 
         # Select top-N from primary
         selected = []
-        for score, stability, is_whitelist in primary_candidates[:top_n]:
+        for score, stability, _is_whitelist in primary_candidates[:top_n]:
             entry = self._create_entry(score, stability, regime)
             selected.append(entry)
 
@@ -354,10 +357,7 @@ class UniverseManager:
         missing_1h_pct = 1.0 - (eligible_1h / total_symbols)
         missing_4h_pct = 1.0 - (eligible_4h / total_symbols)
 
-        if missing_1h_pct > threshold or missing_4h_pct > threshold:
-            return True
-
-        return False
+        return bool(missing_1h_pct > threshold or missing_4h_pct > threshold)
 
     def should_fallback(
         self,

@@ -383,6 +383,5 @@ class PairMetricsCalculator:
             return 0.0
 
         cv = vol_std / (vol_mean + EPS)
-        liq = vol_median / (cv + 1.0)
+        return vol_median / (cv + 1.0)
 
-        return liq

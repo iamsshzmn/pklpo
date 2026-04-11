@@ -20,15 +20,17 @@ Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.8
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.model_selection import BaseCrossValidator
 
 from src.ml.feature_selection.importance import mda_importance
+
+if TYPE_CHECKING:
+    from sklearn.model_selection import BaseCrossValidator
 
 
 def select_features(

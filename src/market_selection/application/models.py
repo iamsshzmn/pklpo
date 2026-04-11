@@ -5,12 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ..domain.quality_gate import ReasonFlag
-from ..domain.regime import RegimeType
-from ..domain.universe import UniverseStatus
-
 if TYPE_CHECKING:
-    from ..domain.quality_gate import QualityResult
+    from ..domain.quality_gate import QualityResult, ReasonFlag
+    from ..domain.regime import RegimeType
+    from ..domain.universe import UniverseStatus
 
 
 @dataclass

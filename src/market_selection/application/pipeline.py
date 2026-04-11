@@ -6,14 +6,12 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from ..config import MarketSelectionConfig
 from ..domain.metrics import PairMetricsCalculator
 from ..domain.quality_gate import DataQualityGate, QualityResult, ReasonFlag
 from ..domain.regime import GlobalRegime, RegimeClassifier
 from ..domain.scoring import ScoringEngine, TFScore
 from ..domain.universe import UniverseManager, UniverseStatus
 from ..infrastructure.persistence import LockTimeoutError
-from ..ports import MarketSelectionDBPort, MonitoringPort, PersistencePort
 from .config_projection import (
     build_quality_gate_config,
     build_regime_classifier_config,
@@ -25,6 +23,9 @@ from .steps import PipelineStepExecutor
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from ..config import MarketSelectionConfig
+    from ..ports import MarketSelectionDBPort, MonitoringPort, PersistencePort
 
 logger = logging.getLogger(__name__)
 

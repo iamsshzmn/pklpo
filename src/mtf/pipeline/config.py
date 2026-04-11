@@ -83,10 +83,7 @@ class PipelineConfigManager:
         if self._config.max_timeframes_per_request <= 0:
             return False
 
-        if self._config.min_data_points <= 0:
-            return False
-
-        return True
+        return not self._config.min_data_points <= 0
 
     def get_component_configs(self) -> dict[str, dict[str, Any]]:
         """Получение конфигураций компонентов"""

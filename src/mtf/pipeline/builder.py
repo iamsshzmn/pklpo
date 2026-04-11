@@ -161,10 +161,7 @@ class PipelineBuilder:
         if not request.features_data:
             return False
 
-        if len(request.timeframes) > self.config.max_timeframes_per_request:
-            return False
-
-        return True
+        return not len(request.timeframes) > self.config.max_timeframes_per_request
 
     async def process_with_retry(
         self, request: PipelineRequest, max_retries: int | None = None

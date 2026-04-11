@@ -22,11 +22,13 @@ Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.3
 from __future__ import annotations
 
 import warnings
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
-from src.ml.models import BarrierConfig
+if TYPE_CHECKING:
+    from src.ml.models import BarrierConfig
 
 try:
     import numba as nb

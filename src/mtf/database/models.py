@@ -6,11 +6,11 @@ MTF Database Models
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class RegimeType(str, Enum):
+class RegimeType(StrEnum):
     """Типы режимов рынка"""
 
     TREND_UP = "trend_up"
@@ -18,7 +18,7 @@ class RegimeType(str, Enum):
     FLAT = "flat"
 
 
-class AccelerationType(str, Enum):
+class AccelerationType(StrEnum):
     """Типы ускорения"""
 
     BULLISH = "bullish"
@@ -26,7 +26,7 @@ class AccelerationType(str, Enum):
     NEUTRAL = "neutral"
 
 
-class ConsensusType(str, Enum):
+class ConsensusType(StrEnum):
     """Типы консенсуса"""
 
     STRONG_BULLISH = "strong_bullish"
@@ -37,7 +37,7 @@ class ConsensusType(str, Enum):
     CONFLICTED = "conflicted"
 
 
-class ConfidenceLevel(str, Enum):
+class ConfidenceLevel(StrEnum):
     """Уровни уверенности"""
 
     VERY_HIGH = "very_high"
@@ -47,7 +47,7 @@ class ConfidenceLevel(str, Enum):
     VERY_LOW = "very_low"
 
 
-class ProcessingStatus(str, Enum):
+class ProcessingStatus(StrEnum):
     """Статусы обработки"""
 
     SUCCESS = "success"
@@ -55,7 +55,7 @@ class ProcessingStatus(str, Enum):
     FAILED = "failed"
 
 
-class ProcessingStage(str, Enum):
+class ProcessingStage(StrEnum):
     """Этапы обработки"""
 
     CONTEXT = "context"

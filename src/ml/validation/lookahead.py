@@ -21,12 +21,14 @@ Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.7, 12
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass

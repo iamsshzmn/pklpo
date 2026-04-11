@@ -22,11 +22,13 @@ Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.7
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import pandas as pd
 from sklearn.model_selection import BaseCrossValidator
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 def _n_samples(X: Any) -> int:

@@ -17,11 +17,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import INDICATORS_TABLE_NAME
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from src.market_selection.config import MarketSelectionConfig
 
 logger = logging.getLogger(__name__)
@@ -619,5 +620,4 @@ class MarketSelectionDB:
             return 999999  # Very high lag if no data
 
         max_ts = row[0]
-        lag_seconds = int((ts_eval - max_ts) / 1000)
-        return lag_seconds
+        return int((ts_eval - max_ts) / 1000)

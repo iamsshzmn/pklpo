@@ -18,7 +18,8 @@ import numpy as np
 if TYPE_CHECKING:
     import pandas as pd
 
-from .config import ScoringConfig
+    from .config import ScoringConfig
+
 from .quality_gate import ReasonFlag
 from .regime import RegimeType
 
@@ -206,8 +207,7 @@ class ScoringEngine:
             return values.apply(lambda x: 0.5 if np.isnan(x) else 0.5)
 
         z = (values - mean) / (std + EPS)
-        sigmoid = 1.0 / (1.0 + np.exp(-z))
-        return sigmoid
+        return 1.0 / (1.0 + np.exp(-z))
 
     def get_adjusted_weights(
         self,
@@ -229,12 +229,8 @@ class ScoringEngine:
 
         # Normalize to sum = 1.0
         total = sum(adjusted.values())
-        if total > 0:
-            adjusted = {k: v / total for k, v in adjusted.items()}
-        else:
-            adjusted = base
+        return {k: v / total for k, v in adjusted.items()} if total > 0 else base
 
-        return adjusted
 
     def calculate_tf_scores(
         self,
@@ -395,7 +391,7 @@ class ScoringEngine:
 
             # VOLATILE regime: filter low liquidity
             if regime == RegimeType.VOLATILE:
-                liq_threshold = self.config.volatile_min_liq_score
+                pass
                 # We'd need liq_score here - for now use score_4h as proxy
                 # In practice, this check happens before aggregation
 

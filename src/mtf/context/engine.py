@@ -288,10 +288,7 @@ class ContextEngine:
             return False
 
         # Проверка волатильности
-        if trend_components.volatility_factor < 0.5:
-            return False
-
-        return True
+        return not trend_components.volatility_factor < 0.5
 
     def _aggregate_contexts(
         self, contexts: dict[str, ContextData]

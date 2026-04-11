@@ -13,16 +13,19 @@ Reference: Niculescu-Mizil & Caruana (2005), "Predicting Good Probabilities With
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import pandas as pd
 from sklearn.base import clone
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.metrics import brier_score_loss
 
 from src.ml.metalabeling.pipeline import MetaLabeler
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import pandas as pd
 
 
 class CalibratedMetaLabeler(MetaLabeler):

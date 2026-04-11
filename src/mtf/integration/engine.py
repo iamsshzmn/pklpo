@@ -347,9 +347,7 @@ class IntegrationEngine:
             return False
         if self.config.notifications_enabled and not self.notification_client:
             return False
-        if not self.pipeline_builder:
-            return False
-        return True
+        return self.pipeline_builder
 
     def get_metrics(self) -> IntegrationMetrics:
         """Получение метрик"""

@@ -14,9 +14,10 @@ import time
 from typing import TYPE_CHECKING
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from src.market_selection.domain.quality_gate import QualityResult
     from src.market_selection.domain.regime import GlobalRegime
     from src.market_selection.domain.scoring import TFScore

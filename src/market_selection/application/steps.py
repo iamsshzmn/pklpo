@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, TypeVar
 
 import pandas as pd
 
-from ..config import MarketSelectionConfig
-from ..domain.metrics import PairMetricsCalculator
 from ..domain.quality_gate import DataQualityGate, QualityResult, ReasonFlag
 from ..domain.regime import GlobalRegime, RegimeClassifier, RegimeType, TFRegime
 from ..domain.universe import (
@@ -18,11 +15,16 @@ from ..domain.universe import (
     UniverseStatus,
     UniverseVersion,
 )
-from ..ports import MarketSelectionDBPort, MonitoringPort, PersistencePort
 from .models import PipelineResult, PipelineRunContext, TimeframeProcessingState
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from ..config import MarketSelectionConfig
+    from ..domain.metrics import PairMetricsCalculator
+    from ..ports import MarketSelectionDBPort, MonitoringPort, PersistencePort
 
 T = TypeVar("T")
 

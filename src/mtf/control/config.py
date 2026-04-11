@@ -123,10 +123,7 @@ class ControlConfigManager:
             return False
 
         # Проверка конфигурации
-        if self._config.config_reload_interval_seconds <= 0:
-            return False
-
-        return True
+        return not self._config.config_reload_interval_seconds <= 0
 
     def get_component_config(self) -> dict[str, Any]:
         """Получение конфигурации компонентов"""

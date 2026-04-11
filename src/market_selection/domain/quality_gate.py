@@ -11,12 +11,14 @@ Checks data quality per (symbol, timeframe) before scoring:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
-from .config import QualityGateConfig
+if TYPE_CHECKING:
+    from .config import QualityGateConfig
 
 
-class ReasonFlag(str, Enum):
+class ReasonFlag(StrEnum):
     """Exclusion and warning flags for quality gate."""
 
     # Quality issues

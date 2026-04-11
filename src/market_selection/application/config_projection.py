@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from ..config import MarketSelectionConfig
+from typing import TYPE_CHECKING
+
 from ..domain.config import (
     QualityGateConfig,
     RegimeClassifierConfig,
     ScoringConfig as DomainScoringConfig,
     UniverseConfig as DomainUniverseConfig,
 )
+
+if TYPE_CHECKING:
+    from ..config import MarketSelectionConfig
 
 TF_TO_MS = {
     "1m": 60_000,

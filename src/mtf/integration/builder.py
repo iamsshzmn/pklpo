@@ -241,10 +241,7 @@ class IntegrationBuilder:
         if not request.data_sources:
             return False
 
-        if len(request.timeframes) > self.config.max_timeframes_per_request:
-            return False
-
-        return True
+        return not len(request.timeframes) > self.config.max_timeframes_per_request
 
     async def process_with_retry(
         self, request: IntegrationRequest, max_retries: int | None = None
