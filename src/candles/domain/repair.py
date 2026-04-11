@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any
+
+from .repair_timeframes import expected_next_open, floor_to_timeframe
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from datetime import datetime
+
+
+class RepairExecutionMode(StrEnum):
+    DETECT_ONLY = "detect-only"
+    DRY_RUN = "dry-run"
+    APPLY = "apply"
+
+
+class RepairStrategy(StrEnum):
+    BACKFILL = "backfill"
+    GAP_REPAIR = "gap-repair"
+
+
+@dataclass(frozen=True)
+class RepairWindow:
+    start_ts_ms: int
+    end_ts_ms: int
+
+    @property
+    def is_empty(self) -> bool:
+        return self.start_ts_ms >= self.end_ts_ms
+
+
+@dataclass(frozen=True)
+class GapTask:
+    start_ts_ms: int
+    end_ts_ms: int
+    missing_bars: int
+
+
+@dataclass(frozen=True)
+class GuardrailViolation:
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class RepairPlan:
+    strategy: RepairStrategy
+    symbol: str
+    timeframe: str
+    window: RepairWindow
+    tasks: list[GapTask] = field(default_factory=list)
+
+    @property
+    def gap_tasks(self) -> int:
+        return len(self.tasks)
+
+    @property
+    def requested_bars(self) -> int:
+        return sum(task.missing_bars for task in self.tasks)
+
+    @property
+    def range_days(self) -> float:
+        return (self.window.end_ts_ms - self.window.start_ts_ms) / 86_400_000
+
+
+@dataclass(frozen=True)
+class BackfillPlan(RepairPlan):
+    pass
+
+
+@dataclass(frozen=True)
+class RepairGuardrails:
+    max_gap_tasks_per_run: int
+    max_requested_bars_per_run: int
+    max_range_days: int
+    max_fail_ratio: float
+
+    def check(self, plan: RepairPlan) -> list[GuardrailViolation]:
+        violations: list[GuardrailViolation] = []
+        if plan.gap_tasks > self.max_gap_tasks_per_run:
+            violations.append(
+                GuardrailViolation(
+                    code="max_gap_tasks_per_run",
+                    message="planned gap tasks exceed allowed maximum",
+                )
+            )
+        if plan.requested_bars > self.max_requested_bars_per_run:
+            violations.append(
+                GuardrailViolation(
+                    code="max_requested_bars_per_run",
+                    message="requested bars exceed allowed maximum",
+                )
+            )
+        if plan.range_days > self.max_range_days:
+            violations.append(
+                GuardrailViolation(
+                    code="max_range_days",
+                    message="requested range exceeds allowed maximum",
+                )
+            )
+        return violations
+
+
+def clamp_window_to_closed_bars(
+    *,
+    window: RepairWindow,
+    timeframe: str,
+    now_ts_ms: int,
+) -> RepairWindow:
+    start_ts_ms = floor_to_timeframe(window.start_ts_ms, timeframe)
+    end_ts_ms = min(floor_to_timeframe(window.end_ts_ms, timeframe), floor_to_timeframe(now_ts_ms, timeframe))
+    if end_ts_ms < start_ts_ms:
+        end_ts_ms = start_ts_ms
+    return RepairWindow(start_ts_ms=start_ts_ms, end_ts_ms=end_ts_ms)
+
+
+def detect_gap_tasks(
+    *,
+    timestamps: list[int],
+    timeframe: str,
+    window: RepairWindow,
+) -> list[GapTask]:
+    if window.is_empty:
+        return []
+
+    existing = {ts for ts in timestamps if window.start_ts_ms <= ts < window.end_ts_ms}
+    tasks: list[GapTask] = []
+    task_start: int | None = None
+    missing_bars = 0
+    cursor = window.start_ts_ms
+
+    while cursor < window.end_ts_ms:
+        if cursor not in existing:
+            if task_start is None:
+                task_start = cursor
+            missing_bars += 1
+        elif task_start is not None:
+            tasks.append(
+                GapTask(
+                    start_ts_ms=task_start,
+                    end_ts_ms=cursor,
+                    missing_bars=missing_bars,
+                )
+            )
+            task_start = None
+            missing_bars = 0
+        cursor = expected_next_open(cursor, timeframe)
+
+    if task_start is not None:
+        tasks.append(
+            GapTask(
+                start_ts_ms=task_start,
+                end_ts_ms=window.end_ts_ms,
+                missing_bars=missing_bars,
+            )
+        )
+    return tasks
+
+
+def count_expected_bars(*, window: RepairWindow, timeframe: str) -> int:
+    if window.is_empty:
+        return 0
+
+    count = 0
+    cursor = window.start_ts_ms
+    while cursor < window.end_ts_ms:
+        count += 1
+        cursor = expected_next_open(cursor, timeframe)
+    return count
+
+
+def sanitize_repair_candle(
+    candle: Mapping[str, Any],
+    *,
+    fetched_at: datetime,
+) -> dict[str, Any]:
+    return {
+        "timestamp": candle["ts"],
+        "open": candle["open"],
+        "high": candle["high"],
+        "low": candle["low"],
+        "close": candle["close"],
+        "volume": candle["volume"],
+        "vol_ccy": candle.get("volCcy"),
+        "vol_usd": candle.get("volUsd"),
+        "fetched_at": fetched_at,
+    }
+
+
+def validate_repair_candles(
+    *,
+    candles: list[Mapping[str, Any]],
+    task_window: RepairWindow,
+    closed_until_ts_ms: int,
+) -> list[Mapping[str, Any]]:
+    validated: list[Mapping[str, Any]] = []
+    for candle in candles:
+        timestamp = int(candle["ts"])
+        if timestamp < task_window.start_ts_ms or timestamp >= task_window.end_ts_ms:
+            continue
+        if timestamp >= closed_until_ts_ms:
+            continue
+        validated.append(candle)
+    return validated

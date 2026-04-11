@@ -41,6 +41,7 @@ def create_parser() -> argparse.ArgumentParser:
         metrics as cmd_metrics,
         migrate as cmd_migrate,
         pipeline as cmd_pipeline,
+        swap_repair as cmd_swap_repair,
         swap_sync as cmd_swap,
         train as cmd_train,
         update_list as cmd_update_list,
@@ -57,6 +58,7 @@ def create_parser() -> argparse.ArgumentParser:
     cmd_bars.register(subparsers)
     cmd_load_instruments.register(subparsers)
     cmd_swap.register(subparsers)
+    cmd_swap_repair.register(subparsers)
     cmd_pipeline.register(subparsers)
     cmd_features.register(subparsers)
     cmd_update_list.register(subparsers)
