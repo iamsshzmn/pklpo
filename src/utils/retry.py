@@ -24,11 +24,12 @@ import asyncio
 import logging
 import random
 import time
-from collections.abc import Callable
 from functools import wraps
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from src.config.settings import RetrySettings
 
 logger = logging.getLogger(__name__)

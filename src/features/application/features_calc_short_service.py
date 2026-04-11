@@ -49,6 +49,26 @@ def get_or_create_event_loop():
         return loop
 
 
+def _push_prometheus_metrics(job_name: str = "features_pipeline") -> bool:
+    """Push in-memory feature metrics to Pushgateway if observability is enabled."""
+    try:
+        from src.features.observability import get_metrics
+
+        metrics = get_metrics()
+        if not metrics.enabled:
+            return False
+        metrics._job_name = job_name
+        pushed = metrics.push()
+        if pushed:
+            logger.info("Pushed feature metrics to Pushgateway (job=%s)", job_name)
+        else:
+            logger.info("Feature metrics push skipped or failed (job=%s)", job_name)
+        return pushed
+    except Exception:
+        logger.exception("Unexpected error during feature metrics push")
+        return False
+
+
 async def save_features_batch(
     session: AsyncSession,
     df_features: pd.DataFrame,
@@ -318,6 +338,9 @@ async def run_features_calc_short(
             "symbols_with_work": symbols_with_work,
             "total_compute_time_seconds": round(total_compute_time, 2),
             "avg_compute_time_per_symbol_seconds": round(avg_compute_time, 2),
+            "prometheus_push_succeeded": _push_prometheus_metrics(
+                job_name="features_pipeline"
+            ),
         }
     finally:
         await engine.dispose()
@@ -378,6 +401,9 @@ async def run_features_calc_short_validate(
                     "alerts_checked": alert_stats.get("checked", 0),
                     "alerts_sent": alert_stats.get("sent", 0),
                     "alerts_suppressed": alert_stats.get("suppressed", 0),
+                    "prometheus_push_succeeded": _push_prometheus_metrics(
+                        job_name="features_pipeline"
+                    ),
                 }
             )
     finally:

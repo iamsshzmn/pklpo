@@ -102,7 +102,7 @@ def validate_environment() -> Settings:
         ValueError: Если переменные окружения некорректны
     """
     try:
-        return Settings()
+        return Settings()  # type: ignore[call-arg]  # pydantic-settings loads from env
     except Exception as e:
         raise ValueError(f"Ошибка валидации переменных окружения: {e}") from e
 

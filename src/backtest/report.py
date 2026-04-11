@@ -28,12 +28,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
-import pandas as pd
 
-from src.core.run_context import RunContext
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from src.core.run_context import RunContext
 
 
 @dataclass

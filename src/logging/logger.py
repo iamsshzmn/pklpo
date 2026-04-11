@@ -96,7 +96,7 @@ def _ensure_base_logger() -> Logger:
     logger.addFilter(sensitive_filter)
 
     # Build handlers (each handler has its own ContextFilter)
-    log_dir = get_log_directory()
+    get_log_directory()
     handlers: Iterable[logging.Handler] = (
         _build_console_handler(),
         _build_file_handler("pklpo_debug.log", logging.DEBUG),

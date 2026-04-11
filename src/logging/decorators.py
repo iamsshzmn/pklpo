@@ -9,11 +9,11 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import wraps
-from logging import Logger
 from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
+    from logging import Logger
 
 T = TypeVar("T")
 

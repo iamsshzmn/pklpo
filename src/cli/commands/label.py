@@ -158,8 +158,7 @@ async def _load_ohlcv(
         df.index = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df.index.name = "timestamp"
         df = df.drop(columns=["timestamp"])
-        df = df.astype(float)
-        return df
+        return df.astype(float)
 
     except Exception as e:
         logger.error("Ошибка загрузки данных для %s %s: %s", symbol, timeframe, e)

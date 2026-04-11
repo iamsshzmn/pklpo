@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from logging import Handler
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .config import (
     get_log_backup_count,
@@ -23,6 +23,9 @@ from .config import (
 from .context import ContextFilter
 from .formatters import _build_formatter
 from .levels import Verbosity
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Log directory - lazily initialized
 _log_dir: Path | None = None

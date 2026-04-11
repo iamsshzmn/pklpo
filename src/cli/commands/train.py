@@ -15,9 +15,8 @@ CLI команда train: обучение MetaLabeler (metalabeling pipeline, A
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -28,6 +27,9 @@ from src.ml.labeling.sample_weights import get_uniqueness_weights
 from src.ml.labeling.triple_barrier import triple_barrier_labels
 from src.ml.metalabeling.pipeline import MetaLabeler
 from src.ml.models import BarrierConfig
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -267,8 +269,7 @@ async def _load_ohlcv(
         df.index = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df.index.name = "timestamp"
         df = df.drop(columns=["timestamp"])
-        df = df.astype(float)
-        return df
+        return df.astype(float)
 
     except Exception as e:
         logger.error("Ошибка загрузки данных для %s %s: %s", symbol, timeframe, e)
