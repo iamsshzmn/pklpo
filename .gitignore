@@ -101,6 +101,9 @@ backups/
 *_backup.json
 *.bundle
 tests/
+!tests/
+!tests/db/
+!tests/db/test_okx_swap_repair_test_dag.py
 
 # Temp files
 *.tmp
@@ -142,8 +145,10 @@ src/**/*_SUMMARY.md
 src/**/tests/
 src/**/test_*.py
 /benchmarks
+tests/
 
 # Scripts — only track .py and .sql, exclude scratch
+scripts/
 scripts/*.md
 scripts/*.txt
 scripts/migration_report*.json

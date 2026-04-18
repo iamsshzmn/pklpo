@@ -3,7 +3,7 @@ name: pklpo-airflow
 networks:
   pklpo_network:
     external: true
-    name: pklpo_pklpo_network
+    name: pklpo_network
 
 x-environment: &airflow_env
   AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -70,14 +70,13 @@ services:
       - pklpo_network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # volumes:
+    #   - ./dags:/opt/airflow/dags:ro  # disabled: WSL2 mount issue on Windows
     develop:
       watch:
         - action: sync
           path: ../../src
           target: /opt/airflow/project/src
-        - action: sync
-          path: ./dags
-          target: /opt/airflow/dags
         - action: rebuild
           path: ./Dockerfile.airflow
         - action: rebuild
@@ -99,14 +98,13 @@ services:
       - pklpo_network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # volumes:
+    #   - ./dags:/opt/airflow/dags:ro  # disabled: WSL2 mount issue on Windows
     develop:
       watch:
         - action: sync
           path: ../../src
           target: /opt/airflow/project/src
-        - action: sync
-          path: ./dags
-          target: /opt/airflow/dags
         - action: rebuild
           path: ./Dockerfile.airflow
         - action: rebuild

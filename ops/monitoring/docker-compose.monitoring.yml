@@ -3,7 +3,7 @@ name: pklpo-monitoring
 networks:
   pklpo_network:
     external: true
-    name: pklpo_pklpo_network
+    name: pklpo_network
 
 services:
   prometheus:
