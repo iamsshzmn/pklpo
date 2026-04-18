@@ -1,8 +1,8 @@
 """
-Централизованная конфигурация через Pydantic Settings.
+Centralized configuration via Pydantic Settings.
 
-Единая точка входа для всех настроек приложения.
-Поддержка: .env файлы, переменные окружения, валидация, типизация.
+Single entry point for all application settings.
+Supports: .env files, environment variables, validation, type checking.
 """
 
 import os
@@ -15,7 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class DatabaseSettings(BaseSettings):
-    """Настройки подключения к базе данных."""
+    """Database connection settings."""
 
     model_config = SettingsConfigDict(
         env_prefix="DB_",
@@ -36,19 +36,19 @@ class DatabaseSettings(BaseSettings):
 
     @property
     def async_url(self) -> str:
-        """Async connection URL для asyncpg."""
+        """Async connection URL for asyncpg."""
         pwd = self.password.get_secret_value()
         return f"postgresql+asyncpg://{self.user}:{pwd}@{self.host}:{self.port}/{self.name}"
 
     @property
     def sync_url(self) -> str:
-        """Sync connection URL для psycopg2."""
+        """Sync connection URL for psycopg2."""
         pwd = self.password.get_secret_value()
         return f"postgresql://{self.user}:{pwd}@{self.host}:{self.port}/{self.name}"
 
 
 class OKXSettings(BaseSettings):
-    """Настройки OKX API."""
+    """OKX API settings."""
 
     model_config = SettingsConfigDict(
         env_prefix="OKX_",
@@ -72,12 +72,12 @@ class OKXSettings(BaseSettings):
 
     @property
     def has_credentials(self) -> bool:
-        """Проверка наличия API ключей."""
+        """Check whether API keys are set."""
         return bool(self.api_key.get_secret_value())
 
 
 class FeaturesSettings(BaseSettings):
-    """Настройки расчёта индикаторов."""
+    """Indicator calculation settings."""
 
     model_config = SettingsConfigDict(
         env_prefix="FEATURES_",
@@ -196,13 +196,13 @@ class FeaturesSettings(BaseSettings):
     @field_validator("overlap_size")
     @classmethod
     def overlap_gte_lookback(cls, v: int, info) -> int:
-        """Overlap должен быть >= max_lookback."""
+        """Overlap must be >= max_lookback."""
         max_lookback: int = info.data.get("max_lookback", 200)
         return max(v, max_lookback)
 
 
 class RiskSettings(BaseSettings):
-    """Настройки риск-менеджмента."""
+    """Risk management settings."""
 
     model_config = SettingsConfigDict(
         env_prefix="RISK_",
@@ -239,21 +239,21 @@ class RiskSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_limits(self) -> "RiskSettings":
-        """Валидация согласованности лимитов."""
+        """Validate limit consistency."""
         if self.default_risk_per_trade > self.max_risk_per_trade:
             raise ValueError(
-                "default_risk_per_trade не может превышать max_risk_per_trade"
+                "default_risk_per_trade cannot exceed max_risk_per_trade"
             )
         if self.daily_loss_limit > self.weekly_loss_limit:
-            raise ValueError("daily_loss_limit не может превышать weekly_loss_limit")
+            raise ValueError("daily_loss_limit cannot exceed weekly_loss_limit")
         return self
 
 
 class RetrySettings(BaseSettings):
     """
-    Унифицированные настройки retry для всех внешних вызовов.
+    Unified retry settings for all external calls.
 
-    Используется для:
+    Used for:
     - Database operations
     - OKX API calls
     - External HTTP requests
@@ -285,7 +285,7 @@ class RetrySettings(BaseSettings):
 
 
 class CacheSettings(BaseSettings):
-    """Настройки кэширования."""
+    """Cache settings."""
 
     model_config = SettingsConfigDict(
         env_prefix="CACHE_",
@@ -303,7 +303,7 @@ class CacheSettings(BaseSettings):
 
 
 class LoggingSettings(BaseSettings):
-    """Настройки логирования."""
+    """Logging settings."""
 
     model_config = SettingsConfigDict(
         env_prefix="LOG_",
@@ -321,7 +321,7 @@ class LoggingSettings(BaseSettings):
 
 
 class AirflowSettings(BaseSettings):
-    """Настройки Airflow."""
+    """Airflow settings."""
 
     model_config = SettingsConfigDict(
         env_prefix="AIRFLOW_",
@@ -365,10 +365,10 @@ class ObservabilitySettings(BaseModel):
 
 class QuantSettings(BaseSettings):
     """
-    Настройки Quant Stack (Phase 3).
+    Quant Stack settings (Phase 3).
 
     Env prefix: QUANT_
-    Пример: QUANT_BARS_MODE=dollar QUANT_DOLLAR_BAR_VALUE=200000
+    Example: QUANT_BARS_MODE=dollar QUANT_DOLLAR_BAR_VALUE=200000
     """
 
     model_config = SettingsConfigDict(
@@ -406,27 +406,27 @@ class QuantSettings(BaseSettings):
     sharpe_periods: int = Field(
         default=365,
         ge=1,
-        description="Количество периодов в году для аннуализации Sharpe. "
-        "365 — крипто (дни), 252 — акции, 525600 — 1m бары.",
+        description="Periods per year for Sharpe annualization. "
+        "365 — crypto (days), 252 — equities, 525600 — 1m bars.",
     )
     dsr_significance: float = Field(default=0.05, gt=0.0, lt=1.0)
 
     @model_validator(mode="after")
     def validate_cpcv(self) -> "QuantSettings":
-        """CPCV: n_test_groups должен быть меньше n_groups."""
+        """CPCV: n_test_groups must be less than n_groups."""
         if self.cpcv_n_test_groups >= self.cpcv_n_groups:
             raise ValueError(
                 f"cpcv_n_test_groups ({self.cpcv_n_test_groups}) "
-                f"должен быть < cpcv_n_groups ({self.cpcv_n_groups})"
+                f"must be < cpcv_n_groups ({self.cpcv_n_groups})"
             )
         return self
 
 
 class Settings(BaseSettings):
     """
-    Главный класс настроек приложения.
+    Main application settings class.
 
-    Использование:
+    Usage:
         from src.config.settings import get_settings
 
         settings = get_settings()
@@ -474,9 +474,9 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """
-    Возвращает синглтон настроек с кэшированием.
+    Return cached settings singleton.
 
-    Пример:
+    Example:
         settings = get_settings()
 
         # Database
@@ -496,19 +496,58 @@ def get_settings() -> Settings:
 
 
 def reload_settings() -> Settings:
-    """Перезагрузка настроек (очищает кэш)."""
+    """Reload settings (clears cache)."""
     get_settings.cache_clear()
     return get_settings()
 
 
-# Для обратной совместимости
+# ---------------------------------------------------------------------------
+# Utility helpers (formerly split across env_validator.py)
+# ---------------------------------------------------------------------------
+
 def get_database_url() -> str:
-    """Legacy: возвращает async database URL."""
+    """
+    Return async database URL.
+
+    Priority:
+    1. ``DATABASE_URL`` environment variable (if set).
+    2. Assembled from Settings (``db.async_url``).
+
+    When running locally (outside Docker) automatically replaces
+    Docker hostname ``pklpo_db`` with ``localhost``.
+    """
+    url = os.getenv("DATABASE_URL")
+    if url:
+        import socket
+
+        try:
+            socket.gethostbyname("pklpo_db")
+        except socket.gaierror:
+            if "pklpo_db" in url:
+                url = url.replace("pklpo_db", "localhost")
+        return url
+
     return get_settings().db.async_url
 
 
+def check_required_env_vars() -> list[str]:
+    """
+    Check for required database environment variables.
+
+    If ``DATABASE_URL`` is set, individual ``POSTGRES_*`` vars are not required.
+
+    Returns:
+        List of missing variable names (empty = all OK).
+    """
+    if os.getenv("DATABASE_URL"):
+        return []
+
+    required_vars = ["POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"]
+    return [var for var in required_vars if not os.getenv(var)]
+
+
 def get_okx_credentials() -> tuple[str, str, str]:
-    """Legacy: возвращает OKX credentials."""
+    """Legacy: return OKX credentials."""
     s = get_settings().okx
     return (
         s.api_key.get_secret_value(),

@@ -45,7 +45,7 @@ async def _validate_flexible_columns(
     missing_groups = []
     for group in column_groups:
         if not any(col in existing for col in group):
-            missing_groups.append(f"ни одна из: {group}")
+            missing_groups.append(f"none of: {group}")
 
     return missing_groups
 
@@ -109,7 +109,10 @@ async def validate_schema_expectations() -> tuple[bool, list[str]]:
             issues.append("swap_ohlcv_p exists but is not a partitioned parent table")
 
         simple_columns = {
-            resolved_tables.get("instruments", "instruments"): ["symbol"],
+            resolved_tables.get("instruments", "instruments"): [
+                "symbol",
+                "metadata_refreshed_at_ms",
+            ],
             resolved_tables.get("market_candles", "ohlcv"): [
                 "symbol",
                 "timeframe",

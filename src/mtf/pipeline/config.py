@@ -11,14 +11,14 @@ from .models import PipelineConfig
 
 
 class PipelineConfigManager:
-    """Менеджер конфигурации Pipeline модуля"""
+    """Configuration manager for the Pipeline module."""
 
     def __init__(self, config_path: str | None = None):
         self.config_path = config_path
         self._config: PipelineConfig | None = None
 
     def load_config(self, config_path: str | None = None) -> PipelineConfig:
-        """Загрузка конфигурации"""
+        """Load configuration."""
         if config_path:
             self.config_path = config_path
 
@@ -34,13 +34,13 @@ class PipelineConfigManager:
         return self._config
 
     def get_config(self) -> PipelineConfig:
-        """Получение текущей конфигурации"""
+        """Return the current configuration."""
         if self._config is None:
             self._config = self.load_config()
         return self._config
 
     def update_config(self, updates: dict[str, Any]) -> None:
-        """Обновление конфигурации"""
+        """Update configuration."""
         if self._config is None:
             self._config = PipelineConfig.default()
 
@@ -49,7 +49,7 @@ class PipelineConfigManager:
                 setattr(self._config, key, value)
 
     def save_config(self, config_path: str | None = None) -> None:
-        """Сохранение конфигурации в YAML файл"""
+        """Save configuration to a YAML file."""
         if self._config is None:
             return
 
@@ -63,11 +63,11 @@ class PipelineConfigManager:
             yaml.dump(config_data, f, default_flow_style=False, indent=2)
 
     def validate_config(self) -> bool:
-        """Валидация конфигурации"""
+        """Validate configuration."""
         if self._config is None:
             return False
 
-        # Проверка основных параметров
+        # Basic parameter checks
         if self._config.max_workers <= 0:
             return False
 
@@ -86,7 +86,7 @@ class PipelineConfigManager:
         return not self._config.min_data_points <= 0
 
     def get_component_configs(self) -> dict[str, dict[str, Any]]:
-        """Получение конфигураций компонентов"""
+        """Get component configurations"""
         config = self.get_config()
 
         return {
@@ -117,7 +117,7 @@ class PipelineConfigManager:
         }
 
     def get_logging_config(self) -> dict[str, Any]:
-        """Получение конфигурации логирования"""
+        """Get logging configuration"""
         config = self.get_config()
 
         return {
@@ -127,7 +127,7 @@ class PipelineConfigManager:
         }
 
     def get_metrics_config(self) -> dict[str, Any]:
-        """Получение конфигурации метрик"""
+        """Get metrics configuration"""
         config = self.get_config()
 
         return {

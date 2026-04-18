@@ -19,16 +19,16 @@ from .models import (
 
 
 class ControlBuilder:
-    """Главный интерфейс для управления MTF системой"""
+    """Main interface for managing the MTF system"""
 
     def __init__(self, config: ControlConfig | None = None):
         self.logger = get_control_logger()
 
-        # Инициализация конфигурации
+        # Initialize configuration
         self.config_manager = ControlConfigManager()
         self.config = config or self.config_manager.get_config()
 
-        # Инициализация движка
+        # Initialize engine
         self.engine = ControlEngine(self.config)
 
         self.logger.info(
@@ -36,43 +36,43 @@ class ControlBuilder:
         )
 
     async def initialize(self) -> None:
-        """Инициализация системы управления"""
+        """Initialize control system"""
         try:
             self.logger.info("Initializing control system...")
-            # Движок уже инициализирован в конструкторе
+            # Engine already initialized in constructor
             self.logger.info("Control system initialized successfully")
         except Exception as e:
             self.logger.error(f"Failed to initialize control system: {e}")
             raise
 
     async def start_system(self) -> ControlResult:
-        """Запуск системы"""
+        """Start system"""
         return await self.engine.start_system()
 
     async def stop_system(self) -> ControlResult:
-        """Остановка системы"""
+        """Stop system"""
         return await self.engine.stop_system()
 
     async def restart_system(self) -> ControlResult:
-        """Перезапуск системы"""
+        """Restart system"""
         return await self.engine.restart_system()
 
     async def get_system_status(self) -> ControlResult:
-        """Получение статуса системы"""
+        """Get system status"""
         return await self.engine.get_system_status()
 
     async def health_check(self) -> ControlResult:
-        """Проверка здоровья системы"""
+        """Check system health"""
         return await self.engine.health_check()
 
     async def get_metrics(self) -> ControlResult:
-        """Получение метрик системы"""
+        """Get system metrics"""
         return await self.engine._handle_metrics(
             ControlRequest(action=ControlAction.METRICS, request_id=str(uuid.uuid4()))
         )
 
     async def configure_system(self, config_updates: dict[str, Any]) -> ControlResult:
-        """Конфигурация системы"""
+        """System configuration"""
         request = ControlRequest(
             action=ControlAction.CONFIGURE,
             parameters={"config": config_updates},
@@ -82,11 +82,11 @@ class ControlBuilder:
         return await self.engine.process_request(request)
 
     async def process_request(self, request: ControlRequest) -> ControlResult:
-        """Обработка запроса управления"""
+        """Process control request"""
         return await self.engine.process_request(request)
 
     def get_system_state(self) -> dict[str, Any]:
-        """Получение состояния системы"""
+        """Get system state"""
         return {
             "status": self.engine.system_state.status.value,
             "uptime_seconds": self.engine.system_state.uptime_seconds,
@@ -105,33 +105,33 @@ class ControlBuilder:
         }
 
     def get_component_status(self) -> dict[str, str]:
-        """Получение статуса компонентов"""
+        """Get component status"""
         return {k: v.value for k, v in self.engine.system_state.components.items()}
 
     def is_system_running(self) -> bool:
-        """Проверка, запущена ли система"""
+        """Check if system is running"""
         return self.engine.system_state.status == SystemStatus.RUNNING
 
     def is_system_healthy(self) -> bool:
-        """Проверка, здорова ли система"""
+        """Check if system is healthy"""
         return self.engine.system_state.is_healthy
 
     def get_config(self) -> ControlConfig:
-        """Получение текущей конфигурации"""
+        """Get current configuration"""
         return self.config
 
     def update_config(self, updates: dict[str, Any]) -> None:
-        """Обновление конфигурации"""
+        """Update configuration"""
         self.config_manager.update_config(updates)
         self.config = self.config_manager.get_config()
 
-        # Обновление конфигурации движка
+        # Update engine configuration
         self.engine.config = self.config
 
         self.logger.info(f"Configuration updated: {updates}")
 
     def get_supported_actions(self) -> list[ControlAction]:
-        """Получение поддерживаемых действий"""
+        """Get supported actions"""
         return [
             ControlAction.START,
             ControlAction.STOP,
@@ -143,11 +143,11 @@ class ControlBuilder:
         ]
 
     def get_supported_components(self) -> list[str]:
-        """Получение поддерживаемых компонентов"""
+        """Get supported components"""
         return ["context", "triggers", "consensus", "pipeline", "integration"]
 
     def validate_request(self, request: ControlRequest) -> bool:
-        """Валидация запроса"""
+        """Validate request"""
         if not request.action:
             return False
 
@@ -159,7 +159,7 @@ class ControlBuilder:
     async def process_with_retry(
         self, request: ControlRequest, max_retries: int | None = None
     ) -> ControlResult:
-        """Обработка с повторными попытками"""
+        """Process with retries"""
         max_retries = max_retries or self.config.retry_attempts
 
         last_result = None
@@ -181,7 +181,7 @@ class ControlBuilder:
                 if attempt < max_retries:
                     await asyncio.sleep(self.config.retry_delay_seconds)
                 else:
-                    # Создание результата с ошибкой
+                    # Build error result
                     return ControlResult(
                         request_id=request.request_id,
                         action=request.action,
@@ -199,7 +199,7 @@ class ControlBuilder:
         )
 
     def get_processing_stats(self) -> dict[str, Any]:
-        """Получение статистики обработки"""
+        """Get processing statistics"""
         metrics = self.engine.get_metrics()
 
         return {
@@ -222,7 +222,7 @@ class ControlBuilder:
         }
 
     def get_resource_usage(self) -> dict[str, Any]:
-        """Получение использования ресурсов"""
+        """Get resource usage"""
         return {
             "memory_usage_mb": self.engine.system_state.memory_usage_mb,
             "cpu_usage_percent": self.engine.system_state.cpu_usage_percent,
@@ -236,7 +236,7 @@ class ControlBuilder:
         }
 
     def get_alert_status(self) -> dict[str, Any]:
-        """Получение статуса алертов"""
+        """Get alert status"""
         return {
             "alerts_enabled": self.config.enable_alerts,
             "error_threshold": self.config.alert_threshold_errors,
@@ -260,7 +260,7 @@ class ControlBuilder:
         }
 
     def get_monitoring_status(self) -> dict[str, Any]:
-        """Получение статуса мониторинга"""
+        """Get monitoring status"""
         return {
             "monitoring_enabled": self.config.enable_monitoring,
             "monitoring_interval_seconds": self.config.monitoring_interval_seconds,
@@ -274,7 +274,7 @@ class ControlBuilder:
         }
 
     async def cleanup(self) -> None:
-        """Очистка ресурсов"""
+        """Release resources"""
         try:
             await self.engine.cleanup()
             self.logger.info("Control system cleaned up successfully")
@@ -282,9 +282,9 @@ class ControlBuilder:
             self.logger.error(f"Error during cleanup: {e}")
 
     def __del__(self):
-        """Деструктор"""
+        """Destructor"""
         try:
             if hasattr(self, "engine") and self.engine:
                 asyncio.create_task(self.cleanup())
         except Exception:
-            pass  # Игнорируем ошибки в деструкторе
+            pass  # Ignore destructor errors

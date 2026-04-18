@@ -1,16 +1,16 @@
 """
-Генерация отчётов о результатах бэктестинга.
+Backtest results report generation.
 
-Создаёт структурированный Markdown или HTML-отчёт с секциями:
-  - Конфигурация запуска (RunContext, параметры модели)
-  - Метрики производительности (SR, DSR, MaxDD, hit-rate, turnover)
-  - Важность признаков (топ-N по MDA/MDI)
-  - CPCV метрики по путям (распределение SR)
-  - Кривые капитала (in-sample / out-of-sample PnL)
+Produces a structured Markdown or HTML report with sections:
+  - Run configuration (RunContext, model parameters)
+  - Performance metrics (SR, DSR, MaxDD, hit-rate, turnover)
+  - Feature importance (top-N by MDA/MDI)
+  - CPCV path metrics (SR distribution)
+  - Equity curves (in-sample / out-of-sample PnL)
 
-Все отчёты привязаны к run_id через RunContext для воспроизводимости.
+All reports are tied to run_id via RunContext for reproducibility.
 
-Использование::
+Usage::
 
     ctx = RunContext.create({"bars_mode": "dollar", "triple_pt": 0.02})
     config = ReportConfig(
@@ -41,21 +41,21 @@ if TYPE_CHECKING:
 @dataclass
 class ReportConfig:
     """
-    Конфигурация входных данных для генерации отчёта.
+    Input configuration for report generation.
 
     Attributes:
-        run_context:       RunContext запуска (run_id, version, params_hash).
-        returns:           Массив периодических доходностей (для кривой капитала).
-        sharpe:            Коэффициент Шарпа (аннуализированный).
+        run_context:       RunContext (run_id, version, params_hash).
+        returns:           Array of periodic returns (for equity curve).
+        sharpe:            Annualized Sharpe ratio.
         dsr:               Deflated Sharpe Ratio.
-        dsr_p_value:       p-value из DSR (вероятность случайности SR).
-        max_drawdown:      Максимальная просадка (отрицательное число, e.g. -0.15).
-        hit_rate:          Доля выигрышных сделок (0..1).
-        turnover:          Оборот (средне-дневной, если применимо).
-        feature_importance: pd.Series[feature_name -> importance] из MDI/MDA.
-        cpcv_metrics:      DataFrame из CombinatorialPurgedCV.get_path_metrics().
-        model_params:      Словарь параметров модели (base_model, cv, feature_selection).
-        n_top_features:    Число топ-признаков для отображения в отчёте.
+        dsr_p_value:       p-value from DSR (probability of SR being random).
+        max_drawdown:      Maximum drawdown (negative number, e.g. -0.15).
+        hit_rate:          Win rate (0..1).
+        turnover:          Turnover (average daily, if applicable).
+        feature_importance: pd.Series[feature_name -> importance] from MDI/MDA.
+        cpcv_metrics:      DataFrame from CombinatorialPurgedCV.get_path_metrics().
+        model_params:      Model parameter dict (base_model, cv, feature_selection).
+        n_top_features:    Number of top features to display in report.
     """
 
     run_context: RunContext
@@ -77,14 +77,14 @@ def generate_report(
     fmt: Literal["markdown", "html"] = "markdown",
 ) -> str:
     """
-    Генерирует отчёт о результатах бэктестинга.
+    Generate a backtest results report.
 
     Args:
-        config: ReportConfig с метриками и метаданными.
-        fmt:    Формат вывода: "markdown" или "html".
+        config: ReportConfig with metrics and metadata.
+        fmt:    Output format: "markdown" or "html".
 
     Returns:
-        Строка с отчётом в заданном формате.
+        Report string in the requested format.
     """
     md = _build_markdown(config)
     if fmt == "html":
@@ -93,12 +93,12 @@ def generate_report(
 
 
 def _build_markdown(config: ReportConfig) -> str:
-    """Строит Markdown-отчёт из ReportConfig."""
+    """Build Markdown report from ReportConfig."""
     ctx = config.run_context
     lines: list[str] = []
 
     # ---------------------------------------------------------------------------
-    # Заголовок
+    # Header
     # ---------------------------------------------------------------------------
     lines += [
         "# Backtest Report",
@@ -111,7 +111,7 @@ def _build_markdown(config: ReportConfig) -> str:
     ]
 
     # ---------------------------------------------------------------------------
-    # Конфигурация
+    # Configuration
     # ---------------------------------------------------------------------------
     lines += [
         "## Configuration",
@@ -126,7 +126,7 @@ def _build_markdown(config: ReportConfig) -> str:
             lines.append(f"| {k} | {v} |")
         lines.append("")
     else:
-        lines += ["*Параметры модели не заданы.*", ""]
+        lines += ["*Model parameters not set.*", ""]
 
     # ---------------------------------------------------------------------------
     # Performance Metrics
@@ -187,7 +187,7 @@ def _build_markdown(config: ReportConfig) -> str:
             lines.append(f"| {rank} | {feat} | {float(imp):.6f} |")
         lines.append("")
     else:
-        lines += ["*Данные о важности признаков не заданы.*", ""]
+        lines += ["*Feature importance data not set.*", ""]
 
     # ---------------------------------------------------------------------------
     # CPCV Path Metrics
@@ -212,16 +212,16 @@ def _build_markdown(config: ReportConfig) -> str:
             )
         lines.append("")
     else:
-        lines += ["*CPCV метрики не заданы.*", ""]
+        lines += ["*CPCV metrics not set.*", ""]
 
     return "\n".join(lines)
 
 
 def _markdown_to_html(md: str, config: ReportConfig) -> str:
     """
-    Конвертирует Markdown в базовый HTML.
+    Convert Markdown to basic HTML.
 
-    Обрабатывает: заголовки (#, ##, ###), таблицы (|col|col|), текст.
+    Handles: headings (#, ##, ###), tables (|col|col|), plain text.
     """
     ctx = config.run_context
     html_lines = [

@@ -11,14 +11,14 @@ from .models import ControlConfig
 
 
 class ControlConfigManager:
-    """Менеджер конфигурации Control модуля"""
+    """Configuration manager for the Control module"""
 
     def __init__(self, config_path: str | None = None):
         self.config_path = config_path
         self._config: ControlConfig | None = None
 
     def load_config(self, config_path: str | None = None) -> ControlConfig:
-        """Загрузка конфигурации"""
+        """Load configuration"""
         if config_path:
             self.config_path = config_path
 
@@ -34,13 +34,13 @@ class ControlConfigManager:
         return self._config
 
     def get_config(self) -> ControlConfig:
-        """Получение текущей конфигурации"""
+        """Get current configuration"""
         if self._config is None:
             self._config = self.load_config()
         return self._config
 
     def update_config(self, updates: dict[str, Any]) -> None:
-        """Обновление конфигурации"""
+        """Update configuration"""
         if self._config is None:
             self._config = ControlConfig.default()
 
@@ -49,7 +49,7 @@ class ControlConfigManager:
                 setattr(self._config, key, value)
 
     def save_config(self, config_path: str | None = None) -> None:
-        """Сохранение конфигурации в YAML файл"""
+        """Save configuration to YAML file"""
         if self._config is None:
             return
 
@@ -63,11 +63,11 @@ class ControlConfigManager:
             yaml.dump(config_data, f, default_flow_style=False, indent=2)
 
     def validate_config(self) -> bool:
-        """Валидация конфигурации"""
+        """Validate configuration"""
         if self._config is None:
             return False
 
-        # Проверка основных параметров
+        # Check main parameters
         if self._config.max_workers <= 0:
             return False
 
@@ -86,7 +86,7 @@ class ControlConfigManager:
         if self._config.metrics_collection_interval_seconds <= 0:
             return False
 
-        # Проверка порогов алертов
+        # Check alert thresholds
         if self._config.alert_threshold_errors < 0:
             return False
 
@@ -102,7 +102,7 @@ class ControlConfigManager:
         ):
             return False
 
-        # Проверка ресурсов
+        # Check resources
         if self._config.max_memory_usage_mb <= 0:
             return False
 
@@ -115,18 +115,18 @@ class ControlConfigManager:
         if self._config.max_concurrent_requests <= 0:
             return False
 
-        # Проверка восстановления
+        # Check recovery settings
         if self._config.auto_recovery_attempts < 0:
             return False
 
         if self._config.auto_recovery_delay_seconds <= 0:
             return False
 
-        # Проверка конфигурации
+        # Check configuration
         return not self._config.config_reload_interval_seconds <= 0
 
     def get_component_config(self) -> dict[str, Any]:
-        """Получение конфигурации компонентов"""
+        """Get component configuration"""
         config = self.get_config()
 
         return {
@@ -138,7 +138,7 @@ class ControlConfigManager:
         }
 
     def get_monitoring_config(self) -> dict[str, Any]:
-        """Получение конфигурации мониторинга"""
+        """Get monitoring configuration"""
         config = self.get_config()
 
         return {
@@ -149,7 +149,7 @@ class ControlConfigManager:
         }
 
     def get_alert_config(self) -> dict[str, Any]:
-        """Получение конфигурации алертов"""
+        """Get alert configuration"""
         config = self.get_config()
 
         return {
@@ -161,7 +161,7 @@ class ControlConfigManager:
         }
 
     def get_resource_config(self) -> dict[str, Any]:
-        """Получение конфигурации ресурсов"""
+        """Get resource configuration"""
         config = self.get_config()
 
         return {
@@ -171,7 +171,7 @@ class ControlConfigManager:
         }
 
     def get_recovery_config(self) -> dict[str, Any]:
-        """Получение конфигурации восстановления"""
+        """Get recovery configuration"""
         config = self.get_config()
 
         return {
@@ -181,7 +181,7 @@ class ControlConfigManager:
         }
 
     def get_logging_config(self) -> dict[str, Any]:
-        """Получение конфигурации логирования"""
+        """Get logging configuration"""
         config = self.get_config()
 
         return {
@@ -192,7 +192,7 @@ class ControlConfigManager:
         }
 
     def get_processing_config(self) -> dict[str, Any]:
-        """Получение конфигурации обработки"""
+        """Get processing configuration"""
         config = self.get_config()
 
         return {
@@ -203,11 +203,11 @@ class ControlConfigManager:
         }
 
     def reset_to_defaults(self) -> None:
-        """Сброс к настройкам по умолчанию"""
+        """Reset to defaults"""
         self._config = ControlConfig.default()
 
     def get_config_summary(self) -> dict[str, Any]:
-        """Получение краткого описания конфигурации"""
+        """Get configuration summary"""
         config = self.get_config()
 
         return {

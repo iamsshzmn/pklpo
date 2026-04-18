@@ -1,7 +1,7 @@
 """
 MTF Database Models
 
-Модели данных для работы с базой данных MTF системы.
+Data models for working with the MTF system database.
 """
 
 from dataclasses import dataclass, field
@@ -11,7 +11,7 @@ from typing import Any
 
 
 class RegimeType(StrEnum):
-    """Типы режимов рынка"""
+    """Market regime types"""
 
     TREND_UP = "trend_up"
     TREND_DOWN = "trend_down"
@@ -19,7 +19,7 @@ class RegimeType(StrEnum):
 
 
 class AccelerationType(StrEnum):
-    """Типы ускорения"""
+    """Acceleration types"""
 
     BULLISH = "bullish"
     BEARISH = "bearish"
@@ -27,7 +27,7 @@ class AccelerationType(StrEnum):
 
 
 class ConsensusType(StrEnum):
-    """Типы консенсуса"""
+    """Consensus types"""
 
     STRONG_BULLISH = "strong_bullish"
     BULLISH = "bullish"
@@ -38,7 +38,7 @@ class ConsensusType(StrEnum):
 
 
 class ConfidenceLevel(StrEnum):
-    """Уровни уверенности"""
+    """Confidence levels"""
 
     VERY_HIGH = "very_high"
     HIGH = "high"
@@ -48,7 +48,7 @@ class ConfidenceLevel(StrEnum):
 
 
 class ProcessingStatus(StrEnum):
-    """Статусы обработки"""
+    """Processing statuses"""
 
     SUCCESS = "success"
     PARTIAL = "partial"
@@ -56,7 +56,7 @@ class ProcessingStatus(StrEnum):
 
 
 class ProcessingStage(StrEnum):
-    """Этапы обработки"""
+    """Processing stages"""
 
     CONTEXT = "context"
     TRIGGERS = "triggers"
@@ -67,24 +67,24 @@ class ProcessingStage(StrEnum):
 
 @dataclass
 class MTFContextRecord:
-    """Запись результатов Context модуля"""
+    """Context module result record"""
 
     id: int | None = None
     symbol: str = ""
     timeframe: str = ""
     timestamp: datetime = field(default_factory=datetime.now)
 
-    # Результаты анализа режима рынка
+    # Market regime analysis results
     dominant_regime: RegimeType = RegimeType.FLAT
     regime_confidence: float = 0.0
 
-    # Общий score
+    # Overall score
     overall_score: float = 0.0
 
-    # Детальные результаты по таймфреймам
+    # Detailed per-timeframe results
     timeframe_results: dict[str, Any] = field(default_factory=dict)
 
-    # Метаданные
+    # Metadata
     valid: bool = True
     errors: list[str] = field(default_factory=list)
     processing_time_ms: int | None = None
@@ -93,29 +93,29 @@ class MTFContextRecord:
 
 @dataclass
 class MTFTriggersRecord:
-    """Запись результатов Triggers модуля"""
+    """Triggers module result record"""
 
     id: int | None = None
     symbol: str = ""
     timeframe: str = ""
     timestamp: datetime = field(default_factory=datetime.now)
 
-    # Основные вероятности
+    # Core probabilities
     overall_p_up: float = 0.0
     overall_p_down: float = 0.0
 
-    # Ускорение
+    # Acceleration
     acceleration_type: AccelerationType = AccelerationType.NEUTRAL
     acceleration_strength: float = 0.0
 
-    # Микро-фильтры
+    # Micro-filters
     micro_ok: bool = False
     micro_filter_score: float = 0.0
 
-    # Детальные результаты по таймфреймам
+    # Detailed per-timeframe results
     timeframe_results: dict[str, Any] = field(default_factory=dict)
 
-    # Метаданные
+    # Metadata
     valid: bool = True
     errors: list[str] = field(default_factory=list)
     processing_time_ms: int | None = None
@@ -124,33 +124,33 @@ class MTFTriggersRecord:
 
 @dataclass
 class MTFConsensusRecord:
-    """Запись результатов Consensus модуля"""
+    """Consensus module result record"""
 
     id: int | None = None
     symbol: str = ""
     timeframes: list[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
 
-    # Основные результаты консенсуса
+    # Core consensus results
     consensus_type: ConsensusType = ConsensusType.NEUTRAL
     confidence_level: ConfidenceLevel = ConfidenceLevel.VERY_LOW
     consensus_score: float = 0.0
 
-    # Веса и метрики
+    # Weights and metrics
     context_weight: float = 0.0
     triggers_weight: float = 0.0
     coverage_ratio: float = 0.0
     disagreement_ratio: float = 0.0
 
-    # Veto логика
+    # Veto logic
     veto_applied: bool = False
     veto_reasons: list[str] = field(default_factory=list)
 
-    # Детальные результаты
+    # Detailed results
     timeframe_consensus: dict[str, Any] = field(default_factory=dict)
     evidence_summary: dict[str, Any] = field(default_factory=dict)
 
-    # Метаданные
+    # Metadata
     valid: bool = True
     errors: list[str] = field(default_factory=list)
     processing_time_ms: int | None = None
@@ -159,23 +159,23 @@ class MTFConsensusRecord:
 
 @dataclass
 class MTFPipelineRecord:
-    """Запись результатов Pipeline модуля"""
+    """Pipeline module result record"""
 
     id: int | None = None
     symbol: str = ""
     timeframes: list[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
 
-    # Статус обработки
+    # Processing status
     status: ProcessingStatus = ProcessingStatus.FAILED
     processing_stage: ProcessingStage = ProcessingStage.CONTEXT
 
-    # Ссылки на результаты модулей
+    # Module result references
     context_id: int | None = None
     triggers_id: int | None = None
     consensus_id: int | None = None
 
-    # Метаданные
+    # Metadata
     total_processing_time_ms: int = 0
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -184,22 +184,22 @@ class MTFPipelineRecord:
 
 @dataclass
 class MTFIntegrationRecord:
-    """Запись результатов Integration модуля"""
+    """Integration module result record"""
 
     id: int | None = None
     symbol: str = ""
     timeframes: list[str] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
 
-    # Статус интеграции
+    # Integration status
     status: ProcessingStatus = ProcessingStatus.FAILED
 
-    # Результаты интеграции с внешними системами
+    # External system integration results
     okx_success: bool = False
     database_success: bool = False
     notifications_sent: bool = False
 
-    # Метаданные
+    # Metadata
     processing_time_ms: int | None = None
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -208,7 +208,7 @@ class MTFIntegrationRecord:
 
 @dataclass
 class MTFQueryFilters:
-    """Фильтры для запросов к MTF данным"""
+    """Filters for MTF data queries"""
 
     symbols: list[str] | None = None
     timeframes: list[str] | None = None
@@ -225,32 +225,32 @@ class MTFQueryFilters:
 
 @dataclass
 class MTFAggregatedResult:
-    """Агрегированный результат MTF анализа"""
+    """Aggregated MTF analysis result"""
 
     symbol: str
     timeframes: list[str]
     timestamp: datetime
 
-    # Context результаты
+    # Context results
     dominant_regime: RegimeType
     regime_confidence: float
     context_score: float
 
-    # Triggers результаты
+    # Triggers results
     overall_p_up: float
     overall_p_down: float
     acceleration_type: AccelerationType
     micro_ok: bool
 
-    # Consensus результаты
+    # Consensus results
     consensus_type: ConsensusType
     confidence_level: ConfidenceLevel
     consensus_score: float
     veto_applied: bool
 
-    # Integration результаты
+    # Integration results
     integration_status: ProcessingStatus
 
-    # Метаданные
+    # Metadata
     total_processing_time_ms: int
     created_at: datetime
