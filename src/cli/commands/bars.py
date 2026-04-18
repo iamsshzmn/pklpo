@@ -1,7 +1,7 @@
 """
-CLI команда build-bars: генерация долларовых баров из OHLCV данных.
+CLI command build-bars: generate dollar bars from OHLCV data.
 
-Использование:
+Usage:
     python -m src.cli.main build-bars --symbols BTC-USDT-SWAP --dollar-value 200000
     python -m src.cli.main build-bars --symbols BTC-USDT-SWAP ETH-USDT-SWAP \\
         --dollar-value 100000 --volume-unit contracts --contract-val 0.01
@@ -22,62 +22,62 @@ logger = logging.getLogger(__name__)
 
 
 def register(subparsers) -> None:  # type: ignore[no-untyped-def]
-    """Регистрация команды build-bars в CLI."""
+    """Register the build-bars command in the CLI."""
     p = subparsers.add_parser(
         "build-bars",
-        help="Генерация долларовых баров из OHLCV данных",
+        help="Generate dollar bars from OHLCV data",
     )
     p.add_argument(
         "--symbols",
         nargs="+",
         required=True,
-        help="Символы для обработки (например: BTC-USDT-SWAP ETH-USDT-SWAP)",
+        help="Symbols to process (e.g.: BTC-USDT-SWAP ETH-USDT-SWAP)",
     )
     p.add_argument(
         "--timeframe",
         default="1m",
-        help="Таймфрейм источника данных (default: 1m)",
+        help="Source data timeframe (default: 1m)",
     )
     p.add_argument(
         "--dollar-value",
         type=float,
         default=200_000.0,
-        help="Целевой оборот на бар в USD (default: 200000)",
+        help="Target turnover per bar in USD (default: 200000)",
     )
     p.add_argument(
         "--volume-unit",
         choices=["base", "quote", "contracts"],
         default="base",
-        help="Единица измерения volume: base/quote/contracts (default: base)",
+        help="Volume unit: base/quote/contracts (default: base)",
     )
     p.add_argument(
         "--contract-val",
         type=float,
         default=1.0,
-        help="Стоимость контракта в base currency (только для --volume-unit contracts)",
+        help="Contract value in base currency (only for --volume-unit contracts)",
     )
     p.add_argument(
         "--min-trades",
         type=int,
         default=1,
-        help="Минимальное число строк для закрытия бара (default: 1)",
+        help="Minimum number of rows to close a bar (default: 1)",
     )
     p.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Лимит строк из БД для обработки (default: все данные)",
+        help="Row limit from DB for processing (default: all data)",
     )
     p.add_argument(
         "--dry-run",
         action="store_true",
-        help="Показать план без генерации баров",
+        help="Show plan without generating bars",
     )
     p.set_defaults(_handler=handle)
 
 
 async def handle(args) -> None:  # type: ignore[no-untyped-def]
-    """Обработчик команды build-bars."""
+    """Handler for the build-bars command."""
     if args.dry_run:
         _show_plan(args)
         return
@@ -104,7 +104,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
     for symbol in args.symbols:
         df = await _load_ohlcv(symbol, args.timeframe, args.limit)
         if df is None or len(df) == 0:
-            logger.warning("Нет данных для %s %s", symbol, args.timeframe)
+            logger.warning("No data for %s %s", symbol, args.timeframe)
             continue
 
         bars = build_dollar_bars(df, config)
@@ -113,7 +113,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
         _log_bars_summary(symbol, args.timeframe, df, bars, config)
 
     logger.info(
-        "build-bars завершён: %d символов, %d баров всего (run_id=%s)",
+        "build-bars completed: %d symbols, %d bars total (run_id=%s)",
         len(args.symbols),
         total_bars,
         ctx.run_id[:8],
@@ -123,7 +123,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
 async def _load_ohlcv(
     symbol: str, timeframe: str, limit: int | None
 ) -> pd.DataFrame | None:
-    """Загрузить OHLCV данные из БД."""
+    """Load OHLCV data from the database."""
     from src.utils.session_utils import get_db_session
 
     try:
@@ -147,14 +147,14 @@ async def _load_ohlcv(
         df = pd.DataFrame(
             rows, columns=["timestamp", "open", "high", "low", "close", "volume"]
         )
-        # Конвертируем timestamp (ms) в DatetimeIndex UTC
+        # Convert timestamp (ms) to DatetimeIndex UTC
         df.index = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df.index.name = "timestamp"
         df = df.drop(columns=["timestamp"])
         return df.astype(float)
 
     except Exception as e:
-        logger.error("Ошибка загрузки данных для %s %s: %s", symbol, timeframe, e)
+        logger.error("Error loading data for %s %s: %s", symbol, timeframe, e)
         return None
 
 
@@ -165,9 +165,9 @@ def _log_bars_summary(
     bars: pd.DataFrame,
     config: BarsConfig,
 ) -> None:
-    """Вывести статистику сгенерированных баров."""
+    """Log statistics for the generated bars."""
     if len(bars) == 0:
-        logger.warning("%s %s: баров не сформировано", symbol, timeframe)
+        logger.warning("%s %s: no bars formed", symbol, timeframe)
         return
 
     compression = len(df) / len(bars)
@@ -176,7 +176,7 @@ def _log_bars_summary(
     avg_trades = bars["trades_count"].mean()
 
     logger.info(
-        "%s %s: %d строк -> %d баров (сжатие %.1fx) | "
+        "%s %s: %d rows -> %d bars (compression %.1fx) | "
         "avg_turnover=%.0f USD | avg_duration=%.0fs | avg_trades=%.1f | "
         "volume_unit=%s",
         symbol,
@@ -192,13 +192,13 @@ def _log_bars_summary(
 
 
 def _show_plan(args) -> None:  # type: ignore[no-untyped-def]
-    """Показать план без выполнения (dry-run)."""
+    """Show plan without executing (dry-run)."""
     logger.info("build-bars dry-run:")
-    logger.info("  Символы:      %s", args.symbols)
-    logger.info("  Таймфрейм:    %s", args.timeframe)
+    logger.info("  Symbols:      %s", args.symbols)
+    logger.info("  Timeframe:    %s", args.timeframe)
     logger.info("  Dollar value: %.0f USD", args.dollar_value)
     logger.info("  Volume unit:  %s", args.volume_unit)
     if args.volume_unit == "contracts":
         logger.info("  Contract val: %.4f", args.contract_val)
     logger.info("  Min trades:   %d", args.min_trades)
-    logger.info("  Лимит строк:  %s", args.limit or "все данные")
+    logger.info("  Row limit:    %s", args.limit or "all data")

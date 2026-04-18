@@ -1,11 +1,11 @@
 """
-CLI для управления метаданными рынка.
+CLI for managing market metadata.
 
-Команды:
-- refresh: обновление метаданных с OKX
-- validate: валидация ордера
-- info: информация об инструменте
-- cache: управление кэшем
+Commands:
+- refresh: update metadata from OKX
+- validate: validate an order
+- info: get instrument info
+- cache: manage cache
 """
 
 import asyncio
@@ -33,41 +33,37 @@ from ..infrastructure.metrics import (
 
 @click.group()
 def market_meta():
-    """Управление метаданными рынка"""
+    """Market metadata management"""
     pass
 
 
 @market_meta.command()
-@click.option("--force", is_flag=True, help="Принудительное обновление")
+@click.option("--force", is_flag=True, help="Force refresh")
 @click.option(
-    "--types", default="SPOT,SWAP,FUTURES", help="Типы инструментов для загрузки"
+    "--types", default="SPOT,SWAP,FUTURES", help="Instrument types to load"
 )
-@click.option("--verbose", "-v", is_flag=True, help="Подробный вывод")
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 def refresh(force: bool, types: str, verbose: bool):
-    """Обновить метаданные с OKX"""
-    click.echo("🔄 Обновление метаданных OKX...")
+    """Refresh metadata from OKX"""
+    click.echo("Refreshing OKX metadata...")
 
     async def _refresh():
         try:
-            # Парсим типы инструментов
             inst_types = [t.strip() for t in types.split(",")]
 
             if verbose:
-                click.echo(f"Загружаем типы: {inst_types}")
+                click.echo(f"Loading types: {inst_types}")
 
-            # Обновляем метаданные
             success = await refresh_okx_meta(force=force)
 
             if success:
-                click.echo("✅ Метаданные успешно обновлены")
+                click.echo("Metadata updated successfully")
 
                 if verbose:
-                    # Показываем статистику
                     if market_meta_api.market_metadata:
                         total = len(market_meta_api.market_metadata.instruments)
-                        click.echo(f"Загружено инструментов: {total}")
+                        click.echo(f"Loaded instruments: {total}")
 
-                        # Группируем по типам
                         by_type = {}
                         for (
                             instrument
@@ -78,11 +74,11 @@ def refresh(force: bool, types: str, verbose: bool):
                         for inst_type, count in by_type.items():
                             click.echo(f"  {inst_type}: {count}")
             else:
-                click.echo("❌ Ошибка обновления метаданных", err=True)
+                click.echo("Error updating metadata", err=True)
                 return 1
 
         except Exception as e:
-            click.echo(f"❌ Ошибка: {e}", err=True)
+            click.echo(f"Error: {e}", err=True)
             return 1
 
     return asyncio.run(_refresh())
@@ -90,17 +86,17 @@ def refresh(force: bool, types: str, verbose: bool):
 
 @market_meta.command()
 @click.argument("symbol")
-@click.option("--price", "-p", type=float, required=True, help="Цена")
-@click.option("--qty", "-q", type=float, required=True, help="Количество")
-@click.option("--balance", "-b", type=float, help="Баланс аккаунта")
-@click.option("--order-type", default="limit", help="Тип ордера (limit/market)")
-@click.option("--side", default="buy", help="Сторона (buy/sell)")
-@click.option("--leverage", type=float, help="Плечо")
-@click.option("--margin-mode", default="isolated", help="Режим маржи (isolated/cross)")
-@click.option("--spread-bps", type=float, help="Спред в базисных пунктах")
-@click.option("--vol-usdt", type=float, help="Объем за 24ч в USDT")
-@click.option("--book-depth", type=float, help="Глубина стакана в USDT")
-@click.option("--json", "output_json", is_flag=True, help="Вывод в JSON")
+@click.option("--price", "-p", type=float, required=True, help="Price")
+@click.option("--qty", "-q", type=float, required=True, help="Quantity")
+@click.option("--balance", "-b", type=float, help="Account balance")
+@click.option("--order-type", default="limit", help="Order type (limit/market)")
+@click.option("--side", default="buy", help="Side (buy/sell)")
+@click.option("--leverage", type=float, help="Leverage")
+@click.option("--margin-mode", default="isolated", help="Margin mode (isolated/cross)")
+@click.option("--spread-bps", type=float, help="Spread in basis points")
+@click.option("--vol-usdt", type=float, help="24h volume in USDT")
+@click.option("--book-depth", type=float, help="Order book depth in USDT")
+@click.option("--json", "output_json", is_flag=True, help="JSON output")
 def validate(
     symbol: str,
     price: float,
@@ -115,14 +111,12 @@ def validate(
     book_depth: float | None,
     output_json: bool,
 ):
-    """Валидировать ордер"""
+    """Validate an order"""
 
-    # Проверяем, загружены ли метаданные
     if not market_meta_api.market_metadata:
-        click.echo("❌ Метаданные не загружены. Выполните 'refresh'", err=True)
+        click.echo("Metadata not loaded. Run 'refresh' first", err=True)
         return 1
 
-    # Валидируем ордер
     violations = validate_order(
         symbol=symbol,
         price=price,
@@ -132,10 +126,8 @@ def validate(
         account_balance=balance,
     )
 
-    # Дополнительная валидация рисков и ликвидности
     if leverage is not None or spread_bps is not None:
         if market_meta_api.validator:
-            # Валидация рисков
             if leverage is not None:
                 risk_result = market_meta_api.validator.validate_risk(
                     symbol, leverage, margin_mode
@@ -143,7 +135,6 @@ def validate(
                 if not risk_result.is_valid:
                     violations.extend(risk_result.errors)
 
-            # Валидация ликвидности
             if all(param is not None for param in [spread_bps, vol_usdt, book_depth]):
                 liquidity_result = market_meta_api.validator.validate_liquidity(
                     symbol, spread_bps, vol_usdt, book_depth
@@ -151,7 +142,6 @@ def validate(
                 if not liquidity_result.is_valid:
                     violations.extend(liquidity_result.errors)
 
-    # Выводим результат
     if output_json:
         result = {
             "symbol": symbol,
@@ -164,142 +154,138 @@ def validate(
         click.echo(json.dumps(result, indent=2))
     else:
         if violations:
-            click.echo(f"❌ Найдено {len(violations)} нарушений:")
+            click.echo(f"Found {len(violations)} violations:")
             for i, violation in enumerate(violations, 1):
                 click.echo(f"  {i}. {violation}")
         else:
-            click.echo("✅ Ордер валиден")
+            click.echo("Order is valid")
 
     return 0 if not violations else 1
 
 
 @market_meta.command()
 @click.argument("symbol")
-@click.option("--json", "output_json", is_flag=True, help="Вывод в JSON")
+@click.option("--json", "output_json", is_flag=True, help="JSON output")
 def info(symbol: str, output_json: bool):
-    """Получить информацию об инструменте"""
+    """Get instrument info"""
 
-    # Проверяем, загружены ли метаданные
     if not market_meta_api.market_metadata:
-        click.echo("❌ Метаданные не загружены. Выполните 'refresh'", err=True)
+        click.echo("Metadata not loaded. Run 'refresh' first", err=True)
         return 1
 
-    # Получаем информацию
     info = get_instrument_info(symbol)
 
     if not info:
-        click.echo(f"❌ Инструмент {symbol} не найден", err=True)
+        click.echo(f"Instrument {symbol} not found", err=True)
         return 1
 
     if output_json:
         click.echo(json.dumps(info, indent=2))
     else:
-        click.echo(f"📊 Информация об инструменте: {symbol}")
-        click.echo(f"  Тип: {info['inst_type']}")
-        click.echo(f"  Базовая валюта: {info['base_ccy']}")
-        click.echo(f"  Котируемая валюта: {info['quote_ccy']}")
-        click.echo(f"  Торгуется: {'✅' if info['is_tradable'] else '❌'}")
+        click.echo(f"Instrument: {symbol}")
+        click.echo(f"  Type: {info['inst_type']}")
+        click.echo(f"  Base currency: {info['base_ccy']}")
+        click.echo(f"  Quote currency: {info['quote_ccy']}")
+        click.echo(f"  Tradable: {'yes' if info['is_tradable'] else 'no'}")
 
         if info["tick_size"]:
-            click.echo(f"  Размер тика: {info['tick_size']['step']}")
+            click.echo(f"  Tick size: {info['tick_size']['step']}")
 
         if info["lot_size"]:
-            click.echo(f"  Размер лота: {info['lot_size']['step']}")
+            click.echo(f"  Lot size: {info['lot_size']['step']}")
 
         if info["contract_val"]:
-            click.echo(f"  Номинальная стоимость: {info['contract_val']}")
+            click.echo(f"  Contract value: {info['contract_val']}")
 
         if info["margin_mode"]:
-            click.echo(f"  Режим маржи: {info['margin_mode']}")
+            click.echo(f"  Margin mode: {info['margin_mode']}")
 
     return 0
 
 
 @market_meta.command()
 def cache():
-    """Показать статус кэша метаданных"""
+    """Show metadata cache status"""
     if not market_meta_api.market_metadata:
-        click.echo("❌ Метаданные не загружены")
+        click.echo("Metadata not loaded")
         return 1
 
     status = market_meta_api.get_cache_status()
 
-    click.echo("📊 Статус кэша метаданных:")
-    click.echo(f"  Актуален: {'✅' if status['is_valid'] else '❌'}")
-    click.echo(f"  Последнее обновление: {status['last_refresh'] or 'Нет'}")
-    click.echo(f"  TTL: {status['ttl_hours']:.1f} часов")
-    click.echo(f"  Авто-refresh: {'✅' if status['auto_refresh_enabled'] else '❌'}")
-    click.echo(f"  Инструментов: {status['instruments_count']}")
+    click.echo("Metadata cache status:")
+    click.echo(f"  Valid: {'yes' if status['is_valid'] else 'no'}")
+    click.echo(f"  Last refresh: {status['last_refresh'] or 'never'}")
+    click.echo(f"  TTL: {status['ttl_hours']:.1f}h")
+    click.echo(f"  Auto-refresh: {'yes' if status['auto_refresh_enabled'] else 'no'}")
+    click.echo(f"  Instruments: {status['instruments_count']}")
     return None
 
 
 @market_meta.command()
-@click.option("--hours", type=int, default=1, help="TTL в часах")
+@click.option("--hours", type=int, default=1, help="TTL in hours")
 def set_ttl(hours: int):
-    """Установить TTL кэша"""
+    """Set cache TTL"""
     market_meta_api.set_cache_ttl(hours)
-    click.echo(f"✅ TTL установлен на {hours} часов")
+    click.echo(f"TTL set to {hours}h")
 
 
 @market_meta.command()
 def clear_cache():
-    """Очистить кэш метаданных"""
+    """Clear metadata cache"""
     market_meta_api._last_refresh = None
-    click.echo("✅ Кэш очищен")
+    click.echo("Cache cleared")
 
 
 @market_meta.command()
 @click.option(
-    "--enable/--disable", default=True, help="Включить/выключить авто-refresh"
+    "--enable/--disable", default=True, help="Enable/disable auto-refresh"
 )
 def auto_refresh(enable: bool):
-    """Управление авто-refresh"""
+    """Manage auto-refresh"""
     if enable:
         market_meta_api._auto_refresh_enabled = True
         market_meta_api.start_auto_refresh()
-        click.echo("✅ Авто-refresh включен")
+        click.echo("Auto-refresh enabled")
     else:
         market_meta_api.stop_auto_refresh()
-        click.echo("✅ Авто-refresh выключен")
+        click.echo("Auto-refresh disabled")
 
 
 @market_meta.command()
-@click.option("--drop", is_flag=True, help="Удалить таблицы")
-@click.option("--create", is_flag=True, help="Создать таблицы")
+@click.option("--drop", is_flag=True, help="Drop tables")
+@click.option("--create", is_flag=True, help="Create tables")
 def db(drop: bool, create: bool):
-    """Управление базой данных"""
+    """Manage database"""
 
-    # TODO: Получить engine из конфигурации
+    # TODO: get engine from config
     from sqlalchemy import create_engine
 
     engine = create_engine("postgresql://localhost/market_meta")
 
     if drop:
-        click.echo("🗑️ Удаление таблиц market_meta...")
+        click.echo("Dropping market_meta tables...")
         drop_tables(engine)
-        click.echo("✅ Таблицы удалены")
+        click.echo("Tables dropped")
 
     if create:
-        click.echo("📊 Создание таблиц market_meta...")
+        click.echo("Creating market_meta tables...")
         create_tables(engine)
-        click.echo("✅ Таблицы созданы")
+        click.echo("Tables created")
 
     if not drop and not create:
-        click.echo("Используйте --create для создания или --drop для удаления таблиц")
+        click.echo("Use --create to create or --drop to drop tables")
 
 
 @market_meta.command()
 def status():
-    """Показать статус модуля"""
+    """Show module status"""
 
-    click.echo("📊 Статус модуля market_meta:")
+    click.echo("market_meta module status:")
 
-    # Проверяем метаданные
     if market_meta_api.market_metadata:
         total = len(market_meta_api.market_metadata.instruments)
-        click.echo(f"  Метаданные: ✅ Загружено {total} инструментов")
+        click.echo(f"  Metadata: loaded ({total} instruments)")
 
-        # Группируем по типам
         by_type = {}
         for instrument in market_meta_api.market_metadata.instruments.values():
             inst_type = instrument.inst_type.value
@@ -308,68 +294,65 @@ def status():
         for inst_type, count in by_type.items():
             click.echo(f"    {inst_type}: {count}")
     else:
-        click.echo("  Метаданные: ❌ Не загружены")
+        click.echo("  Metadata: not loaded")
 
-    # Проверяем валидаторы
     if market_meta_api.validator:
-        click.echo("  Валидаторы: ✅ Инициализированы")
+        click.echo("  Validators: initialized")
     else:
-        click.echo("  Валидаторы: ❌ Не инициализированы")
+        click.echo("  Validators: not initialized")
 
-    # Проверяем лимиты риска
     if market_meta_api.risk_limits:
-        click.echo("  Лимиты риска: ✅ Настроены")
+        click.echo("  Risk limits: configured")
     else:
-        click.echo("  Лимиты риска: ❌ Не настроены")
+        click.echo("  Risk limits: not configured")
 
 
 @market_meta.command()
-@click.option("--level", default="INFO", help="Уровень логирования")
-@click.option("--file", help="Файл для логов")
-@click.option("--console/--no-console", default=True, help="Вывод в консоль")
-@click.option("--file-output/--no-file-output", default=True, help="Запись в файл")
+@click.option("--level", default="INFO", help="Log level")
+@click.option("--file", help="Log file path")
+@click.option("--console/--no-console", default=True, help="Console output")
+@click.option("--file-output/--no-file-output", default=True, help="File output")
 def setup_logging(level: str, file: str, console: bool, file_output: bool):
-    """Настроить логирование"""
+    """Configure logging"""
 
     configure_logging(
         level=level, log_file=file, console_output=console, file_output=file_output
     )
 
-    click.echo("✅ Логирование настроено:")
-    click.echo(f"  Уровень: {level}")
-    click.echo(f"  Файл: {file or 'market_meta.log'}")
-    click.echo(f"  Консоль: {'✅' if console else '❌'}")
-    click.echo(f"  Файл: {'✅' if file_output else '❌'}")
+    click.echo("Logging configured:")
+    click.echo(f"  Level: {level}")
+    click.echo(f"  File: {file or 'market_meta.log'}")
+    click.echo(f"  Console: {'yes' if console else 'no'}")
+    click.echo(f"  File output: {'yes' if file_output else 'no'}")
 
 
 @market_meta.command()
 def logs():
-    """Показать последние логи"""
+    """Show recent logs"""
 
     from pathlib import Path
 
     log_file = Path("market_meta.log")
     if not log_file.exists():
-        click.echo("❌ Файл логов не найден")
+        click.echo("Log file not found")
         return
 
     try:
         with open(log_file, encoding="utf-8") as f:
             lines = f.readlines()
-            # Показываем последние 20 строк
             recent_lines = lines[-20:] if len(lines) > 20 else lines
 
-            click.echo("📋 Последние логи:")
+            click.echo("Recent logs:")
             for line in recent_lines:
                 click.echo(f"  {line.strip()}")
 
     except Exception as e:
-        click.echo(f"❌ Ошибка чтения логов: {e}")
+        click.echo(f"Error reading logs: {e}")
 
 
 @market_meta.command()
 def clear_logs():
-    """Очистить файлы логов"""
+    """Clear log files"""
 
     from pathlib import Path
 
@@ -384,22 +367,22 @@ def clear_logs():
         if log_file.exists():
             try:
                 log_file.unlink()
-                click.echo(f"✅ Удален: {log_file}")
+                click.echo(f"Deleted: {log_file}")
                 cleared += 1
             except Exception as e:
-                click.echo(f"❌ Ошибка удаления {log_file}: {e}")
+                click.echo(f"Error deleting {log_file}: {e}")
 
     if cleared == 0:
-        click.echo("ℹ️ Файлы логов не найдены")
+        click.echo("No log files found")
     else:
-        click.echo(f"✅ Очищено файлов: {cleared}")
+        click.echo(f"Cleared {cleared} file(s)")
 
 
 @market_meta.command()
-@click.option("--json", "output_json", is_flag=True, help="Вывод в JSON")
-@click.option("--env", is_flag=True, help="Показать переменные окружения")
+@click.option("--json", "output_json", is_flag=True, help="JSON output")
+@click.option("--env", is_flag=True, help="Show environment variables")
 def config(output_json: bool, env: bool):
-    """Показать текущую конфигурацию"""
+    """Show current configuration"""
 
     try:
         config = get_config()
@@ -407,60 +390,60 @@ def config(output_json: bool, env: bool):
         if output_json:
             click.echo(json.dumps(config.to_dict(), indent=2, ensure_ascii=False))
         else:
-            click.echo("⚙️ Конфигурация market_meta:")
-            click.echo(f"  Окружение: {config.environment}")
-            click.echo(f"  Режим отладки: {'✅' if config.debug_mode else '❌'}")
-            click.echo(f"  Директория данных: {config.data_dir}")
+            click.echo("market_meta configuration:")
+            click.echo(f"  Environment: {config.environment}")
+            click.echo(f"  Debug mode: {'yes' if config.debug_mode else 'no'}")
+            click.echo(f"  Data dir: {config.data_dir}")
 
-            click.echo("\n🔗 OKX API:")
+            click.echo("\nOKX API:")
             click.echo(f"  URL: {config.okx.base_url}")
-            click.echo(f"  Таймаут: {config.okx.timeout_seconds}с")
-            click.echo(f"  Rate limit: {config.okx.max_requests_per_second}/сек")
-            click.echo(f"  Retry: {config.okx.max_retries} попыток")
+            click.echo(f"  Timeout: {config.okx.timeout_seconds}s")
+            click.echo(f"  Rate limit: {config.okx.max_requests_per_second}/s")
+            click.echo(f"  Retries: {config.okx.max_retries}")
 
-            click.echo("\n💾 Кэширование:")
-            click.echo(f"  TTL метаданных: {config.cache.metadata_ttl_hours}ч")
+            click.echo("\nCaching:")
+            click.echo(f"  Metadata TTL: {config.cache.metadata_ttl_hours}h")
             click.echo(
-                f"  Авто-refresh: {'✅' if config.cache.auto_refresh_enabled else '❌'}"
+                f"  Auto-refresh: {'yes' if config.cache.auto_refresh_enabled else 'no'}"
             )
-            click.echo(f"  Интервал: {config.cache.auto_refresh_interval_hours}ч")
+            click.echo(f"  Interval: {config.cache.auto_refresh_interval_hours}h")
 
-            click.echo("\n📝 Логирование:")
-            click.echo(f"  Уровень: {config.logging.log_level}")
-            click.echo(f"  Формат: {config.logging.log_format}")
-            click.echo(f"  Файл: {config.logging.log_file or 'market_meta.log'}")
+            click.echo("\nLogging:")
+            click.echo(f"  Level: {config.logging.log_level}")
+            click.echo(f"  Format: {config.logging.log_format}")
+            click.echo(f"  File: {config.logging.log_file or 'market_meta.log'}")
             click.echo(
-                f"  Маскировка API ключей: {'✅' if config.logging.mask_api_keys else '❌'}"
-            )
-
-            click.echo("\n✅ Валидация:")
-            click.echo(
-                f"  Строгий режим: {'✅' if config.validation.strict_mode else '❌'}"
-            )
-            click.echo(
-                f"  Разрешить предупреждения: {'✅' if config.validation.allow_warnings else '❌'}"
-            )
-            click.echo(
-                f"  Проверка рисков: {'✅' if config.validation.validate_risk_limits else '❌'}"
+                f"  Mask API keys: {'yes' if config.logging.mask_api_keys else 'no'}"
             )
 
-            click.echo("\n⚠️ Риск-менеджмент:")
+            click.echo("\nValidation:")
             click.echo(
-                f"  Макс. размер позиции: ${config.risk.max_position_size_usd:,.0f}"
+                f"  Strict mode: {'yes' if config.validation.strict_mode else 'no'}"
             )
             click.echo(
-                f"  Макс. общая экспозиция: ${config.risk.max_total_exposure_usd:,.0f}"
+                f"  Allow warnings: {'yes' if config.validation.allow_warnings else 'no'}"
             )
-            click.echo(f"  Макс. плечо: {config.risk.max_leverage}x")
-            click.echo(f"  Толерантность к риску: {config.risk.risk_tolerance}")
+            click.echo(
+                f"  Validate risk limits: {'yes' if config.validation.validate_risk_limits else 'no'}"
+            )
 
-            click.echo("\n📊 Метрики:")
-            click.echo(f"  Включены: {'✅' if config.metrics.enabled else '❌'}")
-            click.echo(f"  Экспорт: {'✅' if config.metrics.export_metrics else '❌'}")
-            click.echo(f"  Порт: {config.metrics.metrics_port}")
+            click.echo("\nRisk management:")
+            click.echo(
+                f"  Max position size: ${config.risk.max_position_size_usd:,.0f}"
+            )
+            click.echo(
+                f"  Max total exposure: ${config.risk.max_total_exposure_usd:,.0f}"
+            )
+            click.echo(f"  Max leverage: {config.risk.max_leverage}x")
+            click.echo(f"  Risk tolerance: {config.risk.risk_tolerance}")
+
+            click.echo("\nMetrics:")
+            click.echo(f"  Enabled: {'yes' if config.metrics.enabled else 'no'}")
+            click.echo(f"  Export: {'yes' if config.metrics.export_metrics else 'no'}")
+            click.echo(f"  Port: {config.metrics.metrics_port}")
 
         if env:
-            click.echo("\n🔧 Переменные окружения:")
+            click.echo("\nEnvironment variables:")
             env_vars = [
                 "MARKET_META_ENVIRONMENT",
                 "MARKET_META_DEBUG_MODE",
@@ -473,35 +456,35 @@ def config(output_json: bool, env: bool):
             ]
 
             for var in env_vars:
-                value = os.environ.get(var, "не установлена")
-                if var in ["OKX_API_KEY"] and value != "не установлена":
+                value = os.environ.get(var, "not set")
+                if var in ["OKX_API_KEY"] and value != "not set":
                     value = "***"
                 click.echo(f"  {var}: {value}")
 
     except Exception as e:
-        click.echo(f"❌ Ошибка загрузки конфигурации: {e}", err=True)
+        click.echo(f"Error loading configuration: {e}", err=True)
         return 1
 
 
 @market_meta.command()
 def reload_config_cmd():
-    """Перезагрузить конфигурацию из переменных окружения"""
+    """Reload configuration from environment variables"""
 
     try:
         config = reload_config()
-        click.echo("✅ Конфигурация перезагружена")
-        click.echo(f"  Окружение: {config.environment}")
-        click.echo(f"  Режим отладки: {'✅' if config.debug_mode else '❌'}")
+        click.echo("Configuration reloaded")
+        click.echo(f"  Environment: {config.environment}")
+        click.echo(f"  Debug mode: {'yes' if config.debug_mode else 'no'}")
 
     except Exception as e:
-        click.echo(f"❌ Ошибка перезагрузки конфигурации: {e}", err=True)
+        click.echo(f"Error reloading configuration: {e}", err=True)
         return 1
 
 
 @market_meta.command()
-@click.option("--validate", is_flag=True, help="Проверить конфигурацию")
+@click.option("--validate", is_flag=True, help="Validate configuration")
 def validate_config(validate: bool):
-    """Проверить конфигурацию"""
+    """Validate configuration"""
 
     try:
         config = get_config()
@@ -509,24 +492,24 @@ def validate_config(validate: bool):
         if validate:
             errors = config.validate()
             if errors:
-                click.echo("❌ Ошибки в конфигурации:")
+                click.echo("Configuration errors:")
                 for error in errors:
                     click.echo(f"  - {error}")
                 return 1
-            click.echo("✅ Конфигурация корректна")
+            click.echo("Configuration is valid")
         else:
-            click.echo("ℹ️ Используйте --validate для проверки конфигурации")
+            click.echo("Use --validate to check configuration")
 
     except Exception as e:
-        click.echo(f"❌ Ошибка проверки конфигурации: {e}", err=True)
+        click.echo(f"Error validating configuration: {e}", err=True)
         return 1
 
 
 @market_meta.command()
-@click.option("--json", "output_json", is_flag=True, help="Вывод в JSON")
-@click.option("--prometheus", is_flag=True, help="Вывод в формате Prometheus")
+@click.option("--json", "output_json", is_flag=True, help="JSON output")
+@click.option("--prometheus", is_flag=True, help="Prometheus format output")
 def metrics(output_json: bool, prometheus: bool):
-    """Показать метрики"""
+    """Show metrics"""
 
     try:
         collector = get_metrics_collector()
@@ -538,21 +521,18 @@ def metrics(output_json: bool, prometheus: bool):
         else:
             summary = collector.get_metrics_summary()
 
-            click.echo("📊 Метрики market_meta:")
+            click.echo("market_meta metrics:")
 
-            # Cache метрики
             cache_hit = summary.get("cache_hit_ratio", {})
             if cache_hit.get("latest") is not None:
                 click.echo(f"  Cache hit ratio: {cache_hit['latest']:.1f}%")
 
-            # Validation метрики
             validation_success = summary.get("validation_success_rate", {})
             if validation_success.get("latest") is not None:
                 click.echo(
                     f"  Validation success rate: {validation_success['latest']:.1f}%"
                 )
 
-            # API метрики
             api_latency = summary.get("api_request_duration", {})
             if api_latency.get("latest") is not None:
                 click.echo(f"  API latency: {api_latency['latest']:.3f}s")
@@ -561,7 +541,6 @@ def metrics(output_json: bool, prometheus: bool):
             if api_success.get("latest") is not None:
                 click.echo(f"  API success rate: {api_success['latest']:.1f}%")
 
-            # OKX метрики
             okx_latency = summary.get("okx_request_duration", {})
             if okx_latency.get("latest") is not None:
                 click.echo(f"  OKX latency: {okx_latency['latest']:.3f}s")
@@ -570,30 +549,29 @@ def metrics(output_json: bool, prometheus: bool):
             if okx_retries.get("count_5m", 0) > 0:
                 click.echo(f"  OKX retries (5m): {okx_retries['count_5m']}")
 
-            # Error метрики
             error_rate = summary.get("error_rate", {})
             if error_rate.get("latest") is not None:
                 click.echo(f"  Error rate: {error_rate['latest']:.1f}%")
 
     except Exception as e:
-        click.echo(f"❌ Ошибка получения метрик: {e}", err=True)
+        click.echo(f"Error fetching metrics: {e}", err=True)
         return 1
 
 
 @market_meta.command()
-@click.option("--hours", type=int, default=24, help="Количество часов для просмотра")
+@click.option("--hours", type=int, default=24, help="Hours to look back")
 def alerts(hours: int):
-    """Показать алерты"""
+    """Show alerts"""
 
     try:
         monitor = get_metrics_monitor()
         alerts = monitor.get_alerts(hours=hours)
 
         if not alerts:
-            click.echo(f"ℹ️ Алертов за последние {hours} часов нет")
+            click.echo(f"No alerts in the last {hours}h")
             return None
 
-        click.echo(f"⚠️ Алерты за последние {hours} часов:")
+        click.echo(f"Alerts in the last {hours}h:")
         for i, alert in enumerate(alerts, 1):
             click.echo(f"  {i}. {alert['type']} - {alert['timestamp']}")
             if "context" in alert:
@@ -601,43 +579,42 @@ def alerts(hours: int):
                     click.echo(f"     {key}: {value}")
 
     except Exception as e:
-        click.echo(f"❌ Ошибка получения алертов: {e}", err=True)
+        click.echo(f"Error fetching alerts: {e}", err=True)
         return 1
 
 
 @market_meta.command()
 async def start_metrics():
-    """Запустить сервисы метрик"""
+    """Start metrics services"""
 
     try:
         await start_metrics_services()
-        click.echo("✅ Сервисы метрик запущены")
+        click.echo("Metrics services started")
 
-        # Показываем информацию о портах
         config = get_config()
         if config.metrics.export_metrics:
             click.echo(
-                f"📊 Метрики доступны на http://localhost:{config.metrics.metrics_port}/metrics"
+                f"Metrics available at http://localhost:{config.metrics.metrics_port}/metrics"
             )
             click.echo(
-                f"🏥 Health check: http://localhost:{config.metrics.metrics_port}/health"
+                f"Health check: http://localhost:{config.metrics.metrics_port}/health"
             )
 
     except Exception as e:
-        click.echo(f"❌ Ошибка запуска сервисов метрик: {e}", err=True)
+        click.echo(f"Error starting metrics services: {e}", err=True)
         return 1
 
 
 @market_meta.command()
 async def stop_metrics():
-    """Остановить сервисы метрик"""
+    """Stop metrics services"""
 
     try:
         await stop_metrics_services()
-        click.echo("✅ Сервисы метрик остановлены")
+        click.echo("Metrics services stopped")
 
     except Exception as e:
-        click.echo(f"❌ Ошибка остановки сервисов метрик: {e}", err=True)
+        click.echo(f"Error stopping metrics services: {e}", err=True)
         return 1
 
 
@@ -645,29 +622,29 @@ async def stop_metrics():
 @click.option(
     "--symbols",
     required=True,
-    help="Список символов через запятую (например: BTC-USDT-SWAP,ETH-USDT-SWAP)",
+    help="Comma-separated symbols (e.g. BTC-USDT-SWAP,ETH-USDT-SWAP)",
 )
 @click.option(
     "--timeframes",
     default="1m,5m,15m,1H",
-    help="Список таймфреймов через запятую (по умолчанию: 1m,5m,15m,1H)",
+    help="Comma-separated timeframes (default: 1m,5m,15m,1H)",
 )
 @click.option(
     "--start-time",
     default=None,
-    help="Начало периода (ISO format, например: 2025-01-01T00:00:00Z)",
+    help="Period start (ISO format, e.g. 2025-01-01T00:00:00Z)",
 )
 @click.option(
     "--end-time",
     default=None,
-    help="Конец периода (ISO format, например: 2025-01-02T00:00:00Z)",
+    help="Period end (ISO format, e.g. 2025-01-02T00:00:00Z)",
 )
 @click.option(
     "--types",
     default="funding,oi,l2",
-    help="Типы данных для загрузки (по умолчанию: funding,oi,l2)",
+    help="Data types to load (default: funding,oi,l2)",
 )
-@click.option("--verbose", "-v", is_flag=True, help="Подробный вывод")
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 def sync_market_data_ext(
     symbols: str,
     timeframes: str,
@@ -677,9 +654,9 @@ def sync_market_data_ext(
     verbose: bool,
 ):
     """
-    Синхронизация расширенных рыночных данных.
+    Sync extended market data.
 
-    Загружает, нормализует, агрегирует и сохраняет данные в market_data_ext.
+    Loads, normalizes, aggregates and saves data to market_data_ext.
     """
     import asyncio
     from datetime import datetime
@@ -694,12 +671,10 @@ def sync_market_data_ext(
 
     async def _sync_async():
         try:
-            # Парсим параметры
             symbol_list = [s.strip() for s in symbols.split(",")]
             timeframe_list = [tf.strip() for tf in timeframes.split(",")]
             type_list = [t.strip() for t in types.split(",")]
 
-            # Парсим даты
             start_dt = None
             end_dt = None
             if start_time:
@@ -708,19 +683,17 @@ def sync_market_data_ext(
                 end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
 
             if verbose:
-                click.echo(f"Символы: {symbol_list}")
-                click.echo(f"Таймфреймы: {timeframe_list}")
-                click.echo(f"Типы данных: {type_list}")
+                click.echo(f"Symbols: {symbol_list}")
+                click.echo(f"Timeframes: {timeframe_list}")
+                click.echo(f"Data types: {type_list}")
                 if start_dt:
-                    click.echo(f"Начало: {start_dt}")
+                    click.echo(f"Start: {start_dt}")
                 if end_dt:
-                    click.echo(f"Конец: {end_dt}")
+                    click.echo(f"End: {end_dt}")
 
-            # Создаём sync engine для репозитория
-            from src.config.env_validator import get_database_url
+            from src.config.settings import get_database_url
 
             database_url = get_database_url()
-            # Конвертируем async URL в sync (убираем +asyncpg)
             if database_url.startswith("postgresql+asyncpg://"):
                 database_url = database_url.replace(
                     "postgresql+asyncpg://", "postgresql://"
@@ -731,26 +704,22 @@ def sync_market_data_ext(
                 )
             engine = create_engine(database_url, pool_pre_ping=True)
 
-            # Инициализируем компоненты
             aligner = OHLCVAligner(engine)
             loader = MarketDataLoader()
             normalizer = MarketDataNormalizer(aligner)
             aggregator = MarketDataAggregator(aligner)
             repo = MarketDataExtRepository(engine)
 
-            # Загружаем 1m бары для всех символов
             for symbol in symbol_list:
                 aligner.load_bar_timestamps(
                     symbol, "1m", start_time=start_dt, end_time=end_dt
                 )
 
-            # Загружаем данные
-            click.echo("📥 Загрузка данных с OKX...")
+            click.echo("Loading data from OKX...")
             all_data = await loader.load_all(symbol_list, start_dt, end_dt)
 
             total_records = 0
 
-            # Обрабатываем каждый тип данных
             for data_type in type_list:
                 if data_type not in all_data:
                     continue
@@ -759,9 +728,8 @@ def sync_market_data_ext(
                 if not records:
                     continue
 
-                click.echo(f"📊 Обработка {data_type}: {len(records)} записей")
+                click.echo(f"Processing {data_type}: {len(records)} records")
 
-                # Нормализуем к 1m барам
                 normalized_1m = []
                 for symbol in symbol_list:
                     symbol_records = [r for r in records if r.get("symbol") == symbol]
@@ -774,12 +742,10 @@ def sync_market_data_ext(
                 if not normalized_1m:
                     continue
 
-                # Сохраняем 1m данные
                 saved_1m = repo.upsert_records(normalized_1m)
                 total_records += saved_1m
-                click.echo(f"✅ Сохранено {saved_1m} записей 1m для {data_type}")
+                click.echo(f"Saved {saved_1m} 1m records for {data_type}")
 
-                # Агрегируем для других таймфреймов
                 import pandas as pd
 
                 df_1m = pd.DataFrame(normalized_1m)
@@ -788,12 +754,10 @@ def sync_market_data_ext(
                         if tf == "1m":
                             continue
 
-                        click.echo(f"📈 Агрегация {data_type} {tf}...")
+                        click.echo(f"Aggregating {data_type} {tf}...")
 
-                        # Агрегируем для каждого символа отдельно
                         all_agg_records = []
                         for symbol in symbol_list:
-                            # Фильтруем данные по символу
                             df_symbol = df_1m[df_1m["symbol"] == symbol].copy()
                             if df_symbol.empty:
                                 continue
@@ -804,7 +768,6 @@ def sync_market_data_ext(
 
                             if not df_agg.empty:
                                 agg_records = df_agg.reset_index().to_dict("records")
-                                # Убеждаемся, что symbol присутствует в записях
                                 for rec in agg_records:
                                     if "symbol" not in rec:
                                         rec["symbol"] = symbol
@@ -814,13 +777,13 @@ def sync_market_data_ext(
                             saved_agg = repo.upsert_records(all_agg_records)
                             total_records += saved_agg
                             click.echo(
-                                f"✅ Сохранено {saved_agg} записей {tf} для {data_type}"
+                                f"Saved {saved_agg} {tf} records for {data_type}"
                             )
 
-            click.echo(f"✅ Всего сохранено {total_records} записей")
+            click.echo(f"Total saved: {total_records} records")
 
         except Exception as e:
-            click.echo(f"❌ Ошибка: {e}", err=True)
+            click.echo(f"Error: {e}", err=True)
             if verbose:
                 import traceback
 
@@ -835,14 +798,14 @@ def sync_market_data_ext(
     "--dry-run",
     is_flag=True,
     default=False,
-    help="Только показать, что будет удалено, без фактического удаления",
+    help="Show what would be deleted without deleting",
 )
-@click.option("--verbose", "-v", is_flag=True, help="Подробный вывод")
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 def cleanup_market_data_ext(dry_run: bool, verbose: bool):
     """
-    Очистка старых расширенных рыночных данных согласно retention-политикам.
+    Clean up old extended market data per retention policies.
 
-    L2: 7 дней, OI: 90 дней, Funding: 730 дней.
+    L2: 7 days, OI: 90 days, Funding: 730 days.
     """
 
     from sqlalchemy import create_engine
@@ -850,10 +813,9 @@ def cleanup_market_data_ext(dry_run: bool, verbose: bool):
     from ..infrastructure.retention import MarketDataExtRetention
 
     try:
-        from src.config.env_validator import get_database_url
+        from src.config.settings import get_database_url
 
         database_url = get_database_url()
-        # Конвертируем async URL в sync
         if database_url.startswith("postgresql+asyncpg://"):
             database_url = database_url.replace(
                 "postgresql+asyncpg://", "postgresql://"
@@ -868,12 +830,12 @@ def cleanup_market_data_ext(dry_run: bool, verbose: bool):
         deleted_counts = retention_service.cleanup_old_data(dry_run=dry_run)
 
         if dry_run:
-            click.echo(f"🔍 Dry run завершен. Было бы удалено: {deleted_counts}")
+            click.echo(f"Dry run complete. Would delete: {deleted_counts}")
         else:
-            click.echo(f"✅ Очистка завершена. Удалено записей: {deleted_counts}")
+            click.echo(f"Cleanup complete. Deleted: {deleted_counts}")
 
     except Exception as e:
-        click.echo(f"❌ Ошибка: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         if verbose:
             import traceback
 

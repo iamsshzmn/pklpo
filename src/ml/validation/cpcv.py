@@ -1,26 +1,26 @@
 """
 Combinatorial Purged Cross-Validation (CPCV) (AFML Ch.12).
 
-Обобщает PurgedKFold: вместо одного тестового фолда одновременно выбирается
-n_test_groups из n_groups контигуальных групп. Это даёт C(n_groups, n_test_groups)
-уникальных путей (train/test splits), что позволяет строить распределение метрик
-(например, Sharpe) для оценки устойчивости стратегии.
+Generalizes PurgedKFold: instead of a single test fold, n_test_groups
+out of n_groups contiguous groups are selected simultaneously. This yields
+C(n_groups, n_test_groups) unique paths (train/test splits), enabling
+construction of a metric distribution (e.g., Sharpe) to assess strategy robustness.
 
 Hard limit ``max_paths``:
-    При C(n_groups, n_test_groups) > max_paths генерируется ValueError.
-    Это предотвращает экспоненциальный рост времени выполнения.
-    Рекомендуемые значения: n_groups=6, n_test_groups=2 → C(6,2) = 15 путей.
+    A ValueError is raised if C(n_groups, n_test_groups) > max_paths.
+    This prevents exponential growth in execution time.
+    Recommended values: n_groups=6, n_test_groups=2 -> C(6,2) = 15 paths.
 
-Использование::
+Usage::
 
     cv = CombinatorialPurgedCV(n_groups=6, n_test_groups=2)
     for train_idx, test_idx in cv.split(X, y, groups=t1):
         model.fit(X.iloc[train_idx], y.iloc[train_idx])
         score = model.score(X.iloc[test_idx], y.iloc[test_idx])
 
-    # Или для сбора распределения метрик:
+    # Or to collect a metric distribution:
     metrics_df = cv.get_path_metrics(model, X, y, scoring="accuracy")
-    var_sr = metrics_df["score"].var()  # для DSR
+    var_sr = metrics_df["score"].var()  # for DSR
 
 Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.12
 """
@@ -45,18 +45,18 @@ if TYPE_CHECKING:
 
 class CombinatorialPurgedCV(BaseCrossValidator):
     """
-    Combinatorial Purged Cross-Validation с embargo.
+    Combinatorial Purged Cross-Validation with embargo.
 
     Args:
-        n_groups:      Число контигуальных групп (рекомендуется 6).
-        n_test_groups: Число групп, выбираемых как тест в каждом пути (рекомендуется 2).
-        embargo_pct:   Доля датасета для зоны embargo после каждого тестового сегмента.
-        max_paths:     Hard limit на число путей C(n_groups, n_test_groups).
-                       ValueError если превышен. По умолчанию 50.
+        n_groups:      Number of contiguous groups (recommended: 6).
+        n_test_groups: Number of groups selected as test in each path (recommended: 2).
+        embargo_pct:   Fraction of the dataset for the embargo zone after each test segment.
+        max_paths:     Hard limit on the number of paths C(n_groups, n_test_groups).
+                       ValueError if exceeded. Default is 50.
 
     Raises:
-        ValueError: при инициализации если n_test_groups >= n_groups или
-                    при split() если C(n_groups, n_test_groups) > max_paths.
+        ValueError: at initialization if n_test_groups >= n_groups, or
+                    at split() if C(n_groups, n_test_groups) > max_paths.
     """
 
     def __init__(
@@ -82,7 +82,7 @@ class CombinatorialPurgedCV(BaseCrossValidator):
 
     @property
     def n_paths(self) -> int:
-        """Число путей C(n_groups, n_test_groups)."""
+        """Number of paths C(n_groups, n_test_groups)."""
         return comb(self.n_groups, self.n_test_groups)
 
     def get_n_splits(
@@ -112,26 +112,26 @@ class CombinatorialPurgedCV(BaseCrossValidator):
         groups: pd.Series | None = None,
     ):
         """
-        Генерирует пары (train_indices, test_indices) для каждой комбинации.
+        Generates (train_indices, test_indices) pairs for each combination.
 
         Args:
-            X:      DataFrame с DatetimeIndex или ndarray. Длина n.
-            y:      Метки (не используются для разбиения).
-            groups: pd.Series[entry_ts -> exit_ts] — t1 из triple_barrier_labels().
-                    Если None, purging не применяется.
+            X:      DataFrame with DatetimeIndex or ndarray. Length n.
+            y:      Labels (not used for splitting).
+            groups: pd.Series[entry_ts -> exit_ts] — t1 from triple_barrier_labels().
+                    If None, purging is not applied.
 
         Yields:
             (train_indices, test_indices): np.ndarray[int64].
 
         Raises:
-            ValueError: если n_paths > max_paths.
+            ValueError: if n_paths > max_paths.
         """
         n_paths = self.n_paths
         if n_paths > self.max_paths:
             raise ValueError(
                 f"C({self.n_groups}, {self.n_test_groups}) = {n_paths} > "
                 f"max_paths={self.max_paths}. "
-                f"Уменьшите n_groups или n_test_groups."
+                f"Reduce n_groups or n_test_groups."
             )
 
         t1 = groups
@@ -143,25 +143,25 @@ class CombinatorialPurgedCV(BaseCrossValidator):
         group_indices = np.array_split(idx, self.n_groups)
 
         for test_gids in combinations(range(self.n_groups), self.n_test_groups):
-            # Тестовые индексы: объединение выбранных групп
+            # Test indices: union of selected groups
             test_indices = np.sort(
                 np.concatenate([group_indices[gid] for gid in test_gids])
             )
 
-            # train_mask: изначально всё True
+            # train_mask: initially all True
             train_mask = np.ones(n, dtype=bool)
             train_mask[test_indices] = False
 
-            # Embargo + Purge для каждого тестового сегмента
+            # Embargo + Purge for each test segment
             for gid in test_gids:
                 g_idx = group_indices[gid]
                 g_end = int(g_idx[-1]) + 1
 
-                # Embargo: убрать n_embargo образцов после конца тестовой группы
+                # Embargo: remove n_embargo samples after the end of the test group
                 embargo_end = min(g_end + n_embargo, n)
                 train_mask[g_end:embargo_end] = False
 
-                # Purge: тренировочные образцы ДО этой группы с t1 >= начало группы
+                # Purge: training samples BEFORE this group with t1 >= group start
                 if t1 is not None and x_index is not None:
                     g_start = int(g_idx[0])
                     if g_start > 0:
@@ -183,25 +183,25 @@ class CombinatorialPurgedCV(BaseCrossValidator):
         groups: pd.Series | None = None,
     ) -> pd.DataFrame:
         """
-        Обучает и оценивает estimator на каждом CPCV-пути.
+        Trains and evaluates the estimator on each CPCV path.
 
         Args:
-            estimator: Обученный или не обученный sklearn-совместимый estimator.
-                       Клонируется для каждого пути через sklearn.base.clone.
-            X:         Матрица признаков.
-            y:         Целевая переменная.
-            scoring:   Строка ("accuracy", "roc_auc", ...) или callable scorer.
-            groups:    t1 Series для purging (см. split()).
+            estimator: Trained or untrained sklearn-compatible estimator.
+                       Cloned for each path via sklearn.base.clone.
+            X:         Feature matrix.
+            y:         Target variable.
+            scoring:   String ("accuracy", "roc_auc", ...) or callable scorer.
+            groups:    t1 Series for purging (see split()).
 
         Returns:
-            DataFrame с колонками:
-              path_id  — порядковый номер пути (0-based).
-              score    — значение метрики на тестовой выборке пути.
-              n_train  — размер тренировочной выборки.
-              n_test   — размер тестовой выборки.
+            DataFrame with columns:
+              path_id  — sequential path number (0-based).
+              score    — metric value on the test set for the path.
+              n_train  — training set size.
+              n_test   — test set size.
 
         Raises:
-            ValueError: если число путей превышает max_paths (делегируется в split()).
+            ValueError: if the number of paths exceeds max_paths (delegated to split()).
         """
         scorer = check_scoring(estimator, scoring=scoring)
         records = []

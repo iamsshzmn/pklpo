@@ -1,11 +1,11 @@
 """
-CalibratedMetaLabeler: MetaLabeler с явными параметрами калибровки.
+CalibratedMetaLabeler: MetaLabeler with explicit calibration parameters.
 
-В отличие от MetaLabeler(calibrate=True), который использует дефолтные
-sigmoid/cv=5, CalibratedMetaLabeler даёт прямой доступ к:
-  - методу калибровки: "sigmoid" (Platt scaling) или "isotonic" regression
-  - числу фолдов CV для калибровки
-  - Brier score и reliability curve для оценки надёжности вероятностей
+Unlike MetaLabeler(calibrate=True), which uses default sigmoid/cv=5,
+CalibratedMetaLabeler provides direct access to:
+  - calibration method: "sigmoid" (Platt scaling) or "isotonic" regression
+  - number of CV folds for calibration
+  - Brier score and reliability curve for assessing probability reliability
 
 Reference: Niculescu-Mizil & Caruana (2005), "Predicting Good Probabilities With
            Supervised Learning", ICML
@@ -30,19 +30,19 @@ if TYPE_CHECKING:
 
 class CalibratedMetaLabeler(MetaLabeler):
     """
-    MetaLabeler с явной конфигурацией калибровки вероятностей.
+    MetaLabeler with explicit probability calibration configuration.
 
-    Расширяет MetaLabeler, добавляя:
-      - выбор метода калибровки ("sigmoid" | "isotonic")
-      - выбор числа фолдов CV для CalibratedClassifierCV
-      - метод ``calibration_score()`` — Brier score для оценки надёжности
-      - метод ``reliability_curve()`` — данные для reliability diagram
+    Extends MetaLabeler by adding:
+      - selection of calibration method ("sigmoid" | "isotonic")
+      - selection of number of CV folds for CalibratedClassifierCV
+      - method ``calibration_score()`` — Brier score for reliability assessment
+      - method ``reliability_curve()`` — data for reliability diagram
 
     Args:
-        base_model:          sklearn-совместимый классификатор.
-        calibration_method:  Метод калибровки: "sigmoid" или "isotonic".
-        cv:                  Число фолдов для CalibratedClassifierCV (>= 2).
-        feature_selector:    Callable[[X, y], list[str]] для отбора признаков.
+        base_model:          sklearn-compatible classifier.
+        calibration_method:  Calibration method: "sigmoid" or "isotonic".
+        cv:                  Number of folds for CalibratedClassifierCV (>= 2).
+        feature_selector:    Callable[[X, y], list[str]] for feature selection.
 
     Example::
 
@@ -63,13 +63,13 @@ class CalibratedMetaLabeler(MetaLabeler):
     ) -> None:
         if calibration_method not in ("sigmoid", "isotonic"):
             raise ValueError(
-                f"calibration_method должен быть 'sigmoid' или 'isotonic', "
-                f"получен {calibration_method!r}"
+                f"calibration_method must be 'sigmoid' or 'isotonic', "
+                f"got {calibration_method!r}"
             )
         if cv < 2:
-            raise ValueError(f"cv должен быть >= 2, получен {cv}")
+            raise ValueError(f"cv must be >= 2, got {cv}")
 
-        # calibrate=True принудительно — смысл этого класса
+        # calibrate=True is enforced — that is the purpose of this class
         super().__init__(
             base_model=base_model,
             calibrate=True,
@@ -85,18 +85,17 @@ class CalibratedMetaLabeler(MetaLabeler):
         sample_weight: pd.Series | np.ndarray | None = None,
     ) -> CalibratedMetaLabeler:
         """
-        Обучает модель с явными параметрами калибровки.
+        Trains the model with explicit calibration parameters.
 
-        Переопределяет родительский fit для использования
-        calibration_method и cv.
+        Overrides the parent fit to use calibration_method and cv.
 
         Args:
-            X:             Матрица признаков.
-            y:             Целевые метки.
-            sample_weight: Опциональные веса образцов.
+            X:             Feature matrix.
+            y:             Target labels.
+            sample_weight: Optional sample weights.
 
         Returns:
-            self (для цепочки вызовов).
+            self (for method chaining).
         """
         if self.feature_selector is not None:
             self._selected_features = self.feature_selector(X, y)
@@ -126,20 +125,20 @@ class CalibratedMetaLabeler(MetaLabeler):
         y: pd.Series,
     ) -> float:
         """
-        Вычисляет Brier score для оценки надёжности калибровки.
+        Computes Brier score to assess calibration reliability.
 
-        Brier score = mean((p_i - y_i)^2). Меньше = лучше.
-        Случайный классификатор ≈ 0.25 (при 50/50 классах).
+        Brier score = mean((p_i - y_i)^2). Lower is better.
+        Random classifier ~ 0.25 (with 50/50 classes).
 
         Args:
-            X: Матрица признаков (тест).
-            y: Истинные метки (тест).
+            X: Feature matrix (test).
+            y: True labels (test).
 
         Returns:
-            float в диапазоне [0.0, 1.0]. 0.0 — идеальная калибровка.
+            float in range [0.0, 1.0]. 0.0 — perfect calibration.
 
         Raises:
-            RuntimeError: если модель не обучена.
+            RuntimeError: if the model has not been trained.
         """
         proba = self.predict_proba(X)
         return float(brier_score_loss(y, proba[:, 1]))
@@ -151,20 +150,20 @@ class CalibratedMetaLabeler(MetaLabeler):
         n_bins: int = 10,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Возвращает данные для reliability diagram (calibration curve).
+        Returns data for a reliability diagram (calibration curve).
 
         Args:
-            X:      Матрица признаков (тест).
-            y:      Истинные метки.
-            n_bins: Число бинов (влияет на гранулярность кривой).
+            X:      Feature matrix (test).
+            y:      True labels.
+            n_bins: Number of bins (affects curve granularity).
 
         Returns:
-            Кортеж (fraction_of_positives, mean_predicted_value):
-              - fraction_of_positives: истинная доля положительных в каждом бине.
-              - mean_predicted_value:  средняя предсказанная вероятность в бине.
+            Tuple (fraction_of_positives, mean_predicted_value):
+              - fraction_of_positives: true fraction of positives in each bin.
+              - mean_predicted_value:  mean predicted probability in each bin.
 
         Raises:
-            RuntimeError: если модель не обучена.
+            RuntimeError: if the model has not been trained.
         """
         proba = self.predict_proba(X)
         frac, pred = calibration_curve(y, proba[:, 1], n_bins=n_bins)

@@ -1,20 +1,20 @@
 """
-Triple-barrier маркировка (AFML Ch.3).
+Triple-barrier labeling (AFML Ch.3).
 
-Каждый бар маркируется одной из трёх меток:
-  +1  — достигнут верхний барьер (profit take, PT)
-  -1  — достигнут нижний барьер (stop loss, SL)
-   0  — достигнут вертикальный барьер (временной горизонт)
+Each bar is labeled with one of three labels:
+  +1  — upper barrier reached (profit take, PT)
+  -1  — lower barrier reached (stop loss, SL)
+   0  — vertical barrier reached (time horizon)
 
-Если в одном баре одновременно срабатывают PT и SL, PT имеет приоритет
-(консервативная convention; точное разрешение требует тиковых данных).
+If PT and SL trigger simultaneously in one bar, PT takes priority
+(conservative convention; precise resolution requires tick data).
 
-Реализует два варианта inner loop:
-- _triple_barrier_scan : чистый Python/numpy (эталон для тестов; fallback без numba)
-- _scan_jit            : JIT-ускоренная компиляция той же функции через numba
+Implements two variants of the inner loop:
+- _triple_barrier_scan : pure Python/numpy (reference for tests; fallback without numba)
+- _scan_jit            : JIT-compiled version of the same function via numba
 
-Публичная функция ``triple_barrier_labels()`` использует ``_scan_jit`` если
-numba доступна, иначе — ``_triple_barrier_scan`` с RuntimeWarning.
+The public function ``triple_barrier_labels()`` uses ``_scan_jit`` if
+numba is available, otherwise falls back to ``_triple_barrier_scan`` with a RuntimeWarning.
 
 Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.3
 """
@@ -47,24 +47,24 @@ def _triple_barrier_scan(
     max_h: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Pure Python/numpy inner loop для triple-barrier scan.
+    Pure Python/numpy inner loop for triple-barrier scan.
 
-    Реализация намеренно написана в numba-совместимом стиле (без Python-объектов),
-    чтобы её можно было JIT-компилировать без изменений через ``nb.njit``.
+    Intentionally written in numba-compatible style (no Python objects)
+    so it can be JIT-compiled without changes via ``nb.njit``.
 
     Args:
-        close:  Массив цен закрытия (float64), длина n.
-        high:   Массив максимальных цен (float64), длина n.
-        low:    Массив минимальных цен (float64), длина n.
-        pt:     Profit take порог (доля цены, например 0.02 = 2%).
-        sl:     Stop loss порог (доля цены, например 0.01 = 1%).
-        max_h:  Максимальное число баров до вертикального барьера.
+        close:  Array of closing prices (float64), length n.
+        high:   Array of high prices (float64), length n.
+        low:    Array of low prices (float64), length n.
+        pt:     Profit take threshold (price fraction, e.g. 0.02 = 2%).
+        sl:     Stop loss threshold (price fraction, e.g. 0.01 = 1%).
+        max_h:  Maximum number of bars until the vertical barrier.
 
     Returns:
-        Кортеж из трёх int64-массивов длины n:
-          labels       — метка (-1, 0, +1) для каждого входного бара.
-          t1_idx       — индекс бара, где сработал барьер.
-          barrier_code — код барьера (1=pt, -1=sl, 0=vert).
+        Tuple of three int64 arrays of length n:
+          labels       — label (-1, 0, +1) for each input bar.
+          t1_idx       — index of the bar where the barrier was triggered.
+          barrier_code — barrier code (1=pt, -1=sl, 0=vert).
     """
     n = len(close)
     labels = np.zeros(n, dtype=np.int64)
@@ -92,16 +92,16 @@ def _triple_barrier_scan(
                 break
 
         if not hit:
-            # Вертикальный барьер: t1 = конец горизонта (или конец данных)
+            # Vertical barrier: t1 = end of horizon (or end of data)
             t1_idx[i] = end_idx
-            # labels[i] и barrier_code[i] остаются 0
+            # labels[i] and barrier_code[i] remain 0
 
     return labels, t1_idx, barrier_code
 
 
 if _NUMBA_AVAILABLE:
-    # JIT-компиляция эталонной функции. cache=True сохраняет скомпилированный
-    # байткод на диск — повторные запуски не требуют перекомпиляции.
+    # JIT-compile the reference function. cache=True saves the compiled
+    # bytecode to disk — subsequent runs do not require recompilation.
     _scan_jit = nb.njit(cache=True)(_triple_barrier_scan)
 else:
     _scan_jit = _triple_barrier_scan
@@ -115,37 +115,37 @@ def triple_barrier_labels(
     config: BarrierConfig,
 ) -> pd.DataFrame:
     """
-    Маркировка баров методом triple-barrier (AFML Ch.3).
+    Labels bars using the triple-barrier method (AFML Ch.3).
 
     Args:
-        df:     DataFrame с колонками ``open, high, low, close, volume``.
-                Индекс — DatetimeIndex, строго монотонно возрастающий.
-        config: :class:`~src.ml.models.BarrierConfig` с параметрами
+        df:     DataFrame with columns ``open, high, low, close, volume``.
+                Index — DatetimeIndex, strictly monotonically increasing.
+        config: :class:`~src.ml.models.BarrierConfig` with parameters
                 ``profit_take``, ``stop_loss``, ``max_horizon``.
 
     Returns:
-        DataFrame с колонками:
-          ``label``        — int8, метка (+1, -1, 0).
-          ``t1``           — Timestamp, время срабатывания барьера.
-          ``barrier_type`` — str, тип барьера ("pt", "sl", "vert").
-          ``vert_time``    — Timestamp, плановое время вертикального барьера
-                             (независимо от того, был ли он достигнут).
-        Индекс совпадает с входным ``df``.
+        DataFrame with columns:
+          ``label``        — int8, label (+1, -1, 0).
+          ``t1``           — Timestamp, time the barrier was triggered.
+          ``barrier_type`` — str, barrier type ("pt", "sl", "vert").
+          ``vert_time``    — Timestamp, scheduled vertical barrier time
+                             (regardless of whether it was reached).
+        Index matches the input ``df``.
 
     Raises:
-        ValueError: если индекс ``df`` не монотонно возрастает.
+        ValueError: if the index of ``df`` is not monotonically increasing.
 
     Notes:
-        - Пропуски (gaps) во временном ряду не обрабатываются специальным образом:
-          каждый следующий бар — это следующий элемент массива, вне зависимости
-          от временного расстояния.
-        - При совместном срабатывании PT и SL в одном баре PT имеет приоритет.
-        - Последний бар всегда получает метку 0 (нет данных вперёд).
+        - Gaps in the time series are not handled specially:
+          each subsequent bar is the next array element, regardless of
+          the time distance between them.
+        - When PT and SL trigger simultaneously in the same bar, PT takes priority.
+        - The last bar always receives label 0 (no forward data).
     """
     if not df.index.is_monotonic_increasing:
         raise ValueError(
-            "df.index должен быть монотонно возрастающим. "
-            "Проверьте корректность временного ряда."
+            "df.index must be monotonically increasing. "
+            "Check the correctness of the time series."
         )
 
     if len(df) == 0:
@@ -162,8 +162,8 @@ def triple_barrier_labels(
         scan_fn = _scan_jit
     else:
         warnings.warn(
-            "numba недоступна; используется медленный Python fallback для triple-barrier. "
-            "Установите numba для ~100x ускорения на больших датасетах.",
+            "numba is not available; using slow Python fallback for triple-barrier. "
+            "Install numba for ~100x speedup on large datasets.",
             RuntimeWarning,
             stacklevel=2,
         )

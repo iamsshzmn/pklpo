@@ -1,15 +1,15 @@
 """
-CLI команда train: обучение MetaLabeler (metalabeling pipeline, AFML Ch.10).
+CLI command train: train MetaLabeler (metalabeling pipeline, AFML Ch.10).
 
-Использование:
+Usage:
     python -m src.cli.main train --symbols BTC-USDT-SWAP --model rf --cv purged-kfold --feature-selection mda
     python -m src.cli.main train --symbols BTC-USDT-SWAP \\
         --feature-selection mutual_info --n-features 30 --no-calibrate
     python -m src.cli.main train --symbols BTC-USDT-SWAP --dry-run
 
-Признаки строятся из ценового ряда OHLCV (log-returns, rolling vol/SMA/vol ratios).
-Для использования pre-computed features из features pipeline задайте --features-source db
-(поддержка будет добавлена в следующей версии).
+Features are built from the OHLCV price series (log-returns, rolling vol/SMA/vol ratios).
+To use pre-computed features from the features pipeline, set --features-source db
+(support will be added in a future version).
 """
 
 from __future__ import annotations
@@ -35,111 +35,111 @@ logger = logging.getLogger(__name__)
 
 
 def register(subparsers) -> None:  # type: ignore[no-untyped-def]
-    """Регистрация команды train в CLI."""
+    """Register the train command in the CLI."""
     p = subparsers.add_parser(
         "train",
-        help="Обучение MetaLabeler (metalabeling pipeline, AFML Ch.10)",
+        help="Train MetaLabeler (metalabeling pipeline, AFML Ch.10)",
     )
     p.add_argument(
         "--symbols",
         nargs="+",
         required=True,
-        help="Символы для обучения (например: BTC-USDT-SWAP ETH-USDT-SWAP)",
+        help="Symbols to train on (e.g.: BTC-USDT-SWAP ETH-USDT-SWAP)",
     )
     p.add_argument(
         "--timeframe",
         default="1m",
-        help="Таймфрейм источника данных (default: 1m)",
+        help="Source data timeframe (default: 1m)",
     )
     p.add_argument(
         "--model",
         choices=["rf", "xgboost"],
         default="rf",
-        help="Backend классификатор: rf (RandomForest) или xgboost (default: rf)",
+        help="Backend classifier: rf (RandomForest) or xgboost (default: rf)",
     )
     p.add_argument(
         "--n-estimators",
         type=int,
         default=100,
-        help="Число деревьев/итераций модели (default: 100)",
+        help="Number of trees/iterations in the model (default: 100)",
     )
     p.add_argument(
         "--cv",
         choices=["purged-kfold"],
         default="purged-kfold",
-        help="Стратегия кросс-валидации (default: purged-kfold)",
+        help="Cross-validation strategy (default: purged-kfold)",
     )
     p.add_argument(
         "--n-splits",
         type=int,
         default=5,
-        help="Число фолдов для PurgedKFold (default: 5)",
+        help="Number of folds for PurgedKFold (default: 5)",
     )
     p.add_argument(
         "--feature-selection",
         choices=["mda", "mutual_info", "pca_variance"],
         default="mda",
-        help="Метод отбора признаков (default: mda)",
+        help="Feature selection method (default: mda)",
     )
     p.add_argument(
         "--n-features",
         type=int,
         default=50,
-        help="Максимальное число отбираемых признаков (default: 50)",
+        help="Maximum number of features to select (default: 50)",
     )
     p.add_argument(
         "--pt",
         dest="profit_take",
         type=float,
         default=0.02,
-        help="Profit take порог как доля цены (default: 0.02 = 2%%)",
+        help="Profit take threshold as fraction of price (default: 0.02 = 2%%)",
     )
     p.add_argument(
         "--sl",
         dest="stop_loss",
         type=float,
         default=0.01,
-        help="Stop loss порог как доля цены (default: 0.01 = 1%%)",
+        help="Stop loss threshold as fraction of price (default: 0.01 = 1%%)",
     )
     p.add_argument(
         "--max-h",
         dest="max_horizon",
         type=int,
         default=48,
-        help="Максимальный горизонт в барах до вертикального барьера (default: 48)",
+        help="Maximum horizon in bars until vertical barrier (default: 48)",
     )
     p.add_argument(
         "--decay",
         type=float,
         default=1.0,
-        help="Time-decay фактор для sample weights (default: 1.0 = без decay)",
+        help="Time-decay factor for sample weights (default: 1.0 = no decay)",
     )
     p.add_argument(
         "--no-calibrate",
         action="store_true",
-        help="Отключить калибровку вероятностей (по умолчанию включена)",
+        help="Disable probability calibration (enabled by default)",
     )
     p.add_argument(
         "--output-dir",
         default="./artifacts",
-        help="Директория для сохранения артефактов (default: ./artifacts)",
+        help="Directory for saving artifacts (default: ./artifacts)",
     )
     p.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Лимит строк из БД (default: все данные)",
+        help="Row limit from DB (default: all data)",
     )
     p.add_argument(
         "--dry-run",
         action="store_true",
-        help="Показать параметры без запуска обучения",
+        help="Show parameters without running training",
     )
     p.set_defaults(_handler=handle)
 
 
 async def handle(args) -> None:  # type: ignore[no-untyped-def]
-    """Обработчик команды train."""
+    """Handler for the train command."""
     if args.dry_run:
         _show_plan(args)
         return
@@ -174,15 +174,15 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
     for symbol in args.symbols:
         df = await _load_ohlcv(symbol, args.timeframe, args.limit)
         if df is None or len(df) == 0:
-            logger.warning("Нет данных для %s %s", symbol, args.timeframe)
+            logger.warning("No data for %s %s", symbol, args.timeframe)
             continue
 
-        logger.info("%s: загружено %d баров", symbol, len(df))
+        logger.info("%s: loaded %d bars", symbol, len(df))
 
         X = _build_price_features(df)
         labels_df = triple_barrier_labels(df, barrier_config)
 
-        # Выравнивание по общим индексам
+        # Align on common indices
         common_idx = X.index.intersection(labels_df.index)
         X = X.loc[common_idx]
         y = labels_df.loc[common_idx, "label"].astype(int)
@@ -196,7 +196,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
         weights = weights.reindex(common_idx).fillna(1.0)
 
         logger.info(
-            "%s: %d образцов | features=%d | label_dist=%s",
+            "%s: %d samples | features=%d | label_dist=%s",
             symbol,
             len(X),
             X.shape[1],
@@ -224,7 +224,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
 
         n_selected = labeler.n_features_in or 0
         logger.info(
-            "%s: модель обучена | features_selected=%d/%d | artifact=%s",
+            "%s: model trained | features_selected=%d/%d | artifact=%s",
             symbol,
             n_selected,
             X.shape[1],
@@ -232,7 +232,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
         )
 
     logger.info(
-        "train завершён: %d символов (run_id=%s) | артефакты -> %s",
+        "train completed: %d symbols (run_id=%s) | artifacts -> %s",
         len(args.symbols),
         ctx.run_id[:8],
         output_dir,
@@ -242,7 +242,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
 async def _load_ohlcv(
     symbol: str, timeframe: str, limit: int | None
 ) -> pd.DataFrame | None:
-    """Загрузить OHLCV данные из БД."""
+    """Load OHLCV data from the database."""
     from src.utils.session_utils import get_db_session
 
     try:
@@ -272,7 +272,7 @@ async def _load_ohlcv(
         return df.astype(float)
 
     except Exception as e:
-        logger.error("Ошибка загрузки данных для %s %s: %s", symbol, timeframe, e)
+        logger.error("Error loading data for %s %s: %s", symbol, timeframe, e)
         return None
 
 
@@ -281,10 +281,10 @@ def _build_price_features(
     windows: tuple[int, ...] = (5, 10, 20, 50),
 ) -> pd.DataFrame:
     """
-    Базовые ценовые признаки из OHLCV.
+    Basic price features from OHLCV.
 
-    Строит log-returns, rolling volatility, SMA ratios и volume ratios.
-    Используется когда pre-computed features из features pipeline недоступны.
+    Builds log-returns, rolling volatility, SMA ratios, and volume ratios.
+    Used when pre-computed features from the features pipeline are unavailable.
     """
     close = df["close"]
     volume = df["volume"]
@@ -311,7 +311,7 @@ def _make_feature_selector(
     n_splits: int,
     t1: pd.Series,
 ) -> Callable[[pd.DataFrame, pd.Series], list[str]]:
-    """Создать функцию отбора признаков для MetaLabeler."""
+    """Create a feature selection function for MetaLabeler."""
     from src.ml.feature_selection.reduction import select_features
     from src.ml.validation.purged_kfold import PurgedKFold
 
@@ -331,7 +331,7 @@ def _make_feature_selector(
 
 
 def _make_base_model(model_type: str, n_estimators: int) -> Any:
-    """Создать базовый классификатор по типу."""
+    """Create a base classifier by type."""
     if model_type == "rf":
         from sklearn.ensemble import RandomForestClassifier
 
@@ -351,8 +351,8 @@ def _make_base_model(model_type: str, n_estimators: int) -> Any:
             )
         except ImportError:
             logger.warning(
-                "xgboost не установлен, используется RandomForest. "
-                "Для установки: pip install xgboost"
+                "xgboost is not installed, falling back to RandomForest. "
+                "To install: pip install xgboost"
             )
             from sklearn.ensemble import RandomForestClassifier
 
@@ -360,15 +360,15 @@ def _make_base_model(model_type: str, n_estimators: int) -> Any:
                 n_estimators=n_estimators, random_state=0, n_jobs=-1
             )
 
-    raise ValueError(f"Неизвестный тип модели: {model_type!r}")
+    raise ValueError(f"Unknown model type: {model_type!r}")
 
 
 def _show_plan(args) -> None:  # type: ignore[no-untyped-def]
-    """Показать план без выполнения (dry-run)."""
+    """Show plan without executing (dry-run)."""
     logger.info("train dry-run:")
-    logger.info("  Символы:           %s", args.symbols)
-    logger.info("  Таймфрейм:         %s", args.timeframe)
-    logger.info("  Модель:            %s (n_estimators=%d)", args.model, args.n_estimators)
+    logger.info("  Symbols:           %s", args.symbols)
+    logger.info("  Timeframe:         %s", args.timeframe)
+    logger.info("  Model:             %s (n_estimators=%d)", args.model, args.n_estimators)
     logger.info("  CV:                %s (n_splits=%d)", args.cv, args.n_splits)
     logger.info(
         "  Feature selection: %s (n_features=%d)",
@@ -381,8 +381,8 @@ def _show_plan(args) -> None:  # type: ignore[no-untyped-def]
     logger.info(
         "  Stop loss:         %.3f (%.1f%%)", args.stop_loss, args.stop_loss * 100
     )
-    logger.info("  Max horizon:       %d баров", args.max_horizon)
+    logger.info("  Max horizon:       %d bars", args.max_horizon)
     logger.info("  Time decay:        %.2f", args.decay)
-    logger.info("  Калибровка:        %s", "нет" if args.no_calibrate else "да")
+    logger.info("  Calibrate:         %s", "no" if args.no_calibrate else "yes")
     logger.info("  Output dir:        %s", args.output_dir)
-    logger.info("  Лимит строк:       %s", args.limit or "все данные")
+    logger.info("  Row limit:         %s", args.limit or "all data")

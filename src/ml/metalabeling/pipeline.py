@@ -1,14 +1,14 @@
 """
-MetaLabeler: pipeline для фильтрации торговых сигналов (AFML Ch.10).
+MetaLabeler: pipeline for filtering trading signals (AFML Ch.10).
 
-Обёртка над sklearn-классификатором с:
-  - Feature selection (MDI/MDA/SFI из Блока E)
-  - Опциональной калибровкой вероятностей (CalibratedClassifierCV)
-  - Поддержкой uniqueness sample weights (из Блока C)
-  - Сохранением/загрузкой артефактов через joblib с привязкой к RunContext
+Wrapper around an sklearn classifier with:
+  - Feature selection (MDI/MDA/SFI from Block E)
+  - Optional probability calibration (CalibratedClassifierCV)
+  - Support for uniqueness sample weights (from Block C)
+  - Save/load artifacts via joblib bound to RunContext
 
-Artifact storage: локальные файлы в {data_dir}/artifacts/{run_id}/.
-S3 — за рамками этой фазы.
+Artifact storage: local files in {data_dir}/artifacts/{run_id}/.
+S3 — out of scope for this phase.
 
 Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.10
 """
@@ -33,20 +33,20 @@ if TYPE_CHECKING:
 
 class MetaLabeler:
     """
-    Metalabeling pipeline — обучает вторичный классификатор для фильтрации сигналов.
+    Metalabeling pipeline — trains a secondary classifier for signal filtering.
 
-    Принимает матрицу признаков X и метки y (из triple_barrier_labels),
-    опционально отбирает признаки, обучает base_model.
+    Accepts feature matrix X and labels y (from triple_barrier_labels),
+    optionally selects features, and trains base_model.
 
-    Совместим с MetaScorer Protocol (predict_proba).
+    Compatible with MetaScorer Protocol (predict_proba).
 
     Args:
-        base_model:       sklearn-совместимый классификатор.
-                          По умолчанию RandomForestClassifier(n_estimators=100).
-        calibrate:        Если True, оборачивает base_model в CalibratedClassifierCV.
-        feature_selector: Callable[[X, y], list[str]] — функция отбора признаков.
-                          Например: ``lambda X, y: select_features(X, y, method="mda")``.
-                          Если None, используются все признаки.
+        base_model:       sklearn-compatible classifier.
+                          Defaults to RandomForestClassifier(n_estimators=100).
+        calibrate:        If True, wraps base_model in CalibratedClassifierCV.
+        feature_selector: Callable[[X, y], list[str]] — feature selection function.
+                          Example: ``lambda X, y: select_features(X, y, method="mda")``.
+                          If None, all features are used.
 
     Example::
 
@@ -83,20 +83,20 @@ class MetaLabeler:
         sample_weight: pd.Series | np.ndarray | None = None,
     ) -> MetaLabeler:
         """
-        Обучает MetaLabeler на данных X, y.
+        Trains the MetaLabeler on data X, y.
 
-        Порядок шагов:
-          1. feature_selector(X, y) → отбор признаков (если задан).
-          2. Построение модели (с CalibratedClassifierCV если calibrate=True).
+        Steps:
+          1. feature_selector(X, y) -> feature selection (if provided).
+          2. Build model (with CalibratedClassifierCV if calibrate=True).
           3. fit(X_selected, y, sample_weight).
 
         Args:
-            X:             Матрица признаков.
-            y:             Целевые метки.
-            sample_weight: Опциональные веса образцов (из get_uniqueness_weights).
+            X:             Feature matrix.
+            y:             Target labels.
+            sample_weight: Optional sample weights (from get_uniqueness_weights).
 
         Returns:
-            self (для цепочки вызовов).
+            self (for method chaining).
         """
         if self.feature_selector is not None:
             self._selected_features = self.feature_selector(X, y)
@@ -123,19 +123,19 @@ class MetaLabeler:
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """
-        Предсказывает вероятности классов.
+        Predicts class probabilities.
 
         Args:
-            X: Матрица признаков (должна содержать те же колонки, что при обучении).
+            X: Feature matrix (must contain the same columns as during training).
 
         Returns:
-            np.ndarray формы (n_samples, n_classes).
+            np.ndarray of shape (n_samples, n_classes).
 
         Raises:
-            RuntimeError: если модель не обучена (fit не вызван).
+            RuntimeError: if the model has not been trained (fit was not called).
         """
         if self._fitted_model is None:
-            raise RuntimeError("MetaLabeler не обучен. Вызовите fit() сначала.")
+            raise RuntimeError("MetaLabeler is not trained. Call fit() first.")
         if self._selected_features is not None:
             X_pred = X[self._selected_features]
         else:
@@ -144,19 +144,19 @@ class MetaLabeler:
 
     def save(self, path: Path, run_context: RunContext) -> None:
         """
-        Сохраняет обученную модель как joblib-артефакт.
+        Saves the trained model as a joblib artifact.
 
-        Создаёт родительские директории при необходимости.
+        Creates parent directories if needed.
 
         Args:
-            path:        Путь к файлу артефакта.
-            run_context: RunContext для привязки артефакта к run_id.
+            path:        Path to the artifact file.
+            run_context: RunContext for binding the artifact to a run_id.
 
         Raises:
-            RuntimeError: если модель не обучена (fit не вызван).
+            RuntimeError: if the model has not been trained (fit was not called).
         """
         if self._fitted_model is None:
-            raise RuntimeError("MetaLabeler не обучен. Вызовите fit() сначала.")
+            raise RuntimeError("MetaLabeler is not trained. Call fit() first.")
         self._run_context = run_context
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
@@ -172,13 +172,13 @@ class MetaLabeler:
     @classmethod
     def load(cls, path: Path) -> MetaLabeler:
         """
-        Загружает обученный MetaLabeler из joblib-артефакта.
+        Loads a trained MetaLabeler from a joblib artifact.
 
         Args:
-            path: Путь к файлу артефакта.
+            path: Path to the artifact file.
 
         Returns:
-            MetaLabeler с восстановленной моделью и run_context.
+            MetaLabeler with restored model and run_context.
         """
         data: dict[str, Any] = joblib.load(path)
         obj = cls.__new__(cls)
@@ -192,17 +192,17 @@ class MetaLabeler:
 
     @property
     def run_context(self) -> RunContext | None:
-        """RunContext артефакта (None если модель не сохранена)."""
+        """RunContext of the artifact (None if model has not been saved)."""
         return self._run_context
 
     @property
     def selected_features(self) -> list[str] | None:
-        """Список признаков, выбранных при обучении (None если fit не вызван)."""
+        """List of features selected during training (None if fit was not called)."""
         return self._selected_features
 
     @property
     def n_features_in(self) -> int | None:
-        """Число признаков, использованных при обучении."""
+        """Number of features used during training."""
         if self._selected_features is None:
             return None
         return len(self._selected_features)

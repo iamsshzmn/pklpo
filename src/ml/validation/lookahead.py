@@ -1,22 +1,22 @@
 """
 Look-Ahead Bias Detector (AFML quality gate).
 
-Обнаруживает look-ahead bias в pipeline с помощью детерминированного теста:
+Detects look-ahead bias in a pipeline using a deterministic test:
 
-Алгоритм:
-  1. Запустить pipeline на полном датасете df_full → result_A.
-  2. Запустить pipeline на усечённом датасете df_full.iloc[:-n_trim] → result_B.
-  3. Найти пересечение временных меток (intersection of indices).
-  4. Сравнить результаты на общих timestamp — должны совпасть с точностью atol.
+Algorithm:
+  1. Run pipeline on the full dataset df_full -> result_A.
+  2. Run pipeline on the trimmed dataset df_full.iloc[:-n_trim] -> result_B.
+  3. Find the intersection of timestamps.
+  4. Compare results on shared timestamps — they must match within atol.
 
-Если результаты различаются: pipeline использует данные из будущего (look-ahead bias).
+If the results differ: the pipeline uses future data (look-ahead bias).
 
-Применение в CI:
-  - Пометить тесты @pytest.mark.lookahead
-  - Добавить шаг ``pytest -m lookahead`` как обязательный gate перед деплоем
+Usage in CI:
+  - Mark tests with @pytest.mark.lookahead
+  - Add a ``pytest -m lookahead`` step as a mandatory gate before deployment
 
 Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.7, 12
-           (обсуждение необходимости проверки look-ahead в production-системах)
+           (discussion of the need for look-ahead checks in production systems)
 """
 
 from __future__ import annotations
@@ -34,14 +34,14 @@ if TYPE_CHECKING:
 @dataclass
 class LookaheadResult:
     """
-    Результат проверки look-ahead bias.
+    Result of a look-ahead bias check.
 
     Attributes:
-        passed:    True если pipeline не имеет look-ahead bias.
-        max_diff:  Максимальное абсолютное расхождение между result_A и result_B
-                   на общих временных метках. 0.0 если полное совпадение.
-        n_compared: Число временных меток, использованных для сравнения.
-        details:   Словарь с дополнительной диагностикой.
+        passed:    True if the pipeline has no look-ahead bias.
+        max_diff:  Maximum absolute difference between result_A and result_B
+                   on shared timestamps. 0.0 if they match exactly.
+        n_compared: Number of timestamps used for comparison.
+        details:   Dictionary with additional diagnostics.
     """
 
     passed: bool
@@ -65,26 +65,26 @@ def check_lookahead(
     atol: float = 1e-6,
 ) -> LookaheadResult:
     """
-    Проверяет pipeline на отсутствие look-ahead bias.
+    Checks the pipeline for the absence of look-ahead bias.
 
-    Запускает pipeline дважды — на полных и усечённых данных — и сравнивает
-    результаты на общих временных метках.
+    Runs the pipeline twice — on full and trimmed data — and compares
+    results on shared timestamps.
 
     Args:
-        pipeline_fn: Callable[[df], result] — pipeline для проверки.
-                     Принимает pd.DataFrame (OHLCV или features),
-                     возвращает pd.Series или pd.DataFrame с DatetimeIndex.
-        df_full:     Полный датасет. Должен иметь DatetimeIndex.
-        n_trim:      Число строк, обрезаемых с конца при втором прогоне.
-                     Должно быть < len(df_full).
-        atol:        Абсолютная погрешность при сравнении числовых значений.
+        pipeline_fn: Callable[[df], result] — pipeline to check.
+                     Accepts pd.DataFrame (OHLCV or features),
+                     returns pd.Series or pd.DataFrame with DatetimeIndex.
+        df_full:     Full dataset. Must have a DatetimeIndex.
+        n_trim:      Number of rows trimmed from the end in the second run.
+                     Must be < len(df_full).
+        atol:        Absolute tolerance for numerical comparison.
 
     Returns:
-        LookaheadResult с passed=True если bias не обнаружен.
+        LookaheadResult with passed=True if no bias is detected.
 
     Raises:
-        ValueError: если n_trim >= len(df_full) или < 1.
-        ValueError: если pipeline_fn возвращает объект без DatetimeIndex.
+        ValueError: if n_trim >= len(df_full) or < 1.
+        ValueError: if pipeline_fn returns an object without DatetimeIndex.
 
     Example::
 
@@ -97,24 +97,24 @@ def check_lookahead(
     n = len(df_full)
     if not 1 <= n_trim < n:
         raise ValueError(
-            f"n_trim={n_trim} должен быть в [1, {n - 1}] (len(df_full)={n})."
+            f"n_trim={n_trim} must be in [1, {n - 1}] (len(df_full)={n})."
         )
 
-    # Шаг 1: прогон на полных данных
+    # Step 1: run on full data
     result_a: pd.Series | pd.DataFrame = pipeline_fn(df_full)
 
-    # Шаг 2: прогон на усечённых данных
+    # Step 2: run on trimmed data
     df_trimmed = df_full.iloc[:-n_trim]
     result_b: pd.Series | pd.DataFrame = pipeline_fn(df_trimmed)
 
-    # Проверка типов
+    # Type check
     if not isinstance(result_a.index, pd.DatetimeIndex):
         raise ValueError(
-            "pipeline_fn должен возвращать объект с pd.DatetimeIndex. "
-            f"Получен: {type(result_a.index).__name__}"
+            "pipeline_fn must return an object with pd.DatetimeIndex. "
+            f"Got: {type(result_a.index).__name__}"
         )
 
-    # Шаг 3: пересечение временных меток
+    # Step 3: intersection of timestamps
     common_idx = result_a.index.intersection(result_b.index)
     n_compared = len(common_idx)
 
@@ -123,10 +123,10 @@ def check_lookahead(
             passed=False,
             max_diff=float("inf"),
             n_compared=0,
-            details={"reason": "Нет общих временных меток для сравнения."},
+            details={"reason": "No shared timestamps for comparison."},
         )
 
-    # Шаг 4: сравнение на общих метках
+    # Step 4: compare on shared timestamps
     a_aligned = result_a.loc[common_idx]
     b_aligned = result_b.loc[common_idx]
 
@@ -155,29 +155,29 @@ def _compute_max_diff(
     b: pd.Series | pd.DataFrame,
 ) -> float:
     """
-    Вычисляет максимальное абсолютное расхождение между a и b.
+    Computes the maximum absolute difference between a and b.
 
-    Правила NaN:
-      - Оба NaN → расхождение = 0 (оба «неизвестны» — согласие).
-      - Один NaN, другой не NaN → расхождение = inf (полное несогласие;
-        пайплайн на полных данных получил значение там, где пайплайн
-        на усечённых данных не смог — признак look-ahead).
+    NaN rules:
+      - Both NaN -> difference = 0 (both "unknown" — agreement).
+      - One NaN, the other not -> difference = inf (complete disagreement;
+        the pipeline on full data obtained a value where the pipeline
+        on trimmed data could not — a sign of look-ahead).
     """
     if isinstance(a, pd.Series):
         a_vals = a.to_numpy(dtype=float, na_value=np.nan)
         b_vals = b.to_numpy(dtype=float, na_value=np.nan)
         diff = np.abs(a_vals - b_vals)
-        # Оба NaN → не расхождение
+        # Both NaN -> not a difference
         both_nan = np.isnan(a_vals) & np.isnan(b_vals)
         diff[both_nan] = 0.0
-        # Ровно один NaN → полное расхождение (inf)
+        # Exactly one NaN -> complete difference (inf)
         one_nan = np.isnan(a_vals) ^ np.isnan(b_vals)
         diff[one_nan] = np.inf
         if len(diff) == 0:
             return 0.0
         finite_max = float(np.nanmax(np.where(np.isinf(diff), np.nan, diff)))
         return float("inf") if np.any(one_nan) else finite_max
-    # DataFrame: проверяем числовые колонки
+    # DataFrame: check numeric columns
     a_df = a.select_dtypes(include=[np.number])
     b_df = b.select_dtypes(include=[np.number])
     if a_df.empty:
@@ -191,7 +191,7 @@ def _find_diff_location(
     b: pd.Series | pd.DataFrame,
     atol: float,
 ) -> dict[str, Any]:
-    """Возвращает первую временную метку с расхождением > atol."""
+    """Returns the first timestamp with a difference > atol."""
     if isinstance(a, pd.Series):
         a_vals = a.to_numpy(dtype=float, na_value=np.nan)
         b_vals = b.to_numpy(dtype=float, na_value=np.nan)

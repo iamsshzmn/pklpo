@@ -27,7 +27,7 @@ except ImportError:
 
     async_sessionmaker = AsyncSessionMaker  # type: ignore
 
-from src.config.env_validator import check_required_env_vars, get_database_url
+from src.config.settings import check_required_env_vars, get_database_url
 
 load_dotenv()
 

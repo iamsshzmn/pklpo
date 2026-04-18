@@ -1,14 +1,14 @@
 """
-Signals Module (Фаза 4) - Система торговых сигналов
+Signals Module (Phase 4) - Trading signal system.
 
-Основные компоненты:
-- Decision: торговые решения с полным контрактом
-- SignalCandidate: кандидаты на сигналы
-- SignalLive: активные сигналы
-- SignalHistory: история исполненных сигналов
-- DecisionMaker: создание решений из MTF consensus
-- SignalValidator: валидация сигналов
-- PromoteWorkflow: управление жизненным циклом
+Components:
+- Decision: trade decisions with full contract
+- SignalCandidate: signal candidates
+- SignalLive: active signals
+- SignalHistory: executed signal history
+- DecisionMaker: creates decisions from MTF consensus
+- SignalValidator: signal validation
+- PromoteWorkflow: lifecycle management
 """
 
 from .database.client import SignalsDatabaseClient

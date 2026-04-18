@@ -154,6 +154,24 @@ async def _column_is_timestamptz(table_name: str, column_name: str) -> bool:
         return bool(row and row[0] == "timestamp with time zone")
 
 
+async def _column_exists(table_name: str, column_name: str) -> bool:
+    async with get_db_session() as session:
+        res = await session.execute(
+            text(
+                """
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = :table_name
+                  AND column_name = :column_name
+                LIMIT 1
+                """
+            ),
+            {"table_name": table_name, "column_name": column_name},
+        )
+        return res.scalar() is not None
+
+
 async def _is_effectively_applied(migration_id: str) -> bool:
     detectors: dict[str, callable] = {
         "150_data_cleanup": lambda: _index_exists("idx_ohlcv_p_symbol_timeframe"),
@@ -170,6 +188,9 @@ async def _is_effectively_applied(migration_id: str) -> bool:
         "260_market_selection": lambda: _table_exists("market_scores_tf"),
         "270_swap_ohlcv_partitioned": lambda: _partitioned_table_exists(
             "swap_ohlcv_p"
+        ),
+        "320_instruments_metadata_refreshed_at_ms": lambda: _column_exists(
+            "instruments", "metadata_refreshed_at_ms"
         ),
         "290_swap_ohlcv_timestamptz": lambda: _swap_ohlcv_timestamp_columns_are_timestamptz(),
     }

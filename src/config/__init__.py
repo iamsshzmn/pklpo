@@ -1,7 +1,7 @@
 """
-Централизованная конфигурация приложения.
+Centralized application configuration.
 
-Использование:
+Usage:
     from src.config import get_settings, Settings
 
     settings = get_settings()
@@ -34,6 +34,7 @@ from .settings import (
     OKXSettings,
     RiskSettings,
     Settings,
+    check_required_env_vars,
     get_database_url,
     get_okx_credentials,
     get_settings,
@@ -52,7 +53,8 @@ __all__ = [
     "RiskSettings",
     # Main
     "Settings",
-    # Legacy helpers
+    # Helpers
+    "check_required_env_vars",
     "get_database_url",
     "get_okx_credentials",
     "get_settings",

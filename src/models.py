@@ -48,6 +48,9 @@ class Instrument(Base):
     lever = Column(Float, nullable=True)
     state = Column(String, nullable=True)
     list_time = Column(BigInteger, nullable=True)  # listing time in ms
+    metadata_refreshed_at_ms = Column(
+        BigInteger, nullable=True
+    )  # persisted catalog refresh time in ms
 
     # Swap-specific fields
     contract_val = Column(Float, nullable=True)

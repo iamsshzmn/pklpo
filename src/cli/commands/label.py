@@ -1,7 +1,7 @@
 """
-CLI команда label: маркировка баров методом triple-barrier + uniqueness sample weights.
+CLI command label: bar labeling using triple-barrier method + uniqueness sample weights.
 
-Использование:
+Usage:
     python -m src.cli.main label --symbols BTC-USDT-SWAP --pt 0.02 --sl 0.01 --max-h 48
     python -m src.cli.main label --symbols BTC-USDT-SWAP ETH-USDT-SWAP \\
         --pt 0.015 --sl 0.01 --max-h 24 --decay 0.8
@@ -24,65 +24,65 @@ logger = logging.getLogger(__name__)
 
 
 def register(subparsers) -> None:  # type: ignore[no-untyped-def]
-    """Регистрация команды label в CLI."""
+    """Register the label command in the CLI."""
     p = subparsers.add_parser(
         "label",
-        help="Маркировка баров методом triple-barrier (AFML Ch.3) + uniqueness weights",
+        help="Bar labeling using triple-barrier method (AFML Ch.3) + uniqueness weights",
     )
     p.add_argument(
         "--symbols",
         nargs="+",
         required=True,
-        help="Символы для обработки (например: BTC-USDT-SWAP ETH-USDT-SWAP)",
+        help="Symbols to process (e.g.: BTC-USDT-SWAP ETH-USDT-SWAP)",
     )
     p.add_argument(
         "--timeframe",
         default="1m",
-        help="Таймфрейм источника данных (default: 1m)",
+        help="Source data timeframe (default: 1m)",
     )
     p.add_argument(
         "--pt",
         dest="profit_take",
         type=float,
         default=0.02,
-        help="Profit take порог как доля цены (default: 0.02 = 2%%)",
+        help="Profit take threshold as fraction of price (default: 0.02 = 2%%)",
     )
     p.add_argument(
         "--sl",
         dest="stop_loss",
         type=float,
         default=0.01,
-        help="Stop loss порог как доля цены (default: 0.01 = 1%%)",
+        help="Stop loss threshold as fraction of price (default: 0.01 = 1%%)",
     )
     p.add_argument(
         "--max-h",
         dest="max_horizon",
         type=int,
         default=48,
-        help="Максимальный горизонт в барах до вертикального барьера (default: 48)",
+        help="Maximum horizon in bars until vertical barrier (default: 48)",
     )
     p.add_argument(
         "--decay",
         type=float,
         default=1.0,
-        help="Time-decay для sample weights, (0, 1] (default: 1.0 = без decay)",
+        help="Time-decay for sample weights, (0, 1] (default: 1.0 = no decay)",
     )
     p.add_argument(
         "--limit",
         type=int,
         default=None,
-        help="Лимит строк из БД (default: все данные)",
+        help="Row limit from DB (default: all data)",
     )
     p.add_argument(
         "--dry-run",
         action="store_true",
-        help="Показать параметры без запуска маркировки",
+        help="Show parameters without running labeling",
     )
     p.set_defaults(_handler=handle)
 
 
 async def handle(args) -> None:  # type: ignore[no-untyped-def]
-    """Обработчик команды label."""
+    """Handler for the label command."""
     if args.dry_run:
         _show_plan(args)
         return
@@ -108,7 +108,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
     for symbol in args.symbols:
         df = await _load_ohlcv(symbol, args.timeframe, args.limit)
         if df is None or len(df) == 0:
-            logger.warning("Нет данных для %s %s", symbol, args.timeframe)
+            logger.warning("No data for %s %s", symbol, args.timeframe)
             continue
 
         labels_df = triple_barrier_labels(df, config)
@@ -121,7 +121,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
         _log_label_summary(symbol, args.timeframe, labels_df, weights, config)
 
     logger.info(
-        "label завершён: %d символов, %d меток всего (run_id=%s)",
+        "label completed: %d symbols, %d labels total (run_id=%s)",
         len(args.symbols),
         total_labels,
         ctx.run_id[:8],
@@ -131,7 +131,7 @@ async def handle(args) -> None:  # type: ignore[no-untyped-def]
 async def _load_ohlcv(
     symbol: str, timeframe: str, limit: int | None
 ) -> pd.DataFrame | None:
-    """Загрузить OHLCV данные из БД."""
+    """Load OHLCV data from the database."""
     from src.utils.session_utils import get_db_session
 
     try:
@@ -161,7 +161,7 @@ async def _load_ohlcv(
         return df.astype(float)
 
     except Exception as e:
-        logger.error("Ошибка загрузки данных для %s %s: %s", symbol, timeframe, e)
+        logger.error("Error loading data for %s %s: %s", symbol, timeframe, e)
         return None
 
 
@@ -172,10 +172,10 @@ def _log_label_summary(
     weights: pd.Series,
     config: BarrierConfig,
 ) -> None:
-    """Вывести статистику маркировки."""
+    """Log labeling statistics."""
     n = len(labels_df)
     if n == 0:
-        logger.warning("%s %s: меток не сформировано", symbol, timeframe)
+        logger.warning("%s %s: no labels formed", symbol, timeframe)
         return
 
     counts = labels_df["label"].value_counts()
@@ -185,7 +185,7 @@ def _log_label_summary(
     avg_weight = float(weights.mean()) if len(weights) > 0 else 0.0
 
     logger.info(
-        "%s %s: %d меток | PT=%d (%.1f%%) SL=%d (%.1f%%) VERT=%d (%.1f%%) | "
+        "%s %s: %d labels | PT=%d (%.1f%%) SL=%d (%.1f%%) VERT=%d (%.1f%%) | "
         "avg_weight=%.4f | pt=%.3f sl=%.3f max_h=%d",
         symbol,
         timeframe,
@@ -201,12 +201,12 @@ def _log_label_summary(
 
 
 def _show_plan(args) -> None:  # type: ignore[no-untyped-def]
-    """Показать план без выполнения (dry-run)."""
+    """Show plan without executing (dry-run)."""
     logger.info("label dry-run:")
-    logger.info("  Символы:      %s", args.symbols)
-    logger.info("  Таймфрейм:    %s", args.timeframe)
+    logger.info("  Symbols:      %s", args.symbols)
+    logger.info("  Timeframe:    %s", args.timeframe)
     logger.info("  Profit take:  %.3f (%.1f%%)", args.profit_take, args.profit_take * 100)
     logger.info("  Stop loss:    %.3f (%.1f%%)", args.stop_loss, args.stop_loss * 100)
-    logger.info("  Max horizon:  %d баров", args.max_horizon)
+    logger.info("  Max horizon:  %d bars", args.max_horizon)
     logger.info("  Time decay:   %.2f", args.decay)
-    logger.info("  Лимит строк:  %s", args.limit or "все данные")
+    logger.info("  Row limit:    %s", args.limit or "all data")

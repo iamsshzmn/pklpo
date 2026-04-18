@@ -22,6 +22,9 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_add_indicators_parent_service_columns import (
         migrate_add_indicators_parent_service_columns,
     )
+    from src.db.migrations.migrate_add_instruments_metadata_refreshed_at_ms import (
+        migrate_add_instruments_metadata_refreshed_at_ms,
+    )
     from src.db.migrations.migrate_add_operational_reliability import (
         run_operational_reliability_migration,
     )
@@ -52,6 +55,9 @@ def get_migrations() -> list[Migration]:
     )
     from src.db.migrations.migrate_create_ops_data_quality_metrics import (
         migrate_create_ops_data_quality_metrics,
+    )
+    from src.db.migrations.migrate_create_ops_swap_repair_audit import (
+        migrate_create_ops_swap_repair_audit,
     )
     from src.db.migrations.migrate_create_positions import (
         run_migrations as mig_positions,
@@ -203,5 +209,15 @@ def get_migrations() -> list[Migration]:
             "300_indicators_parent_service_columns",
             "ensure indicators_p runtime service columns exist",
             migrate_add_indicators_parent_service_columns,
+        ),
+        Migration(
+            "310_ops_swap_repair_audit",
+            "create ops.swap_repair_audit table",
+            migrate_create_ops_swap_repair_audit,
+        ),
+        Migration(
+            "320_instruments_metadata_refreshed_at_ms",
+            "add instruments metadata_refreshed_at_ms",
+            migrate_add_instruments_metadata_refreshed_at_ms,
         ),
     ]

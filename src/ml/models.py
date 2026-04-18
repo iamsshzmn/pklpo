@@ -1,8 +1,8 @@
 """
-Общие domain-модели для ml-модуля.
+Common domain models for the ml module.
 
-Все dataclasses frozen=True для иммутабельности.
-MetaScorer — Protocol для интеграции metalabeling с signals pipeline.
+All dataclasses are frozen=True for immutability.
+MetaScorer — Protocol for integrating metalabeling with the signals pipeline.
 """
 
 from __future__ import annotations
@@ -18,12 +18,12 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class BarrierConfig:
     """
-    Конфигурация triple-barrier маркировки.
+    Configuration for triple-barrier labeling.
 
     Attributes:
-        profit_take: Верхний барьер как доля цены (например, 0.02 = 2%).
-        stop_loss: Нижний барьер как доля цены (например, 0.01 = 1%).
-        max_horizon: Максимальное число баров до вертикального барьера.
+        profit_take: Upper barrier as a price fraction (e.g., 0.02 = 2%).
+        stop_loss: Lower barrier as a price fraction (e.g., 0.01 = 1%).
+        max_horizon: Maximum number of bars until the vertical barrier.
     """
 
     profit_take: float
@@ -32,22 +32,22 @@ class BarrierConfig:
 
     def __post_init__(self) -> None:
         if self.profit_take <= 0:
-            raise ValueError(f"profit_take должен быть > 0, получен {self.profit_take}")
+            raise ValueError(f"profit_take must be > 0, got {self.profit_take}")
         if self.stop_loss <= 0:
-            raise ValueError(f"stop_loss должен быть > 0, получен {self.stop_loss}")
+            raise ValueError(f"stop_loss must be > 0, got {self.stop_loss}")
         if self.max_horizon < 1:
-            raise ValueError(f"max_horizon должен быть >= 1, получен {self.max_horizon}")
+            raise ValueError(f"max_horizon must be >= 1, got {self.max_horizon}")
 
 
 @dataclass(frozen=True)
 class LabelResult:
     """
-    Результат triple-barrier маркировки для одного бара.
+    Result of triple-barrier labeling for a single bar.
 
     Attributes:
-        label: Метка направления: +1 (profit take), -1 (stop loss), 0 (вертикальный барьер).
-        t1: Timestamp срабатывания барьера.
-        barrier_type: Тип сработавшего барьера: "pt", "sl" или "vert".
+        label: Direction label: +1 (profit take), -1 (stop loss), 0 (vertical barrier).
+        t1: Timestamp when the barrier was triggered.
+        barrier_type: Type of barrier triggered: "pt", "sl", or "vert".
     """
 
     label: int
@@ -56,29 +56,29 @@ class LabelResult:
 
     def __post_init__(self) -> None:
         if self.label not in (-1, 0, 1):
-            raise ValueError(f"label должен быть -1, 0 или +1, получен {self.label}")
+            raise ValueError(f"label must be -1, 0 or +1, got {self.label}")
         if self.barrier_type not in ("pt", "sl", "vert"):
             raise ValueError(
-                f"barrier_type должен быть 'pt', 'sl' или 'vert', получен {self.barrier_type}"
+                f"barrier_type must be 'pt', 'sl' or 'vert', got {self.barrier_type}"
             )
 
 
 class MetaScorer(Protocol):
     """
-    Protocol для интеграции metalabeling-модели с signals pipeline.
+    Protocol for integrating a metalabeling model with the signals pipeline.
 
-    Позволяет src/signals/decision/maker.py принимать любую реализацию
-    MetaLabeler без прямой зависимости от конкретного класса.
+    Allows src/signals/decision/maker.py to accept any MetaLabeler implementation
+    without a direct dependency on the concrete class.
     """
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
         """
-        Возвращает матрицу вероятностей для каждого класса.
+        Returns a probability matrix for each class.
 
         Args:
-            X: Матрица признаков, форма (n_samples, n_features).
+            X: Feature matrix, shape (n_samples, n_features).
 
         Returns:
-            np.ndarray: Матрица вероятностей, форма (n_samples, n_classes).
+            np.ndarray: Probability matrix, shape (n_samples, n_classes).
         """
         ...

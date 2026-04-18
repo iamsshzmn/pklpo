@@ -1,19 +1,19 @@
 """
 Feature Reduction: select_features (AFML Ch.8).
 
-Единая точка входа для отбора признаков перед обучением MetaLabeler.
-Поддерживает три метода:
+Single entry point for feature selection before training MetaLabeler.
+Supports three methods:
 
-1. **"mda"** (Mean Decrease Accuracy) — permutation importance через CV.
-   Рекомендуется по умолчанию. Интегрируется с PurgedKFold для корректной
-   оценки важности на временных рядах.
+1. **"mda"** (Mean Decrease Accuracy) — permutation importance via CV.
+   Recommended by default. Integrates with PurgedKFold for correct
+   importance estimation on time series.
 
-2. **"mutual_info"** — взаимная информация с целевой переменной.
-   Быстрее MDA, не требует CV. Хорошо для первичного отсева.
+2. **"mutual_info"** — mutual information with the target variable.
+   Faster than MDA, no CV required. Good for initial screening.
 
-3. **"pca_variance"** — PCA с порогом объяснённой дисперсии.
-   Возвращает оригинальные признаки с наибольшим вкладом в компоненты,
-   покрывающие >= pca_variance_threshold дисперсии.
+3. **"pca_variance"** — PCA with explained variance threshold.
+   Returns original features with the highest contribution to components
+   covering >= pca_variance_threshold of variance.
 
 Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.8
 """
@@ -44,29 +44,29 @@ def select_features(
     pca_variance_threshold: float = 0.95,
 ) -> list[str]:
     """
-    Отбирает признаки по заданному методу.
+    Selects features using the specified method.
 
     Args:
-        X:                    DataFrame с признаками (n_samples x n_features).
-        y:                    Целевая переменная (классификация).
-        method:               Метод отбора: "mda", "mutual_info", "pca_variance".
-        n_features:           Максимальное число отбираемых признаков.
-                              Если в X меньше признаков — возвращаются все.
-                              Для "pca_variance" служит верхней границей;
-                              фактическое число определяется порогом дисперсии.
-        cv:                   CV сплиттер для метода "mda".
-                              По умолчанию PurgedKFold(n_splits=5).
-        model:                sklearn-модель для метода "mda".
-                              По умолчанию RandomForestClassifier(n_estimators=100).
-        groups:               t1 Series для PurgedKFold purging (только "mda").
-        pca_variance_threshold: Минимальная доля объяснённой дисперсии для
-                              метода "pca_variance". Например, 0.95 = 95%.
+        X:                    DataFrame of features (n_samples x n_features).
+        y:                    Target variable (classification).
+        method:               Selection method: "mda", "mutual_info", "pca_variance".
+        n_features:           Maximum number of features to select.
+                              If X has fewer features, all are returned.
+                              For "pca_variance" serves as an upper bound;
+                              actual count is determined by the variance threshold.
+        cv:                   CV splitter for the "mda" method.
+                              Defaults to PurgedKFold(n_splits=5).
+        model:                sklearn model for the "mda" method.
+                              Defaults to RandomForestClassifier(n_estimators=100).
+        groups:               t1 Series for PurgedKFold purging ("mda" only).
+        pca_variance_threshold: Minimum fraction of explained variance for
+                              the "pca_variance" method. E.g., 0.95 = 95%.
 
     Returns:
-        Список имён выбранных признаков (все — ключи X.columns).
+        List of selected feature names (all keys from X.columns).
 
     Raises:
-        ValueError: при неизвестном значении method.
+        ValueError: for unknown method value.
     """
     if method == "mda":
         if model is None:
@@ -87,12 +87,12 @@ def select_features(
         pca = PCA(n_components=n_fit)
         pca.fit(X)
 
-        # Число компонент, покрывающих >= pca_variance_threshold
+        # Number of components covering >= pca_variance_threshold
         cumvar = np.cumsum(pca.explained_variance_ratio_)
         n_components = int(np.searchsorted(cumvar, pca_variance_threshold) + 1)
         n_components = min(n_components, n_features)
 
-        # Для каждого исходного признака — сумма |загрузок| по отобранным компонентам
+        # For each original feature — sum of |loadings| across selected components
         # pca.components_ shape: (n_components_fitted, n_features)
         loadings = np.abs(pca.components_[:n_components])  # (n_comp, n_feat)
         feature_contribution = loadings.sum(axis=0)  # (n_feat,)
@@ -103,6 +103,6 @@ def select_features(
         return [str(f) for f in ranked.index[:n_components]]
 
     raise ValueError(
-        f"Неизвестный метод: {method!r}. "
-        f"Допустимые: 'mda', 'mutual_info', 'pca_variance'."
+        f"Unknown method: {method!r}. "
+        f"Allowed values: 'mda', 'mutual_info', 'pca_variance'."
     )

@@ -1,20 +1,20 @@
 """
-Purged K-Fold Cross-Validation с Embargo (AFML Ch.7).
+Purged K-Fold Cross-Validation with Embargo (AFML Ch.7).
 
-Предотвращает look-ahead bias двумя механизмами:
+Prevents look-ahead bias via two mechanisms:
 
-1. **Purging**: удаляет тренировочные образцы, чей label-span (t1) перекрывается
-   с периодом тестовой выборки. Эти образцы «знают будущее» тестового периода.
+1. **Purging**: removes training samples whose label-span (t1) overlaps
+   with the test period. These samples "know the future" of the test period.
 
-2. **Embargo**: удаляет n_embargo тренировочных образцов, идущих сразу после
-   тестовой выборки. Они могут быть зависимы от тестового периода через сериальную
-   корреляцию или look-ahead в данных.
+2. **Embargo**: removes n_embargo training samples immediately after the
+   test set. They may be correlated with the test period through serial
+   correlation or look-ahead in the data.
 
-Совместимость со scikit-learn:
-    PurgedKFold наследует BaseCrossValidator и может быть передан в
-    cross_val_score, cross_validate, GridSearchCV и т.д.
+scikit-learn compatibility:
+    PurgedKFold inherits BaseCrossValidator and can be passed to
+    cross_val_score, cross_validate, GridSearchCV, etc.
 
-    Параметр t1 передаётся через аргумент groups:
+    The t1 parameter is passed via the groups argument:
         cross_val_score(model, X, y, cv=PurgedKFold(n_splits=5), groups=t1)
 
 Reference: Lopez de Prado, "Advances in Financial Machine Learning", Ch.7
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 def _n_samples(X: Any) -> int:
-    """Число образцов для DataFrame, ndarray или любого __len__-объекта."""
+    """Number of samples for a DataFrame, ndarray, or any __len__ object."""
     if hasattr(X, "shape"):
         return int(X.shape[0])
     return len(X)
@@ -40,16 +40,16 @@ def _n_samples(X: Any) -> int:
 
 class PurgedKFold(BaseCrossValidator):
     """
-    Purged K-Fold cross-validator с embargo.
+    Purged K-Fold cross-validator with embargo.
 
-    Делит временной ряд на n_splits контигуальных фолдов. Для каждого
-    фолда как тестовой выборки:
-      - Purge: тренировочные образцы с t1 >= test_start удаляются.
-      - Embargo: n_embargo образцов сразу после теста удаляются.
+    Splits a time series into n_splits contiguous folds. For each fold
+    as the test set:
+      - Purge: training samples with t1 >= test_start are removed.
+      - Embargo: n_embargo samples immediately after the test are removed.
 
     Args:
-        n_splits:    Число фолдов (>= 2).
-        embargo_pct: Доля от всего датасета для зоны embargo (e.g. 0.01 = 1%).
+        n_splits:    Number of folds (>= 2).
+        embargo_pct: Fraction of the entire dataset for the embargo zone (e.g. 0.01 = 1%).
 
     Example::
 
@@ -98,19 +98,19 @@ class PurgedKFold(BaseCrossValidator):
         groups: pd.Series | None = None,
     ):
         """
-        Генерирует пары (train_indices, test_indices) с purge и embargo.
+        Generates (train_indices, test_indices) pairs with purge and embargo.
 
         Args:
-            X:      DataFrame с DatetimeIndex или ndarray. Длина n.
-            y:      Метки (не используются для разбиения).
-            groups: pd.Series[entry_ts -> exit_ts] — t1 из triple_barrier_labels().
-                    Если None, purging не применяется (обычный KFold по времени).
+            X:      DataFrame with DatetimeIndex or ndarray. Length n.
+            y:      Labels (not used for splitting).
+            groups: pd.Series[entry_ts -> exit_ts] — t1 from triple_barrier_labels().
+                    If None, purging is not applied (regular time-based KFold).
 
         Yields:
             (train_indices, test_indices): np.ndarray[int64].
 
         Raises:
-            ValueError: если n_splits > n_samples.
+            ValueError: if n_splits > n_samples.
         """
         t1 = groups
         n = _n_samples(X)
@@ -118,10 +118,10 @@ class PurgedKFold(BaseCrossValidator):
         if self.n_splits > n:
             raise ValueError(
                 f"n_splits={self.n_splits} > n_samples={n}. "
-                "Уменьшите n_splits или увеличьте датасет."
+                "Reduce n_splits or increase the dataset size."
             )
 
-        # Контигуальные фолды по времени
+        # Contiguous time-based folds
         fold_sizes = np.full(self.n_splits, n // self.n_splits, dtype=int)
         fold_sizes[: n % self.n_splits] += 1
 
@@ -134,18 +134,18 @@ class PurgedKFold(BaseCrossValidator):
             test_end = current + fold_size
             test_indices = np.arange(test_start, test_end)
 
-            # Embargo: исключить n_embargo образцов сразу после теста
+            # Embargo: exclude n_embargo samples immediately after the test
             embargo_end = min(test_end + n_embargo, n)
 
             train_mask = np.ones(n, dtype=bool)
             train_mask[test_start:embargo_end] = False
 
-            # Purge: тренировочные образцы ДО теста с t1, перекрывающим тест
+            # Purge: training samples BEFORE the test with t1 overlapping the test
             if t1 is not None and x_index is not None and test_start > 0:
                 test_period_start = x_index[test_start]
                 t1_aligned = t1.reindex(x_index)
 
-                # Векторизованный purge по образцам до тестового фолда
+                # Vectorized purge over samples before the test fold
                 t1_before = t1_aligned.iloc[:test_start]
                 overlap = t1_before.notna() & (t1_before >= test_period_start)
                 purge_positions = np.where(overlap.values)[0]

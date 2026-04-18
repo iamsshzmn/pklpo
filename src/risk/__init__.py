@@ -1,18 +1,18 @@
 """
-Модуль управления рисками и предохранителями (Фаза 5)
+Risk management and circuit breakers module (Phase 5).
 
-Основные компоненты:
-- Sizing: расчет размеров позиций
-- Limits: управление лимитами риска
-- Guards: предохранители (circuit breaker, killswitch, DQ guards)
-- Database: схемы и клиент БД
-- CLI: интерфейс командной строки
+Components:
+- Sizing: position size calculation
+- Limits: risk limit management
+- Guards: circuit breaker, killswitch, DQ guards
+- Database: schemas and DB client
+- CLI: command-line interface
 
-Интеграция с существующими модулями:
-- positions/ - расширение расчета позиций
-- trade_recommender/ - добавление risk-aware логики
-- signals/ - интеграция с валидацией
-- market_meta/ - использование валидаторов
+Integration with existing modules:
+- positions/ - extended position calculation
+- trade_recommender/ - risk-aware logic
+- signals/ - validation integration
+- market_meta/ - validator usage
 """
 
 from .models import (
