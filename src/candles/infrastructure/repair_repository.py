@@ -1,14 +1,145 @@
 from __future__ import annotations
 
+from itertools import pairwise
 from typing import Any
 
 from sqlalchemy import text
 
+from src.candles.application.repair.ports import ListingAnchorMetadata
+from src.candles.domain.repair_timeframes import expected_next_open
+from src.candles.domain.timeframes import TF_TO_MS
 from src.candles.repository import SwapCandlesRepository
 from src.utils.session_utils import get_db_session
 
 
 class RepairCandlesRepository(SwapCandlesRepository):
+    async def get_listing_anchor_metadata(
+        self,
+        *,
+        symbol: str,
+    ) -> ListingAnchorMetadata | None:
+        async def _operation() -> ListingAnchorMetadata | None:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT list_time, metadata_refreshed_at_ms
+                        FROM instruments
+                        WHERE symbol = :symbol
+                        LIMIT 1
+                        """
+                    ),
+                    {"symbol": symbol},
+                )
+                row = result.fetchone()
+            if row is None:
+                return None
+            list_time = int(row[0]) if row[0] is not None else None
+            metadata_refreshed_at_ms = int(row[1]) if row[1] is not None else None
+            return ListingAnchorMetadata(
+                list_time_ts_ms=list_time,
+                metadata_refreshed_at_ms=metadata_refreshed_at_ms,
+            )
+
+        return await self._run_with_db_retry(_operation)
+
+    async def get_listing_time_ts_ms(self, *, symbol: str) -> int | None:
+        metadata = await self.get_listing_anchor_metadata(symbol=symbol)
+        if metadata is None:
+            return None
+        return metadata.list_time_ts_ms
+
+    async def get_coverage_bounds(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        end_ts_ms: int,
+    ) -> tuple[int | None, int | None]:
+        async def _operation() -> tuple[int | None, int | None]:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT MIN(timestamp), MAX(timestamp)
+                        FROM swap_ohlcv_p
+                        WHERE symbol = :symbol
+                          AND timeframe = :timeframe
+                          AND timestamp < :end_ts_ms
+                        """
+                    ),
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "end_ts_ms": end_ts_ms,
+                    },
+                )
+                row = result.one()
+            min_ts = int(row[0]) if row[0] is not None else None
+            max_ts = int(row[1]) if row[1] is not None else None
+            return min_ts, max_ts
+
+        return await self._run_with_db_retry(_operation)
+
+    async def find_first_gap_start_ts_ms(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> int | None:
+        if timeframe == "1M":
+            timestamps = await self.list_timestamps(
+                symbol=symbol,
+                timeframe=timeframe,
+                start_ts_ms=start_ts_ms,
+                end_ts_ms=end_ts_ms,
+            )
+            for current_ts, next_ts in pairwise(timestamps):
+                gap_start = expected_next_open(current_ts, timeframe)
+                if next_ts > gap_start:
+                    return gap_start
+            return None
+
+        step_ms = TF_TO_MS[timeframe]
+
+        async def _operation() -> int | None:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        WITH ordered AS (
+                            SELECT
+                                timestamp,
+                                LEAD(timestamp) OVER (ORDER BY timestamp) AS next_ts
+                            FROM swap_ohlcv_p
+                            WHERE symbol = :symbol
+                              AND timeframe = :timeframe
+                              AND timestamp >= :start_ts_ms
+                              AND timestamp < :end_ts_ms
+                        )
+                        SELECT timestamp + :step_ms AS gap_start_ts_ms
+                        FROM ordered
+                        WHERE next_ts IS NOT NULL
+                          AND next_ts > timestamp + :step_ms
+                        ORDER BY timestamp
+                        LIMIT 1
+                        """
+                    ),
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "start_ts_ms": start_ts_ms,
+                        "end_ts_ms": end_ts_ms,
+                        "step_ms": step_ms,
+                    },
+                )
+                gap_start = result.scalar()
+            return int(gap_start) if gap_start is not None else None
+
+        return await self._run_with_db_retry(_operation)
+
     async def list_timestamps(
         self,
         *,

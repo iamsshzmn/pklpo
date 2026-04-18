@@ -76,6 +76,24 @@ class _MarketDataPortAdapter:
             after=after,
         )
 
+    async def fetch_history_candles(
+        self,
+        *,
+        instrument_id: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> list[dict[str, Any]]:
+        # Dedicated historical range fetch for repair/backfill paths.
+        # See CcxtOKXAdapter.get_history_candles for the root-cause note on
+        # why the fast-path fetch_candles cannot be reused here.
+        return await self._adapter.get_history_candles(
+            inst_id=instrument_id,
+            bar=timeframe,
+            start_ts_ms=start_ts_ms,
+            end_ts_ms=end_ts_ms,
+        )
+
     async def fetch_instruments(
         self, instrument_type: str = "SWAP"
     ) -> list[dict[str, Any]]:

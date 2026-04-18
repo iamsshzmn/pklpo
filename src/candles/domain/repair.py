@@ -22,6 +22,12 @@ class RepairStrategy(StrEnum):
     GAP_REPAIR = "gap-repair"
 
 
+class RepairVerificationMethod(StrEnum):
+    NOT_APPLICABLE = "not-applicable"
+    PLAN_ONLY = "plan-only"
+    GAP_DETECTION = "gap-detection"
+
+
 @dataclass(frozen=True)
 class RepairWindow:
     start_ts_ms: int
@@ -69,6 +75,13 @@ class RepairPlan:
 @dataclass(frozen=True)
 class BackfillPlan(RepairPlan):
     pass
+
+
+@dataclass(frozen=True)
+class RepairVerificationSummary:
+    method: RepairVerificationMethod
+    remaining_gap_tasks: int
+    remaining_requested_bars: int
 
 
 @dataclass(frozen=True)
@@ -170,6 +183,24 @@ def count_expected_bars(*, window: RepairWindow, timeframe: str) -> int:
         count += 1
         cursor = expected_next_open(cursor, timeframe)
     return count
+
+
+def summarize_repair_verification(
+    *,
+    timestamps: list[int],
+    timeframe: str,
+    window: RepairWindow,
+) -> RepairVerificationSummary:
+    remaining_gap_tasks = detect_gap_tasks(
+        timestamps=timestamps,
+        timeframe=timeframe,
+        window=window,
+    )
+    return RepairVerificationSummary(
+        method=RepairVerificationMethod.GAP_DETECTION,
+        remaining_gap_tasks=len(remaining_gap_tasks),
+        remaining_requested_bars=sum(task.missing_bars for task in remaining_gap_tasks),
+    )
 
 
 def sanitize_repair_candle(

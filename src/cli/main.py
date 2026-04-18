@@ -13,19 +13,19 @@ logger = logging.getLogger(__name__)
 def _install_logging(verbose: bool, quiet: bool) -> None:
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
-        logger.info("🔍 Включен подробный режим логирования (DEBUG)")
+        logger.info("Verbose logging enabled (DEBUG)")
     elif quiet:
         logging.getLogger().setLevel(logging.ERROR)
-        logger.info("🔇 Включен тихий режим (только ошибки)")
+        logger.info("Quiet mode enabled (errors only)")
 
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pklpo", description="PKLPO CLI")
     parser.add_argument(
-        "--verbose", "-V", action="store_true", help="Подробный вывод (DEBUG)"
+        "--verbose", "-V", action="store_true", help="Verbose output (DEBUG)"
     )
     parser.add_argument(
-        "--quiet", "-q", action="store_true", help="Тихий режим (только ошибки)"
+        "--quiet", "-q", action="store_true", help="Quiet mode (errors only)"
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)

@@ -237,6 +237,106 @@ class CcxtOKXAdapter:
             for r in rows
         ]
 
+    async def get_history_candles(
+        self,
+        *,
+        inst_id: str,
+        bar: str = "1m",
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> list[dict[str, Any]]:
+        """Range-based candle fetch for historical backfill / gap repair.
+
+        Returns candles whose ``ts`` falls within ``[start_ts_ms, end_ts_ms)``.
+        Paginates forward using ``since = last_ts + tf_ms`` and keeps the per
+        page limit at 100 so it works against both OKX endpoints.
+
+        NOTE / root cause for the rows_written=0 bug in repair apply path
+        =================================================================
+        The fast-path :meth:`get_candles` paginates by a ``before`` cursor and
+        assumes every page returns ``limit`` (up to 300) candles. ccxt's OKX
+        ``fetch_ohlcv`` auto-switches to ``/api/v5/market/history-candles``
+        when ``since`` is older than ~24h, and silently caps ``limit`` at 100.
+        The old repair range-fetcher combined that with
+        ``since = before - limit * tf_ms`` (jump 300 bars back per iteration)
+        which caused two distinct failures:
+
+        * for small task windows (e.g. 11-bar prefix gap) the initial
+          ``since`` overshot entirely BEFORE the task range, and every
+          returned candle was filtered out, so the gap task wrote 0 rows;
+        * for larger windows the pagination jumped 300 bars back but only
+          received 100 bars per page, leaving 200-bar coverage holes per
+          iteration which also manifested as incomplete fetches.
+
+        This method is the targeted workaround: explicit range contract,
+        forward pagination, conservative page size. It intentionally does
+        NOT touch :meth:`get_candles` so the incremental swap-sync fast
+        path keeps its existing behavior.
+
+        TODO(repair-refactor):
+            * unify fast-path and repair-path fetch semantics behind a
+              single range-based port contract once the repair path is
+              stable and covered by tests;
+            * document/enforce the 100-bar history cap constant in one
+              place instead of relying on ccxt's silent clamp;
+            * reconsider forward vs backward pagination once fast-path
+              load/latency characteristics are measured.
+        """
+        if start_ts_ms >= end_ts_ms:
+            return []
+
+        symbol = _to_ccxt_symbol(inst_id)
+        tf_ms = TF_TO_MS.get(bar, 60_000)
+        ccxt_tf = _TF_TO_CCXT.get(bar, bar)
+
+        # 100 is the safe upper bound that works for both
+        # /api/v5/market/candles (cap 300) and /api/v5/market/history-candles
+        # (cap 100, enforced silently by ccxt).
+        page_limit = 100
+
+        collected: dict[int, dict[str, Any]] = {}
+        since = start_ts_ms
+
+        while since < end_ts_ms:
+            async with self._global_limiter:
+                async with self._candles_limiter:
+                    async with self._instrument_limiter(inst_id):
+                        rows = await self._exchange.fetch_ohlcv(
+                            symbol=symbol,
+                            timeframe=ccxt_tf,
+                            since=since,
+                            limit=page_limit,
+                            params={"instId": inst_id},
+                        )
+            if not rows:
+                break
+
+            newest_ts = since
+            for r in rows:
+                ts = int(r[0])
+                if ts > newest_ts:
+                    newest_ts = ts
+                if start_ts_ms <= ts < end_ts_ms and ts not in collected:
+                    collected[ts] = {
+                        "ts": ts,
+                        "open": r[1],
+                        "high": r[2],
+                        "low": r[3],
+                        "close": r[4],
+                        "volume": r[5],
+                        "volCcy": None,
+                        "volUsd": None,
+                    }
+
+            next_since = newest_ts + tf_ms
+            if next_since <= since:
+                # No forward progress — guard against infinite loops if OKX
+                # returns only stale timestamps.
+                break
+            since = next_since
+
+        return [collected[ts] for ts in sorted(collected)]
+
     async def get_instruments(self, inst_type: str = "SWAP") -> list[dict[str, Any]]:
         ccxt_type_map = {"SWAP": "swap", "SPOT": "spot", "FUTURES": "future"}
         target = ccxt_type_map.get(inst_type.upper(), inst_type.lower())

@@ -5,6 +5,7 @@ Supports:
 - quality pipeline metrics
 - swap_ohlcv sync runtime metrics
 - swap_ohlcv smoke validation metrics
+- swap repair validated result metrics
 """
 
 from __future__ import annotations
@@ -325,4 +326,87 @@ def push_swap_smoke_metrics(smoke: dict[str, Any]) -> bool:
         return pushed
     except Exception:
         logger.warning("Failed to push swap smoke metrics", exc_info=True)
+        return False
+
+
+def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) -> bool:
+    """Push validated swap repair results to Prometheus Pushgateway."""
+    if not payloads:
+        return False
+
+    normalized = payloads if isinstance(payloads, list) else [payloads]
+    try:
+        registry = CollectorRegistry()
+        label_names = ["symbol", "timeframe", "mode", "strategy"]
+
+        rows_written_gauge = Gauge(
+            "pklpo_swap_repair_rows_written",
+            "Rows written during a validated swap repair run",
+            label_names,
+            registry=registry,
+        )
+        gap_tasks_gauge = Gauge(
+            "pklpo_swap_repair_gap_tasks",
+            "Planned gap tasks for a validated swap repair run",
+            label_names,
+            registry=registry,
+        )
+        requested_bars_gauge = Gauge(
+            "pklpo_swap_repair_requested_bars",
+            "Requested bars for a validated swap repair run",
+            label_names,
+            registry=registry,
+        )
+        remaining_gap_tasks_gauge = Gauge(
+            "pklpo_swap_repair_remaining_gap_tasks",
+            "Remaining gap tasks after a validated swap repair run",
+            label_names,
+            registry=registry,
+        )
+        remaining_requested_bars_gauge = Gauge(
+            "pklpo_swap_repair_remaining_requested_bars",
+            "Remaining requested bars after a validated swap repair run",
+            label_names,
+            registry=registry,
+        )
+        verified_gauge = Gauge(
+            "pklpo_swap_repair_verified",
+            "Whether a validated swap repair result is fully verified (1/0)",
+            label_names,
+            registry=registry,
+        )
+        auto_apply_incomplete_gauge = Gauge(
+            "pklpo_swap_repair_auto_apply_incomplete",
+            "Whether a validated swap repair result is an incomplete auto-apply (1/0)",
+            label_names,
+            registry=registry,
+        )
+
+        for payload in normalized:
+            labels = (
+                str(payload.get("symbol", "")),
+                str(payload.get("timeframe", "")),
+                str(payload.get("mode", "")),
+                str(payload.get("strategy", "")),
+            )
+            rows_written_gauge.labels(*labels).set(float(payload.get("rows_written", 0)))
+            gap_tasks_gauge.labels(*labels).set(float(payload.get("gap_tasks", 0)))
+            requested_bars_gauge.labels(*labels).set(float(payload.get("requested_bars", 0)))
+            remaining_gap_tasks_gauge.labels(*labels).set(
+                float(payload.get("remaining_gap_tasks", 0))
+            )
+            remaining_requested_bars_gauge.labels(*labels).set(
+                float(payload.get("remaining_requested_bars", 0))
+            )
+            verified_gauge.labels(*labels).set(1.0 if payload.get("verified") else 0.0)
+            auto_apply_incomplete_gauge.labels(*labels).set(
+                1.0 if payload.get("auto_apply_incomplete") else 0.0
+            )
+
+        pushed = _push_registry(registry, job_name="swap_repair_v1")
+        if pushed:
+            logger.info("Swap repair metrics pushed (%d payloads)", len(normalized))
+        return pushed
+    except Exception:
+        logger.warning("Failed to push swap repair metrics", exc_info=True)
         return False

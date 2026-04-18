@@ -1,8 +1,8 @@
 """
-Иерархия исключений для модуля market_meta.
+Exception hierarchy for the market_meta module.
 
-Предоставляет специфичные исключения для различных типов ошибок,
-встречающихся в модуле market_meta.
+Provides specific exceptions for the various error types
+encountered in the market_meta module.
 """
 
 from typing import Any
@@ -10,9 +10,9 @@ from typing import Any
 
 class MarketMetaError(Exception):
     """
-    Базовое исключение модуля market_meta.
+    Base exception for the market_meta module.
 
-    Все исключения модуля должны наследоваться от этого класса.
+    All module exceptions must inherit from this class.
     """
 
     def __init__(self, message: str, context: dict[str, Any] | None = None):
@@ -28,24 +28,24 @@ class MarketMetaError(Exception):
 
 
 class MetadataError(MarketMetaError):
-    """Базовое исключение для ошибок, связанных с метаданными"""
+    """Base exception for metadata-related errors"""
 
     pass
 
 
 class MetadataStaleError(MetadataError):
     """
-    Метаданные устарели или недоступны.
+    Metadata is stale or unavailable.
 
-    Возникает когда:
-    - Кэш метаданных истек
-    - Не удалось обновить метаданные
-    - Метаданные повреждены
+    Raised when:
+    - The metadata cache has expired
+    - Metadata could not be refreshed
+    - Metadata is corrupted
     """
 
     def __init__(
         self,
-        message: str = "Метаданные устарели",
+        message: str = "Metadata is stale",
         last_refresh: str | None = None,
         ttl_hours: float | None = None,
     ):
@@ -59,25 +59,25 @@ class MetadataStaleError(MetadataError):
 
 class MetadataNotFoundError(MetadataError):
     """
-    Запрашиваемые метаданные не найдены.
+    Requested metadata not found.
 
-    Возникает когда:
-    - Инструмент не существует
-    - Инструмент не торгуется
-    - Инструмент удален
+    Raised when:
+    - The instrument does not exist
+    - The instrument is not traded
+    - The instrument has been removed
     """
 
     def __init__(self, symbol: str, message: str | None = None):
         if message is None:
-            message = f"Метаданные для инструмента {symbol} не найдены"
+            message = f"Metadata for instrument {symbol} not found"
         super().__init__(message, {"symbol": symbol})
 
 
 class ValidationError(MarketMetaError):
     """
-    Ошибка валидации данных.
+    Data validation error.
 
-    Базовое исключение для всех ошибок валидации.
+    Base exception for all validation errors.
     """
 
     def __init__(
@@ -97,36 +97,36 @@ class ValidationError(MarketMetaError):
 
 class OrderValidationError(ValidationError):
     """
-    Ошибка валидации ордера.
+    Order validation error.
 
-    Возникает при проверке параметров ордера:
-    - Неверная цена
-    - Неверное количество
-    - Превышение лимитов
+    Raised when checking order parameters:
+    - Invalid price
+    - Invalid quantity
+    - Limit exceeded
     """
 
     def __init__(
         self, symbol: str, violations: list[str], warnings: list[str] | None = None
     ):
         count = len(violations)
-        plural = "нарушение" if count == 1 else "нарушения"
-        message = f"Ошибка валидации ордера для {symbol}: {count} {plural}"
+        plural = "violation" if count == 1 else "violations"
+        message = f"Order validation error for {symbol}: {count} {plural}"
         super().__init__(message, violations, warnings, context={"symbol": symbol})
         self.symbol = symbol
 
 
 class PriceValidationError(ValidationError):
     """
-    Ошибка валидации цены.
+    Price validation error.
 
-    Возникает когда:
-    - Цена не соответствует размеру тика
-    - Цена вне допустимого диапазона
-    - Цена равна нулю или отрицательная
+    Raised when:
+    - Price does not match tick size
+    - Price is outside the allowed range
+    - Price is zero or negative
     """
 
     def __init__(self, symbol: str, price: float, reason: str):
-        message = f"Неверная цена {price} для {symbol}: {reason}"
+        message = f"Invalid price {price} for {symbol}: {reason}"
         super().__init__(
             message,
             context={"symbol": symbol, "price": price, "reason": reason},
@@ -135,16 +135,16 @@ class PriceValidationError(ValidationError):
 
 class QuantityValidationError(ValidationError):
     """
-    Ошибка валидации количества.
+    Quantity validation error.
 
-    Возникает когда:
-    - Количество меньше минимального
-    - Количество больше максимального
-    - Количество не соответствует размеру лота
+    Raised when:
+    - Quantity is below the minimum
+    - Quantity exceeds the maximum
+    - Quantity does not match lot size
     """
 
     def __init__(self, symbol: str, quantity: float, reason: str):
-        message = f"Неверное количество {quantity} для {symbol}: {reason}"
+        message = f"Invalid quantity {quantity} for {symbol}: {reason}"
         super().__init__(
             message,
             context={"symbol": symbol, "quantity": quantity, "reason": reason},
@@ -152,19 +152,19 @@ class QuantityValidationError(ValidationError):
 
 
 class RiskError(MarketMetaError):
-    """Базовое исключение для ошибок, связанных с рисками"""
+    """Base exception for risk-related errors"""
 
     pass
 
 
 class RiskLimitBreach(RiskError):
     """
-    Превышен лимит риска.
+    Risk limit breached.
 
-    Возникает когда:
-    - Превышен лимит позиции
-    - Превышена общая экспозиция
-    - Превышен дневной лимит убытков
+    Raised when:
+    - Position limit is exceeded
+    - Total exposure is exceeded
+    - Daily loss limit is exceeded
     """
 
     def __init__(
@@ -184,40 +184,40 @@ class RiskLimitBreach(RiskError):
 
 class PositionLimitBreach(RiskLimitBreach):
     """
-    Превышен лимит позиции для конкретного инструмента.
+    Position limit breached for a specific instrument.
     """
 
     def __init__(self, symbol: str, quantity: float, max_quantity: float):
-        message = f"Превышен лимит позиции для {symbol}: {quantity} > {max_quantity}"
+        message = f"Position limit breached for {symbol}: {quantity} > {max_quantity}"
         super().__init__(message, "position_limit", quantity, max_quantity)
         self.symbol = symbol
 
 
 class ExposureLimitBreach(RiskLimitBreach):
     """
-    Превышена общая экспозиция аккаунта.
+    Total account exposure exceeded.
     """
 
     def __init__(self, current_exposure: float, max_exposure: float):
-        message = f"Превышена общая экспозиция: {current_exposure} > {max_exposure}"
+        message = f"Total exposure exceeded: {current_exposure} > {max_exposure}"
         super().__init__(message, "total_exposure", current_exposure, max_exposure)
 
 
 class IntegrationError(MarketMetaError):
-    """Базовое исключение для ошибок интеграции с внешними системами"""
+    """Base exception for errors integrating with external systems"""
 
     pass
 
 
 class OKXIntegrationError(IntegrationError):
     """
-    Ошибка интеграции с OKX API.
+    OKX API integration error.
 
-    Возникает при:
-    - Ошибках сети
-    - Ошибках API (4xx, 5xx)
-    - Превышении лимитов запросов
-    - Неверных ответах API
+    Raised on:
+    - Network errors
+    - API errors (4xx, 5xx)
+    - Rate limit exceeded
+    - Invalid API responses
     """
 
     def __init__(
@@ -240,13 +240,13 @@ class OKXIntegrationError(IntegrationError):
 
 class OKXRateLimitError(OKXIntegrationError):
     """
-    Превышен лимит запросов к OKX API.
+    OKX API rate limit exceeded.
     """
 
     def __init__(
         self, retry_after: int | None = None, context: dict[str, Any] | None = None
     ):
-        message = "Превышен лимит запросов к OKX API"
+        message = "OKX API rate limit exceeded"
         merged_context = dict(context) if context else {}
         if retry_after is not None:
             merged_context["retry_after"] = retry_after
@@ -255,7 +255,7 @@ class OKXRateLimitError(OKXIntegrationError):
 
 class OKXNetworkError(OKXIntegrationError):
     """
-    Ошибка сети при обращении к OKX API.
+    Network error when calling OKX API.
     """
 
     def __init__(
@@ -263,7 +263,7 @@ class OKXNetworkError(OKXIntegrationError):
         original_error: Exception | None = None,
         context: dict[str, Any] | None = None,
     ):
-        message = "Ошибка сети при обращении к OKX API"
+        message = "Network error when calling OKX API"
         merged_context = dict(context) if context else {}
         if original_error:
             merged_context["original_error"] = str(original_error)
@@ -272,12 +272,12 @@ class OKXNetworkError(OKXIntegrationError):
 
 class ConfigurationError(MarketMetaError):
     """
-    Ошибка конфигурации модуля.
+    Module configuration error.
 
-    Возникает при:
-    - Отсутствии обязательных параметров
-    - Неверных значениях конфигурации
-    - Конфликтах в настройках
+    Raised on:
+    - Missing required parameters
+    - Invalid configuration values
+    - Conflicting settings
     """
 
     def __init__(
@@ -298,19 +298,19 @@ class ConfigurationError(MarketMetaError):
 
 
 class CacheError(MarketMetaError):
-    """Базовое исключение для ошибок кэширования"""
+    """Base exception for caching errors"""
 
     pass
 
 
 class CacheCorruptionError(CacheError):
     """
-    Ошибка повреждения кэша.
+    Cache corruption error.
 
-    Возникает когда:
-    - Данные кэша повреждены
-    - Неверный формат данных
-    - Ошибка десериализации
+    Raised when:
+    - Cached data is corrupted
+    - Data format is invalid
+    - Deserialization fails
     """
 
     def __init__(self, message: str, cache_key: str | None = None):
@@ -320,18 +320,18 @@ class CacheCorruptionError(CacheError):
         super().__init__(message, context)
 
 
-# Утилитарные функции для работы с исключениями
+# Utility functions for working with exceptions
 
 
 def is_retryable_error(error: Exception) -> bool:
     """
-    Проверяет, является ли ошибка повторяемой.
+    Checks whether an error is retryable.
 
     Args:
-        error: Исключение для проверки
+        error: Exception to check
 
     Returns:
-        True если ошибку можно повторить
+        True if the error can be retried
     """
     if isinstance(error, OKXNetworkError):
         return True
@@ -342,26 +342,26 @@ def is_retryable_error(error: Exception) -> bool:
 
 def get_error_context(error: MarketMetaError) -> dict[str, Any]:
     """
-    Получает контекст ошибки.
+    Retrieves the error context.
 
     Args:
-        error: Исключение модуля market_meta
+        error: market_meta module exception
 
     Returns:
-        Словарь с контекстом ошибки
+        Dictionary containing the error context
     """
     return error.context.copy()
 
 
 def format_error_message(error: MarketMetaError) -> str:
     """
-    Форматирует сообщение об ошибке с контекстом.
+    Formats an error message with context.
 
     Args:
-        error: Исключение модуля market_meta
+        error: market_meta module exception
 
     Returns:
-        Отформатированное сообщение об ошибке
+        Formatted error message
     """
     if error.context:
         context_parts = []

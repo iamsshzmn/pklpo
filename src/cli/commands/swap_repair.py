@@ -15,6 +15,10 @@ def _parse_utc_timestamp_ms(value: str) -> int:
     return int(dt.astimezone(UTC).timestamp() * 1000)
 
 
+def _utc_now_ts_ms() -> int:
+    return int(datetime.now(UTC).timestamp() * 1000)
+
+
 def register(subparsers) -> None:
     parser = subparsers.add_parser("swap-repair", help="Historical backfill and gap repair")
     parser.add_argument("--symbols", nargs="+", default=["BTC-USDT-SWAP"])
@@ -42,23 +46,27 @@ def register(subparsers) -> None:
 async def handle(args) -> None:
     symbols = list(getattr(args, "symbols", []) or [])
     timeframes = list(getattr(args, "timeframes", []) or [])
-    if len(symbols) != 1 or len(timeframes) != 1:
-        raise ValueError("MVP swap-repair supports exactly one symbol and one timeframe per run")
+    if len(symbols) != 1:
+        raise ValueError("swap-repair supports exactly one symbol per run")
+    if not timeframes:
+        raise ValueError("swap-repair requires at least one timeframe")
 
-    summary = await run_swap_repair(
-        symbol=symbols[0],
-        timeframe=timeframes[0],
-        start_ts_ms=_parse_utc_timestamp_ms(args.start),
-        end_ts_ms=min(
-            _parse_utc_timestamp_ms(args.end),
-            int(datetime.now(UTC).timestamp() * 1000),
-        ),
-        mode=RepairExecutionMode(args.mode),
-        strategy=RepairStrategy(args.repair_strategy),
-        max_gap_tasks_per_run=args.max_gap_tasks_per_run,
-        max_requested_bars_per_run=args.max_requested_bars_per_run,
-        max_range_days=args.max_range_days,
-        max_fail_ratio=args.max_fail_ratio,
-        padding_bars=args.padding_bars,
-    )
-    print(json.dumps(summary, ensure_ascii=True, indent=2))
+    start_ts_ms = _parse_utc_timestamp_ms(args.start)
+    requested_end_ts_ms = _parse_utc_timestamp_ms(args.end)
+    summaries = []
+    for timeframe in timeframes:
+        summary = await run_swap_repair(
+            symbol=symbols[0],
+            timeframe=timeframe,
+            start_ts_ms=start_ts_ms,
+            end_ts_ms=min(requested_end_ts_ms, _utc_now_ts_ms()),
+            mode=RepairExecutionMode(args.mode),
+            strategy=RepairStrategy(args.repair_strategy),
+            max_gap_tasks_per_run=args.max_gap_tasks_per_run,
+            max_requested_bars_per_run=args.max_requested_bars_per_run,
+            max_range_days=args.max_range_days,
+            max_fail_ratio=args.max_fail_ratio,
+            padding_bars=args.padding_bars,
+        )
+        summaries.append(summary)
+    print(json.dumps(summaries, ensure_ascii=True, indent=2))

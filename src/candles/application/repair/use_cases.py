@@ -8,11 +8,12 @@ from src.candles.domain.repair import (
     RepairExecutionMode,
     RepairPlan,
     RepairStrategy,
+    RepairVerificationMethod,
     RepairWindow,
     clamp_window_to_closed_bars,
-    count_expected_bars,
     detect_gap_tasks,
     sanitize_repair_candle,
+    summarize_repair_verification,
     validate_repair_candles,
 )
 from src.candles.domain.repair_timeframes import window_padding
@@ -68,6 +69,9 @@ class _BaseRepairUseCase:
                 fetch_calls=0,
                 rows_written=0,
                 verified=False,
+                remaining_gap_tasks=plan.gap_tasks,
+                remaining_requested_bars=plan.requested_bars,
+                verification_method=RepairVerificationMethod.PLAN_ONLY,
                 watermark_updated=False,
             )
 
@@ -79,6 +83,9 @@ class _BaseRepairUseCase:
                 fetch_calls=0,
                 rows_written=0,
                 verified=False,
+                remaining_gap_tasks=plan.gap_tasks,
+                remaining_requested_bars=plan.requested_bars,
+                verification_method=RepairVerificationMethod.PLAN_ONLY,
                 watermark_updated=False,
             )
 
@@ -109,16 +116,18 @@ class _BaseRepairUseCase:
                 candles=validated,
             )
 
-        verified_count = await self._coverage_query.count_candles(
+        verified_timestamps = await self._coverage_query.list_timestamps(
             symbol=plan.symbol,
             timeframe=plan.timeframe,
             start_ts_ms=plan.window.start_ts_ms,
             end_ts_ms=plan.window.end_ts_ms,
         )
-        verified = verified_count >= count_expected_bars(
-            window=plan.window,
+        verification = summarize_repair_verification(
+            timestamps=verified_timestamps,
             timeframe=plan.timeframe,
+            window=plan.window,
         )
+        verified = verification.remaining_gap_tasks == 0
         fail_ratio = 0.0 if total_requested == 0 else max(total_requested - rows_written, 0) / total_missing
         if fail_ratio > command.guardrails.max_fail_ratio:
             raise ValueError("apply exceeded max_fail_ratio")
@@ -131,6 +140,9 @@ class _BaseRepairUseCase:
             rows_written=rows_written,
             fetch_calls=fetch_calls,
             verified=verified,
+            verification_method=verification.method.value,
+            remaining_gap_tasks=verification.remaining_gap_tasks,
+            remaining_requested_bars=verification.remaining_requested_bars,
         )
         return RepairResult(
             mode=command.mode,
@@ -139,6 +151,9 @@ class _BaseRepairUseCase:
             fetch_calls=fetch_calls,
             rows_written=rows_written,
             verified=verified,
+            remaining_gap_tasks=verification.remaining_gap_tasks,
+            remaining_requested_bars=verification.remaining_requested_bars,
+            verification_method=verification.method,
             watermark_updated=False,
         )
 

@@ -1,11 +1,35 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from src.candles.ports import TelemetryPort
 
 
+@dataclass(frozen=True)
+class ListingAnchorMetadata:
+    list_time_ts_ms: int | None
+    metadata_refreshed_at_ms: int | None
+
+
 class CandleCoverageQueryPort(Protocol):
+    async def get_coverage_bounds(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        end_ts_ms: int,
+    ) -> tuple[int | None, int | None]: ...
+
+    async def find_first_gap_start_ts_ms(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> int | None: ...
+
     async def list_timestamps(
         self,
         *,
@@ -46,9 +70,21 @@ class RepairCandleStorePort(Protocol):
     ) -> int: ...
 
 
+class RepairAnchorMetadataPort(Protocol):
+    async def get_listing_anchor_metadata(
+        self,
+        *,
+        symbol: str,
+    ) -> ListingAnchorMetadata | None: ...
+
+    async def get_listing_time_ts_ms(self, *, symbol: str) -> int | None: ...
+
+
 __all__ = [
     "CandleCoverageQueryPort",
     "HistoricalCandleSourcePort",
+    "ListingAnchorMetadata",
+    "RepairAnchorMetadataPort",
     "RepairCandleStorePort",
     "TelemetryPort",
 ]

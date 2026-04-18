@@ -4,6 +4,7 @@ Standalone helper for loading instruments from OKX API into the database.
 """
 
 import asyncio
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -47,6 +48,7 @@ async def save_instruments_to_db(instruments: list, inst_type: str) -> tuple[int
     async with get_db_session() as session:
         new_count = 0
         updated_count = 0
+        metadata_refreshed_at_ms = int(datetime.now(UTC).timestamp() * 1000)
         symbols = [item.get("instId") for item in instruments if item.get("instId")]
         existing_inst_ids: set[str] = set()
         if symbols:
@@ -78,6 +80,7 @@ async def save_instruments_to_db(instruments: list, inst_type: str) -> tuple[int
                     list_time=(
                         int(item.get("listTime", 0)) if item.get("listTime") else None
                     ),
+                    metadata_refreshed_at_ms=metadata_refreshed_at_ms,
                     contract_val=(
                         float(item.get("ctVal", 0)) if item.get("ctVal") else None
                     ),
@@ -107,6 +110,7 @@ async def save_instruments_to_db(instruments: list, inst_type: str) -> tuple[int
                             if item.get("listTime")
                             else None
                         ),
+                        "metadata_refreshed_at_ms": metadata_refreshed_at_ms,
                         "contract_val": (
                             float(item.get("ctVal", 0)) if item.get("ctVal") else None
                         ),
@@ -142,6 +146,7 @@ async def save_instruments_to_db(instruments: list, inst_type: str) -> tuple[int
 async def mark_missing_instruments_not_live(instruments: list, inst_type: str) -> int:
     """Mark SWAP instruments missing from the latest OKX snapshot as non-live."""
     current_symbols = {item.get("instId") for item in instruments if item.get("instId")}
+    metadata_refreshed_at_ms = int(datetime.now(UTC).timestamp() * 1000)
     async with get_db_session() as session:
         stmt = (
             update(Instrument)
@@ -150,7 +155,7 @@ async def mark_missing_instruments_not_live(instruments: list, inst_type: str) -
                 Instrument.settle_ccy == "USDT",
                 Instrument.state == "live",
             )
-            .values(state="expired")
+            .values(state="expired", metadata_refreshed_at_ms=metadata_refreshed_at_ms)
         )
         if current_symbols:
             stmt = stmt.where(~Instrument.inst_id.in_(current_symbols))
