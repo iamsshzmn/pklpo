@@ -15,3 +15,15 @@ class InstrumentSqlRepository:
                 {"symbol": symbol},
             )
             return result.fetchone() is not None
+
+    async def find_missing_symbols(self, symbols: list[str]) -> list[str]:
+        """Return symbols from the given list that are absent from the instruments table."""
+        if not symbols:
+            return []
+        async with get_db_session() as session:
+            result = await session.execute(
+                text("SELECT symbol FROM instruments WHERE symbol = ANY(:symbols)"),
+                {"symbols": symbols},
+            )
+            found = {row[0] for row in result.fetchall()}
+        return [s for s in symbols if s not in found]
