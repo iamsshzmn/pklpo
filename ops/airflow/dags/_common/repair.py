@@ -116,11 +116,9 @@ def utc_now_ts_ms() -> int:
 
 
 def _normalize_swap_repair_symbol(value: Any) -> str:
-    symbol = str(value or DEFAULT_SWAP_REPAIR_SYMBOL)
-    if symbol != DEFAULT_SWAP_REPAIR_SYMBOL:
-        raise ValueError(
-            f"Unsupported repair symbol: {symbol}. Expected one of: {DEFAULT_SWAP_REPAIR_SYMBOL}"
-        )
+    symbol = str(value or DEFAULT_SWAP_REPAIR_SYMBOL).strip()
+    if not symbol:
+        raise ValueError("swap_repair field 'symbol' must be a non-empty OKX instId (e.g. BTC-USDT-SWAP)")
     return symbol
 
 

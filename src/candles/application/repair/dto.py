@@ -70,7 +70,7 @@ class RepairPreview:
     gap_tasks: int
     requested_bars: int
     expected_iteration_count: int
-    guardrail_risk: bool
+    guardrail_risk: str  # "ok" | "medium" | "high"
     guardrail_violations: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:

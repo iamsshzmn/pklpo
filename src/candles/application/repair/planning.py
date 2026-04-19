@@ -11,6 +11,22 @@ if TYPE_CHECKING:
 
 _DAY_MS = 86_400_000
 
+TIMEFRAME_BARS_PER_DAY: dict[str, float] = {
+    "1m": 1440.0,
+    "1H": 24.0,
+    "4H": 6.0,
+    "1D": 1.0,
+    "1W": 1.0 / 7,
+    "1M": 1.0 / 30,
+}
+
+
+def min_bars_for_window(start_ts_ms: int, end_ts_ms: int, timeframe: str) -> int:
+    """Return the minimum expected bars for a window, with 5% padding."""
+    bars_per_day = TIMEFRAME_BARS_PER_DAY.get(timeframe, 1.0)
+    span_days = (end_ts_ms - start_ts_ms) / _DAY_MS
+    return max(1, int(span_days * bars_per_day * 1.05))
+
 
 @dataclass(frozen=True)
 class AutoApplyWindowPlan:

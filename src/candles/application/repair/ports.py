@@ -48,6 +48,34 @@ class CandleCoverageQueryPort(Protocol):
         end_ts_ms: int,
     ) -> int: ...
 
+    async def list_missing_timestamps(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+        interval_ms: int,
+    ) -> list[int]: ...
+
+    async def list_corrupted_timestamps(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> list[int]: ...
+
+    async def is_features_ready(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        closed_until_ts_ms: int,
+        interval_ms: int,
+    ) -> bool: ...
+
 
 class HistoricalCandleSourcePort(Protocol):
     async def fetch_range(

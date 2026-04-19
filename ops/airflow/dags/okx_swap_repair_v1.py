@@ -5,10 +5,10 @@ Production-oriented manual DAG contract for OKX swap historical repair.
 Purpose
 - Reuse ``src.candles.interfaces.run_swap_repair`` as the single business entrypoint.
 - Keep Airflow as a thin orchestration layer with strict preflight validation.
-- Stay safe-by-default: no schedule, one symbol, bounded window, repair-safe timeframes only.
+- Stay safe-by-default: no schedule, bounded window, repair-safe timeframes only.
 
 Run parameters (via dag_run.conf)
-- symbol: str, optional, only ``BTC-USDT-SWAP`` is supported in v1
+- symbol: str, required, any valid OKX swap instId (e.g. ``BTC-USDT-SWAP``)
 - timeframe: str, optional legacy single-timeframe field
 - timeframes: list[str] | comma-separated str, optional, runs repair for each requested timeframe
 - start: UTC ISO-8601 timestamp, optional
@@ -26,7 +26,7 @@ Run parameters (via dag_run.conf)
 
 Contract
 - `apply` requires explicit `start` and `end`, or `auto_apply_anchor` for empty-coverage bootstrap
-- only `BTC-USDT-SWAP` is allowed in v1
+- symbol must be a valid OKX swap instId; validation is delegated to preflight and the application layer
 - each requested timeframe must stay within the current repair-safe OKX set
 - `apply` succeeds only when every timeframe result reports `verified=true`,
   `remaining_gap_tasks=0`, `remaining_requested_bars=0`, and
@@ -39,10 +39,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
-
-from airflow import DAG
-from airflow.models.param import Param
-from airflow.operators.python import PythonOperator
 
 from _common import (
     SwapRepairValidatedConf,
@@ -58,11 +54,18 @@ from _common import (
     utc_now_ts_ms as _utc_now_ts_ms,
     validate_swap_repair_xcom_payload,
 )
+from airflow import DAG
+from airflow.models.param import Param
+from airflow.operators.python import PythonOperator
+
 from src.candles.bootstrap import create_candles_airflow_callbacks
 from src.candles.domain.repair import RepairExecutionMode, RepairStrategy
 from src.candles.interfaces import repair as repair_interface
 from src.candles.interfaces.repair_audit import write_swap_repair_audit
 from src.candles.observability.prometheus import push_swap_repair_metrics
+from src.market_meta.application.validate_instrument import validate_instrument_exists
+from src.market_meta.domain.exceptions import InstrumentNotFoundError
+from src.market_meta.infrastructure.sql_adapter import InstrumentSqlRepository
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +74,6 @@ if TYPE_CHECKING:
 
 DEFAULT_SYMBOL = "BTC-USDT-SWAP"
 DEFAULT_WINDOW_HOURS = 6
-SUPPORTED_SYMBOLS = (DEFAULT_SYMBOL,)
 SUPPORTED_TIMEFRAMES = ("1m", "1H", "4H", "1D", "1W", "1M")
 
 try:
@@ -201,6 +203,27 @@ def _run_auto_apply_for_timeframe(
             ),
         )
     )
+
+
+def preflight_instrument_check_task(**context) -> None:
+    conf = _get_run_conf(context)
+    log_ctx = _build_log_context(context)
+    env = get_dag_env()
+    setup_env(env)
+
+    symbol = str(conf.get("symbol") or DEFAULT_SYMBOL).strip()
+    logger.info("preflight_instrument_check start %s symbol=%s", log_ctx, symbol)
+    if not symbol:
+        raise ValueError("preflight: symbol must be a non-empty OKX instId")
+
+    repository = InstrumentSqlRepository()
+    try:
+        _get_loop().run_until_complete(
+            validate_instrument_exists(symbol, repository=repository)
+        )
+    except InstrumentNotFoundError:
+        raise
+    logger.info("preflight_instrument_check pass %s symbol=%s", log_ctx, symbol)
 
 
 def validate_swap_repair_conf_task(**context) -> dict[str, Any]:
@@ -359,7 +382,6 @@ def validate_swap_repair_xcom_task(**context) -> list[dict[str, Any]]:
         try:
             normalized = validate_swap_repair_xcom_payload(
                 normalized,
-                allowed_symbols=SUPPORTED_SYMBOLS,
                 allowed_timeframes=SUPPORTED_TIMEFRAMES,
             )
         except ValueError as exc:
@@ -434,7 +456,7 @@ dag = DAG(
     default_args=default_args,
     tags=["candles", "repair", "manual"],
     params={
-        "symbol": Param(DEFAULT_SYMBOL, type="string", enum=list(SUPPORTED_SYMBOLS)),
+        "symbol": Param(None, type=["null", "string"], description="Required: OKX swap instId (e.g. BTC-USDT-SWAP)"),
         "timeframes": Param(
             list(SUPPORTED_TIMEFRAMES),
             type="array",
@@ -475,6 +497,12 @@ dag = DAG(
     },
 )
 
+preflight_instrument_check = PythonOperator(
+    task_id="preflight_instrument_check",
+    python_callable=preflight_instrument_check_task,
+    dag=dag,
+)
+
 validate_swap_repair_conf = PythonOperator(
     task_id="validate_swap_repair_conf",
     python_callable=validate_swap_repair_conf_task,
@@ -505,4 +533,4 @@ publish_swap_repair_ops = PythonOperator(
     dag=dag,
 )
 
-validate_swap_repair_conf >> swap_repair_preview >> swap_repair >> validate_swap_repair_xcom >> publish_swap_repair_ops
+preflight_instrument_check >> validate_swap_repair_conf >> swap_repair_preview >> swap_repair >> validate_swap_repair_xcom >> publish_swap_repair_ops

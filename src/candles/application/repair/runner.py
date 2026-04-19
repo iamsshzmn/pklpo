@@ -121,6 +121,19 @@ async def preview_repair_timeframe(
     guardrail_violations = tuple(
         violation.code for violation in guardrails.check(plan)
     )
+    if guardrail_violations:
+        _guardrail_risk = "high"
+    elif guardrails.max_requested_bars_per_run > 0:
+        ratio = plan.requested_bars / guardrails.max_requested_bars_per_run
+        if ratio >= 0.9:
+            _guardrail_risk = "high"
+        elif ratio >= 0.5:
+            _guardrail_risk = "medium"
+        else:
+            _guardrail_risk = "ok"
+    else:
+        _guardrail_risk = "ok"
+
     if plan.requested_bars <= 0:
         expected_iteration_count = 0
     elif auto_apply_window:
@@ -144,7 +157,7 @@ async def preview_repair_timeframe(
         gap_tasks=plan.gap_tasks,
         requested_bars=plan.requested_bars,
         expected_iteration_count=expected_iteration_count,
-        guardrail_risk=bool(guardrail_violations),
+        guardrail_risk=_guardrail_risk,
         guardrail_violations=guardrail_violations,
     )
 

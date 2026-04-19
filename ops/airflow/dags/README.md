@@ -5,6 +5,7 @@
 ## Содержание
 
 - [okx_swap_ohlcv_sync_v2](#okx_swap_ohlcv_sync_v2) - Синхронизация OHLCV данных
+- [okx_swap_repair_v1](#okx_swap_repair_v1) - Ручной repair пробелов и повреждённых свечей
 - [features_calc_short](#features_calc_short) - Расчёт коротких фичей
 - [market_selection](#market_selection) - Выбор торговых пар
 - [features_calc](#features_calc) - Расчёт всех фичей
@@ -415,6 +416,97 @@ airflow connections list | grep pklpo_db
 2. Проверить XCom для статистики
 3. Проверить свежесть данных (freshness gate может пропускать выполнение)
 4. Для ручных запусков использовать `{"mode":"..."}` в conf
+
+---
+
+---
+
+## okx_swap_repair_v1
+
+**DAG ID:** `okx_swap_repair_v1`
+
+**Назначение:**
+- Ручной bounded repair OHLCV-данных: заполнение пробелов и коррекция повреждённых свечей для OKX SWAP-инструментов
+- Thin orchestration layer над `src.candles.interfaces.repair`
+
+**Расписание:** `None` (ручной запуск)
+
+**Состав задач:**
+1. `validate_swap_repair_conf` — валидирует параметры DAG run, пушит структурированный конфиг в XCom
+2. `swap_repair_preview` — для каждого запрошенного таймфрейма делает detect-only превью (количество гэпов, bars, guardrail risk)
+3. `swap_repair` — выполняет repair (detect-only / dry-run / apply) для каждого таймфрейма
+4. `publish_swap_repair_ops` — пушит метрики в Pushgateway + пишет записи в `ops.swap_repair_audit`
+
+**Параметры запуска:**
+
+```json
+{
+  "symbol": "BTC-USDT-SWAP",
+  "timeframes": ["1m", "1H", "4H", "1D", "1W", "1M"],
+  "mode": "detect-only",
+  "repair_strategy": "gap-repair",
+  "start": null,
+  "end": null,
+  "auto_apply_anchor_strategy": "first-coverage",
+  "auto_apply_anchor": null,
+  "window_hours": 6,
+  "padding_bars": 0,
+  "max_gap_tasks_per_run": 50,
+  "max_requested_bars_per_run": 10000,
+  "max_range_days": 7,
+  "max_fail_ratio": 0.1
+}
+```
+
+**Режимы:**
+
+| Режим | Описание |
+|---|---|
+| `detect-only` | Только поиск пробелов, без записи. По умолчанию. |
+| `dry-run` | Планирует ремонт, показывает что будет записано — без применения |
+| `apply` | Применяет ремонт: скачивает и записывает недостающие свечи |
+
+**Anchor-стратегии (только для `apply` без `start`/`end`):**
+
+| Стратегия | Описание |
+|---|---|
+| `first-coverage` | Начинает от первого непокрытого участка относительно существующих данных |
+| `listing-date` | Bootstrap от даты листинга инструмента (таблица `instruments`) |
+| `explicit` | Bootstrap от явного `auto_apply_anchor` (ISO-8601 UTC timestamp) |
+
+**Operator presets:**
+
+```json5
+// Preview: поиск пробелов в окне
+{ "mode": "detect-only", "repair_strategy": "gap-repair",
+  "timeframes": ["1m", "1H"], "start": "2026-04-01T00:00:00Z", "end": "2026-04-01T08:00:00Z" }
+
+// Apply: auto-apply от первого пробела (повторять до remaining_gap_tasks=0)
+{ "mode": "apply", "repair_strategy": "gap-repair", "timeframes": ["1m", "1H"],
+  "auto_apply_anchor_strategy": "first-coverage" }
+
+// Apply: bootstrap с даты листинга
+{ "mode": "apply", "repair_strategy": "backfill", "timeframes": ["1D"],
+  "auto_apply_anchor_strategy": "listing-date" }
+
+// Apply: явный anchor
+{ "mode": "apply", "repair_strategy": "gap-repair", "timeframes": ["1W"],
+  "auto_apply_anchor_strategy": "explicit", "auto_apply_anchor": "2026-01-01T00:00:00Z" }
+```
+
+**Partial auto-apply:**
+- Если `max_requested_bars_per_run` недостаточно для закрытия всех пробелов за один запуск, таск завершается с `auto_apply_incomplete=true` (task state = success).
+- Достаточно повторить trigger: каждый следующий запуск продвигает окно вперёд.
+- Подробнее: [docs/operator-guide/partial-auto-apply.md](../../docs/operator-guide/partial-auto-apply.md)
+
+**Мониторинг:**
+- Аудит: `ops.swap_repair_audit` — каждый apply-запуск записывает результаты
+- Метрики: Pushgateway — `pklpo_swap_repair_rows_written`, `pklpo_swap_repair_remaining_gap_tasks`
+- XCom у `swap_repair`: список RepairSummary per-timeframe
+
+**Настройки:**
+- `max_active_runs=1` — только один активный запуск
+- `execution_timeout=10 минут` per-run guardrail (соответствует `max_runtime_per_run=10m`)
 
 ---
 

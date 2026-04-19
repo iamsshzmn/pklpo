@@ -221,6 +221,23 @@ def sanitize_repair_candle(
     }
 
 
+def merge_gaps(ts_list: list[int], interval_ms: int) -> list[tuple[int, int]]:
+    """Merge a list of missing timestamps into half-open (start, end) gap ranges."""
+    if not ts_list:
+        return []
+    sorted_ts = sorted(ts_list)
+    ranges: list[tuple[int, int]] = []
+    start = sorted_ts[0]
+    prev = sorted_ts[0]
+    for ts in sorted_ts[1:]:
+        if ts > prev + interval_ms:
+            ranges.append((start, prev + interval_ms))
+            start = ts
+        prev = ts
+    ranges.append((start, prev + interval_ms))
+    return ranges
+
+
 def validate_repair_candles(
     *,
     candles: list[Mapping[str, Any]],

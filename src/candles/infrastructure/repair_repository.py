@@ -6,18 +6,25 @@ from typing import Any
 from sqlalchemy import text
 
 from src.candles.application.repair.ports import ListingAnchorMetadata
-from src.candles.domain.repair_timeframes import expected_next_open
+from src.candles.domain.repair_timeframes import expected_next_open, floor_to_timeframe
 from src.candles.domain.timeframes import TF_TO_MS
 from src.candles.repository import SwapCandlesRepository
 from src.utils.session_utils import get_db_session
 
 
 class RepairCandlesRepository(SwapCandlesRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self._listing_metadata_cache: dict[str, ListingAnchorMetadata | None] = {}
+
     async def get_listing_anchor_metadata(
         self,
         *,
         symbol: str,
     ) -> ListingAnchorMetadata | None:
+        if symbol in self._listing_metadata_cache:
+            return self._listing_metadata_cache[symbol]
+
         async def _operation() -> ListingAnchorMetadata | None:
             async with get_db_session() as session:
                 result = await session.execute(
@@ -41,7 +48,9 @@ class RepairCandlesRepository(SwapCandlesRepository):
                 metadata_refreshed_at_ms=metadata_refreshed_at_ms,
             )
 
-        return await self._run_with_db_retry(_operation)
+        result = await self._run_with_db_retry(_operation)
+        self._listing_metadata_cache[symbol] = result
+        return result
 
     async def get_listing_time_ts_ms(self, *, symbol: str) -> int | None:
         metadata = await self.get_listing_anchor_metadata(symbol=symbol)
@@ -285,3 +294,254 @@ class RepairCandlesRepository(SwapCandlesRepository):
             return result.rowcount if result.rowcount >= 0 else len(rows)
 
         return int(await self._run_with_db_retry(_operation))
+
+    async def list_missing_timestamps(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+        interval_ms: int,
+    ) -> list[int]:
+        if timeframe == "1M":
+            return await self._list_missing_1m(
+                symbol=symbol, start_ts_ms=start_ts_ms, end_ts_ms=end_ts_ms
+            )
+
+        async def _operation() -> list[int]:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT gs.ts
+                        FROM generate_series(
+                            :start_ts_ms::bigint,
+                            :end_ts_ms::bigint - :interval_ms::bigint,
+                            :interval_ms::bigint
+                        ) AS gs(ts)
+                        LEFT JOIN swap_ohlcv_p c
+                            ON c.symbol = :symbol
+                            AND c.timeframe = :timeframe
+                            AND c.timestamp = gs.ts
+                        WHERE c.timestamp IS NULL
+                        ORDER BY gs.ts
+                        """
+                    ),
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "start_ts_ms": start_ts_ms,
+                        "end_ts_ms": end_ts_ms,
+                        "interval_ms": interval_ms,
+                    },
+                )
+                rows = result.fetchall()
+            return [int(row[0]) for row in rows]
+
+        return await self._run_with_db_retry(_operation)
+
+    async def _list_missing_1m(
+        self,
+        *,
+        symbol: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> list[int]:
+        existing = set(
+            await self.list_timestamps(
+                symbol=symbol,
+                timeframe="1M",
+                start_ts_ms=start_ts_ms,
+                end_ts_ms=end_ts_ms,
+            )
+        )
+        missing: list[int] = []
+        ts = floor_to_timeframe(start_ts_ms, "1M")
+        while ts < end_ts_ms:
+            if ts not in existing:
+                missing.append(ts)
+            ts = expected_next_open(ts, "1M")
+        return missing
+
+    async def list_corrupted_timestamps(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> list[int]:
+        async def _operation() -> list[int]:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT timestamp
+                        FROM swap_ohlcv_p
+                        WHERE symbol = :symbol
+                          AND timeframe = :timeframe
+                          AND timestamp >= :start_ts_ms
+                          AND timestamp < :end_ts_ms
+                          AND (
+                              open IS NULL OR high IS NULL OR low IS NULL
+                              OR close IS NULL OR volume IS NULL
+                              OR open <= 0 OR high <= 0 OR low <= 0 OR close <= 0
+                              OR high < low
+                              OR open < low OR open > high
+                              OR close < low OR close > high
+                          )
+                        ORDER BY timestamp
+                        """
+                    ),
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "start_ts_ms": start_ts_ms,
+                        "end_ts_ms": end_ts_ms,
+                    },
+                )
+                rows = result.fetchall()
+            return [int(row[0]) for row in rows]
+
+        return await self._run_with_db_retry(_operation)
+
+    async def is_features_ready(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        closed_until_ts_ms: int,
+        interval_ms: int,
+    ) -> bool:
+        if timeframe == "1M":
+            return await self._is_features_ready_1m(
+                symbol=symbol, closed_until_ts_ms=closed_until_ts_ms
+            )
+
+        async def _operation() -> bool:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        WITH last_300 AS (
+                            SELECT timestamp
+                            FROM swap_ohlcv_p
+                            WHERE symbol = :symbol
+                              AND timeframe = :timeframe
+                              AND timestamp < :closed_until_ts_ms
+                            ORDER BY timestamp DESC
+                            LIMIT 300
+                        ),
+                        ordered AS (
+                            SELECT
+                                timestamp,
+                                LAG(timestamp) OVER (ORDER BY timestamp) AS prev_ts
+                            FROM last_300
+                        ),
+                        stats AS (
+                            SELECT
+                                COUNT(*) AS total,
+                                SUM(
+                                    CASE WHEN prev_ts IS NOT NULL
+                                         AND timestamp - prev_ts != :interval_ms
+                                    THEN 1 ELSE 0 END
+                                ) AS gap_count
+                            FROM ordered
+                        ),
+                        corrupted AS (
+                            SELECT COUNT(*) AS cnt
+                            FROM swap_ohlcv_p c
+                            JOIN last_300 l USING (timestamp)
+                            WHERE c.symbol = :symbol
+                              AND c.timeframe = :timeframe
+                              AND (
+                                  c.open IS NULL OR c.high IS NULL OR c.low IS NULL
+                                  OR c.close IS NULL OR c.volume IS NULL
+                                  OR c.open <= 0 OR c.high <= 0 OR c.low <= 0 OR c.close <= 0
+                                  OR c.high < c.low
+                                  OR c.open < c.low OR c.open > c.high
+                                  OR c.close < c.low OR c.close > c.high
+                              )
+                        )
+                        SELECT
+                            (SELECT total FROM stats) >= 300
+                            AND (SELECT gap_count FROM stats) = 0
+                            AND (SELECT cnt FROM corrupted) = 0
+                        """
+                    ),
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "closed_until_ts_ms": closed_until_ts_ms,
+                        "interval_ms": interval_ms,
+                    },
+                )
+                return bool(result.scalar() or False)
+
+        return await self._run_with_db_retry(_operation)
+
+    async def _is_features_ready_1m(
+        self,
+        *,
+        symbol: str,
+        closed_until_ts_ms: int,
+    ) -> bool:
+        async def _fetch_last_300() -> list[int]:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT timestamp
+                        FROM swap_ohlcv_p
+                        WHERE symbol = :symbol
+                          AND timeframe = '1M'
+                          AND timestamp < :closed_until_ts_ms
+                        ORDER BY timestamp DESC
+                        LIMIT 300
+                        """
+                    ),
+                    {"symbol": symbol, "closed_until_ts_ms": closed_until_ts_ms},
+                )
+                return [int(row[0]) for row in result.fetchall()]
+
+        async def _count_corrupted(min_ts: int) -> int:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM swap_ohlcv_p
+                        WHERE symbol = :symbol
+                          AND timeframe = '1M'
+                          AND timestamp >= :min_ts
+                          AND timestamp < :closed_until_ts_ms
+                          AND (
+                              open IS NULL OR high IS NULL OR low IS NULL
+                              OR close IS NULL OR volume IS NULL
+                              OR open <= 0 OR high <= 0 OR low <= 0 OR close <= 0
+                              OR high < low
+                              OR open < low OR open > high
+                              OR close < low OR close > high
+                          )
+                        """
+                    ),
+                    {
+                        "symbol": symbol,
+                        "min_ts": min_ts,
+                        "closed_until_ts_ms": closed_until_ts_ms,
+                    },
+                )
+                return int(result.scalar() or 0)
+
+        timestamps = await self._run_with_db_retry(_fetch_last_300)
+        if len(timestamps) < 300:
+            return False
+
+        sorted_ts = sorted(timestamps)
+        for i in range(1, len(sorted_ts)):
+            if sorted_ts[i] != expected_next_open(sorted_ts[i - 1], "1M"):
+                return False
+
+        corrupted_count: int = await self._run_with_db_retry(lambda: _count_corrupted(sorted_ts[0]))
+        return corrupted_count == 0

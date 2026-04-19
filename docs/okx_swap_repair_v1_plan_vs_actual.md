@@ -4,7 +4,7 @@
 
 ## Actual v1 scope
 
-- Single symbol only: `BTC-USDT-SWAP`.
+- Any valid OKX swap instId (e.g. `BTC-USDT-SWAP`, `ETH-USDT-SWAP`); preflight checks via `instruments` table.
 - Supported timeframes: `1m`, `1H`, `4H`, `1D`, `1W`, `1M`.
 - Supported modes: `detect-only`, `dry-run`, `apply`.
 - Supported strategies: `gap-repair`, `backfill`.
@@ -12,9 +12,10 @@
 
 ## Trigger contract
 
+- `preflight_instrument_check` runs first, checking that the requested symbol exists in the `instruments` table.
 - The DAG validates trigger params in `validate_swap_repair_conf_task`.
 - `timeframes` is the primary multi-timeframe input; legacy single `timeframe` is still accepted for compatibility.
-- The params snapshot test in `tests/db/test_okx_swap_repair_v1_dag.py` locks the trigger contract, including the symbol enum and repair-safe timeframe enum.
+- The params snapshot test in `tests/db/test_okx_swap_repair_v1_dag.py` locks the trigger contract; `symbol` has `default=None` and no enum restriction.
 
 ## Apply semantics
 
@@ -122,13 +123,59 @@ Use `timeframes` in new triggers. `timeframe` still works for compatibility, but
 }
 ```
 
+### Apply: ETH-USDT-SWAP from listing date (multi-symbol)
+
+```json
+{
+  "symbol": "ETH-USDT-SWAP",
+  "mode": "apply",
+  "repair_strategy": "backfill",
+  "timeframes": ["1D", "1H"],
+  "auto_apply_anchor_strategy": "listing-date",
+  "max_range_days": 7
+}
+```
+
+### Apply: SOL-USDT-SWAP gap repair (multi-symbol)
+
+```json
+{
+  "symbol": "SOL-USDT-SWAP",
+  "mode": "apply",
+  "repair_strategy": "gap-repair",
+  "timeframes": ["1m", "1H"],
+  "auto_apply_anchor_strategy": "first-coverage",
+  "max_gap_tasks_per_run": 50,
+  "max_requested_bars_per_run": 10000
+}
+```
+
+## SQL correctness layer (added 2026-04-19)
+
+The following repository methods have been added to `RepairCandlesRepository` to align with the sql_summary contract:
+
+- `list_missing_timestamps(symbol, tf, start_ts_ms, end_ts_ms, interval_ms)` — uses `generate_series` LEFT JOIN for fixed-interval TFs; domain helpers for 1M.
+- `list_corrupted_timestamps(symbol, tf, start_ts_ms, end_ts_ms)` — NULL/≤0/high<low/open|close outside [low,high]; `volume=0` NOT corrupted.
+- `is_features_ready(symbol, tf, closed_until_ts_ms, interval_ms)` — last 300 closed + contiguous + non-corrupted; 1M uses Python-side contiguity check.
+- `merge_gaps(ts_list, interval_ms)` added to `src/candles/domain/repair.py`.
+
+All existing repository methods (`list_timestamps`, `find_first_gap_start_ts_ms`, `count_candles`) are unchanged — the application layer continues to use them.
+
 ## Out of scope for v1
 
-- Any symbol other than `BTC-USDT-SWAP`.
+- Symbols not present in the `instruments` table will fail at preflight with `InstrumentNotFoundError`.
 - Any timeframe outside the repair-safe set above.
 - Unbounded or multi-symbol repair runs.
 - Relaxed apply success criteria that accept unverified or remaining-gap apply summaries.
 - Watermark updates from this DAG contract.
+
+## Multi-symbol support (shipped in v1.1)
+
+- `BTC-USDT-SWAP` hardcode removed from DAG `Param.default`; `symbol` is now a required field with no enum.
+- `preflight_instrument_check` task added using `src.market_meta` module (primary: `instruments` table).
+- `guardrail_risk` in preview changed from `bool` to `"ok"/"medium"/"high"` based on `requested_bars / max_requested_bars_per_run` ratio.
+- `min_bars_for_window` utility added to `application/repair/planning.py` for auto-guardrail estimation.
+- Per-symbol listing-date cache in `RepairCandlesRepository`.
 
 ## Plan vs actual
 
