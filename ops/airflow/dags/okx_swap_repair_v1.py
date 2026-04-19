@@ -1,37 +1,10 @@
 """DAG: okx_swap_repair_v1.
 
-Production-oriented manual DAG contract for OKX swap historical repair.
+Manual repair DAG with a trigger-only external contract.
 
-Purpose
-- Reuse ``src.candles.interfaces.run_swap_repair`` as the single business entrypoint.
-- Keep Airflow as a thin orchestration layer with strict preflight validation.
-- Stay safe-by-default: no schedule, bounded window, repair-safe timeframes only.
-
-Run parameters (via dag_run.conf)
-- symbol: str, required, any valid OKX swap instId (e.g. ``BTC-USDT-SWAP``)
-- timeframe: str, optional legacy single-timeframe field
-- timeframes: list[str] | comma-separated str, optional, runs repair for each requested timeframe
-- start: UTC ISO-8601 timestamp, optional
-- end: UTC ISO-8601 timestamp, optional
-- window_hours: int, default ``6`` when ``start``/``end`` are omitted
-- mode: ``detect-only`` | ``dry-run`` | ``apply``
-- repair_strategy: ``gap-repair`` | ``backfill``
-- padding_bars: int, default ``0``
-- max_gap_tasks_per_run: int, default ``50``
-- max_requested_bars_per_run: int, default ``10000``
-- max_range_days: int, default ``7``
-- max_fail_ratio: float, default ``0.1``
-- auto_apply_anchor_strategy: ``first-coverage`` | ``listing-date`` | ``explicit``
-- auto_apply_anchor: UTC ISO-8601 timestamp, optional explicit anchor for apply without coverage
-
-Contract
-- `apply` requires explicit `start` and `end`, or `auto_apply_anchor` for empty-coverage bootstrap
-- symbol must be a valid OKX swap instId; validation is delegated to preflight and the application layer
-- each requested timeframe must stay within the current repair-safe OKX set
-- `apply` succeeds only when every timeframe result reports `verified=true`,
-  `remaining_gap_tasks=0`, `remaining_requested_bars=0`, and
-  `verification_method=gap-detection`, unless the result is a truthful partial
-  auto-apply summary with `auto_apply_incomplete=true`
+All runtime settings now live in code. A manual Airflow run only selects a
+named trigger preset, and the DAG expands that preset into the curated swap
+symbol universe from ``src/candles/instruments_list.json``.
 """
 
 from __future__ import annotations
@@ -41,17 +14,13 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from _common import (
-    SwapRepairValidatedConf,
     coerce_float as _coerce_float,
     coerce_int as _coerce_int,
     get_dag_env as _get_common_dag_env,
     get_or_create_event_loop,
-    normalize_swap_repair_conf,
     normalize_swap_repair_summary_payloads,
-    parse_utc_timestamp_ms as _parse_utc_timestamp_ms,
     payload_to_dict as _payload_to_dict,
     setup_env as _setup_common_env,
-    utc_now_ts_ms as _utc_now_ts_ms,
     validate_swap_repair_xcom_payload,
 )
 from airflow import DAG
@@ -60,6 +29,11 @@ from airflow.operators.python import PythonOperator
 
 from src.candles.bootstrap import create_candles_airflow_callbacks
 from src.candles.domain.repair import RepairExecutionMode, RepairStrategy
+from src.candles.instruments_service import (
+    ensure_symbols_registered,
+    load_symbols_from_file,
+    resolve_repo_instruments_file,
+)
 from src.candles.interfaces import repair as repair_interface
 from src.candles.interfaces.repair_audit import write_swap_repair_audit
 from src.candles.observability.prometheus import push_swap_repair_metrics
@@ -72,9 +46,25 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import asyncio
 
-DEFAULT_SYMBOL = "BTC-USDT-SWAP"
-DEFAULT_WINDOW_HOURS = 6
 SUPPORTED_TIMEFRAMES = ("1m", "1H", "4H", "1D", "1W", "1M")
+DEFAULT_TRIGGER = "repair-all-swaps"
+REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
+    DEFAULT_TRIGGER: {
+        "timeframes": list(SUPPORTED_TIMEFRAMES),
+        "mode": RepairExecutionMode.APPLY.value,
+        "repair_strategy": RepairStrategy.GAP_REPAIR.value,
+        "padding_bars": 0,
+        "max_gap_tasks_per_run": 50,
+        "max_requested_bars_per_run": 10_000,
+        "max_range_days": 7,
+        "max_fail_ratio": 0.1,
+        "auto_apply_anchor_strategy": "listing-date",
+        "anchor_ts_ms": None,
+        "auto_apply_window": True,
+        "start_ts_ms": None,
+        "end_ts_ms": None,
+    }
+}
 
 try:
     _callbacks = create_candles_airflow_callbacks()
@@ -120,13 +110,46 @@ def setup_env(env: dict[str, str]) -> None:
     _setup_common_env(env)
 
 
+def _load_curated_swap_symbols() -> list[str]:
+    return load_symbols_from_file(resolve_repo_instruments_file(), logger=logger)
+
+
+def _build_validated_conf_from_trigger(trigger: str) -> dict[str, Any]:
+    preset = REPAIR_TRIGGER_PRESETS.get(trigger)
+    if preset is None:
+        supported = ", ".join(sorted(REPAIR_TRIGGER_PRESETS))
+        raise ValueError(f"unsupported trigger {trigger!r}; expected one of: {supported}")
+
+    symbols = _load_curated_swap_symbols()
+    if not symbols:
+        raise ValueError("curated symbol list is empty; cannot run swap repair trigger")
+
+    return {
+        "trigger": trigger,
+        "symbols": symbols,
+        **preset,
+    }
+
+
+def _get_validated_conf(context: dict[str, Any]) -> dict[str, Any]:
+    ti = context.get("ti")
+    if ti is not None:
+        payload = ti.xcom_pull(task_ids="validate_swap_repair_conf", key="return_value")
+        if isinstance(payload, dict):
+            return payload
+
+    conf = _get_run_conf(context)
+    trigger = str(conf.get("trigger") or DEFAULT_TRIGGER).strip()
+    return _build_validated_conf_from_trigger(trigger)
+
+
 def _run_swap_repair_once(
     *,
     validated: dict[str, Any],
     timeframe: str,
     start_ts_ms: int,
     end_ts_ms: int,
-    ) -> dict[str, Any]:
+) -> dict[str, Any]:
     return _get_loop().run_until_complete(
         repair_interface.run_swap_repair(
             symbol=str(validated["symbol"]),
@@ -205,46 +228,71 @@ def _run_auto_apply_for_timeframe(
     )
 
 
-def preflight_instrument_check_task(**context) -> None:
-    conf = _get_run_conf(context)
+def ensure_instruments_loaded_task(**context) -> None:
+    validated = _get_validated_conf(context)
     log_ctx = _build_log_context(context)
     env = get_dag_env()
     setup_env(env)
 
-    symbol = str(conf.get("symbol") or DEFAULT_SYMBOL).strip()
-    logger.info("preflight_instrument_check start %s symbol=%s", log_ctx, symbol)
-    if not symbol:
-        raise ValueError("preflight: symbol must be a non-empty OKX instId")
+    symbols = [str(s).strip() for s in validated.get("symbols", []) if str(s).strip()]
+    if not symbols:
+        raise ValueError("ensure_instruments_loaded: validated config contains no symbols")
+
+    logger.info(
+        "ensure_instruments_loaded start %s symbols=%d",
+        log_ctx,
+        len(symbols),
+    )
+    repository = InstrumentSqlRepository()
+    _get_loop().run_until_complete(
+        ensure_symbols_registered(symbols, repository=repository, logger=logger)
+    )
+    logger.info("ensure_instruments_loaded pass %s", log_ctx)
+
+
+def preflight_instrument_check_task(**context) -> None:
+    validated = _get_validated_conf(context)
+    log_ctx = _build_log_context(context)
+    env = get_dag_env()
+    setup_env(env)
+
+    symbols = [str(symbol).strip() for symbol in validated.get("symbols", []) if str(symbol).strip()]
+    if not symbols:
+        raise ValueError("preflight: validated config must contain at least one symbol")
+    logger.info(
+        "preflight_instrument_check start %s trigger=%s symbols=%d",
+        log_ctx,
+        validated.get("trigger"),
+        len(symbols),
+    )
 
     repository = InstrumentSqlRepository()
-    try:
-        _get_loop().run_until_complete(
-            validate_instrument_exists(symbol, repository=repository)
-        )
-    except InstrumentNotFoundError:
-        raise
-    logger.info("preflight_instrument_check pass %s symbol=%s", log_ctx, symbol)
+    for symbol in symbols:
+        try:
+            _get_loop().run_until_complete(
+                validate_instrument_exists(symbol, repository=repository)
+            )
+        except InstrumentNotFoundError:
+            raise
+    logger.info("preflight_instrument_check pass %s symbols=%d", log_ctx, len(symbols))
 
 
 def validate_swap_repair_conf_task(**context) -> dict[str, Any]:
     conf = _get_run_conf(context)
     log_ctx = _build_log_context(context)
     logger.info("validate_swap_repair_conf start %s raw_conf=%s", log_ctx, conf)
-    validated = normalize_swap_repair_conf(
-        conf,
-        now_ts_ms=_utc_now_ts_ms(),
-        parse_timestamp_ms=_parse_utc_timestamp_ms,
-    )
+    trigger = str(conf.get("trigger") or DEFAULT_TRIGGER).strip()
+    validated = _build_validated_conf_from_trigger(trigger)
     logger.info(
-        "validate_swap_repair_conf finish %s symbol=%s timeframes=%s mode=%s strategy=%s auto_apply_window=%s",
+        "validate_swap_repair_conf finish %s trigger=%s symbols=%d timeframes=%s mode=%s strategy=%s",
         log_ctx,
-        validated.symbol,
-        validated.timeframes,
-        validated.mode,
-        validated.repair_strategy,
-        validated.auto_apply_window,
+        validated["trigger"],
+        len(validated["symbols"]),
+        validated["timeframes"],
+        validated["mode"],
+        validated["repair_strategy"],
     )
-    return validated.to_dict()
+    return validated
 
 
 def swap_repair_task(**context) -> list[dict[str, Any]]:
@@ -257,38 +305,44 @@ def swap_repair_task(**context) -> list[dict[str, Any]]:
     validated = ti.xcom_pull(task_ids="validate_swap_repair_conf", key="return_value")
     if not isinstance(validated, dict):
         raise ValueError("swap_repair validated config must be a dict")
-    validated_conf = SwapRepairValidatedConf(**validated)
-
-    if not validated_conf.timeframes:
+    timeframes = [str(timeframe) for timeframe in validated.get("timeframes", [])]
+    symbols = [str(symbol) for symbol in validated.get("symbols", [])]
+    if not timeframes:
         raise ValueError("swap_repair validated config must contain non-empty timeframes")
+    if not symbols:
+        raise ValueError("swap_repair validated config must contain non-empty symbols")
 
     summaries = []
-    for timeframe in validated_conf.timeframes:
-        if validated_conf.auto_apply_window:
-            summary = _run_auto_apply_for_timeframe(
-                validated=validated,
-                timeframe=str(timeframe),
+    for symbol in symbols:
+        per_symbol_validated = dict(validated)
+        per_symbol_validated["symbol"] = symbol
+        for timeframe in timeframes:
+            if bool(validated.get("auto_apply_window", False)):
+                summary = _run_auto_apply_for_timeframe(
+                    validated=per_symbol_validated,
+                    timeframe=str(timeframe),
+                )
+            else:
+                summary = _run_swap_repair_once(
+                    validated=per_symbol_validated,
+                    timeframe=str(timeframe),
+                    start_ts_ms=_coerce_int(
+                        validated.get("start_ts_ms"),
+                        field_name="validated.start_ts_ms",
+                    ),
+                    end_ts_ms=_coerce_int(
+                        validated.get("end_ts_ms"),
+                        field_name="validated.end_ts_ms",
+                    ),
+                )
+            logger.info(
+                "swap_repair finish %s symbol=%s timeframe=%s summary=%s",
+                log_ctx,
+                symbol,
+                timeframe,
+                summary,
             )
-        else:
-            summary = _run_swap_repair_once(
-                validated=validated,
-                timeframe=str(timeframe),
-                start_ts_ms=_coerce_int(
-                    validated_conf.start_ts_ms,
-                    field_name="validated.start_ts_ms",
-                ),
-                end_ts_ms=_coerce_int(
-                    validated_conf.end_ts_ms,
-                    field_name="validated.end_ts_ms",
-                ),
-            )
-        logger.info(
-            "swap_repair finish %s timeframe=%s summary=%s",
-            log_ctx,
-            timeframe,
-            summary,
-        )
-        summaries.append(summary)
+            summaries.append(summary)
     logger.info("swap_repair completed %s summaries=%d", log_ctx, len(summaries))
     return summaries
 
@@ -303,60 +357,64 @@ def swap_repair_preview_task(**context) -> list[dict[str, Any]]:
     validated = ti.xcom_pull(task_ids="validate_swap_repair_conf", key="return_value")
     if not isinstance(validated, dict):
         raise ValueError("swap_repair preview validated config must be a dict")
-    validated_conf = SwapRepairValidatedConf(**validated)
-
-    if not validated_conf.timeframes:
+    timeframes = [str(timeframe) for timeframe in validated.get("timeframes", [])]
+    symbols = [str(symbol) for symbol in validated.get("symbols", [])]
+    if not timeframes:
         raise ValueError("swap_repair preview validated config must contain non-empty timeframes")
+    if not symbols:
+        raise ValueError("swap_repair preview validated config must contain non-empty symbols")
 
     previews: list[dict[str, Any]] = []
-    for timeframe in validated_conf.timeframes:
-        preview = _get_loop().run_until_complete(
-            repair_interface.plan_swap_repair(
-                symbol=validated_conf.symbol,
-                timeframe=str(timeframe),
-                start_ts_ms=validated_conf.start_ts_ms,
-                end_ts_ms=validated_conf.end_ts_ms,
-                mode=RepairExecutionMode(validated_conf.mode),
-                strategy=RepairStrategy(validated_conf.repair_strategy),
-                auto_apply_window=validated_conf.auto_apply_window,
-                max_gap_tasks_per_run=_coerce_int(
-                    validated_conf.max_gap_tasks_per_run,
-                    field_name="validated.max_gap_tasks_per_run",
-                ),
-                max_requested_bars_per_run=_coerce_int(
-                    validated_conf.max_requested_bars_per_run,
-                    field_name="validated.max_requested_bars_per_run",
-                ),
-                max_range_days=_coerce_int(
-                    validated_conf.max_range_days,
-                    field_name="validated.max_range_days",
-                ),
-                max_fail_ratio=_coerce_float(
-                    validated_conf.max_fail_ratio,
-                    field_name="validated.max_fail_ratio",
-                ),
-                padding_bars=_coerce_int(
-                    validated_conf.padding_bars,
-                    field_name="validated.padding_bars",
-                ),
-                anchor_ts_ms=(
-                    _coerce_int(
-                        validated_conf.anchor_ts_ms,
-                        field_name="validated.anchor_ts_ms",
-                    )
-                    if validated_conf.anchor_ts_ms is not None
-                    else None
-                ),
-                auto_apply_anchor_strategy=validated_conf.auto_apply_anchor_strategy,
+    for symbol in symbols:
+        for timeframe in timeframes:
+            preview = _get_loop().run_until_complete(
+                repair_interface.plan_swap_repair(
+                    symbol=symbol,
+                    timeframe=str(timeframe),
+                    start_ts_ms=validated.get("start_ts_ms"),
+                    end_ts_ms=validated.get("end_ts_ms"),
+                    mode=RepairExecutionMode(str(validated["mode"])),
+                    strategy=RepairStrategy(str(validated["repair_strategy"])),
+                    auto_apply_window=bool(validated.get("auto_apply_window", False)),
+                    max_gap_tasks_per_run=_coerce_int(
+                        validated["max_gap_tasks_per_run"],
+                        field_name="validated.max_gap_tasks_per_run",
+                    ),
+                    max_requested_bars_per_run=_coerce_int(
+                        validated["max_requested_bars_per_run"],
+                        field_name="validated.max_requested_bars_per_run",
+                    ),
+                    max_range_days=_coerce_int(
+                        validated["max_range_days"],
+                        field_name="validated.max_range_days",
+                    ),
+                    max_fail_ratio=_coerce_float(
+                        validated["max_fail_ratio"],
+                        field_name="validated.max_fail_ratio",
+                    ),
+                    padding_bars=_coerce_int(
+                        validated["padding_bars"],
+                        field_name="validated.padding_bars",
+                    ),
+                    anchor_ts_ms=(
+                        _coerce_int(
+                            validated["anchor_ts_ms"],
+                            field_name="validated.anchor_ts_ms",
+                        )
+                        if validated.get("anchor_ts_ms") is not None
+                        else None
+                    ),
+                    auto_apply_anchor_strategy=str(validated["auto_apply_anchor_strategy"]),
+                )
             )
-        )
-        logger.info(
-            "swap_repair_preview finish %s timeframe=%s preview=%s",
-            log_ctx,
-            timeframe,
-            preview,
-        )
-        previews.append(preview)
+            logger.info(
+                "swap_repair_preview finish %s symbol=%s timeframe=%s preview=%s",
+                log_ctx,
+                symbol,
+                timeframe,
+                preview,
+            )
+            previews.append(preview)
 
     logger.info("swap_repair_preview completed %s previews=%d", log_ctx, len(previews))
     return previews
@@ -415,7 +473,6 @@ def publish_swap_repair_ops_task(**context) -> dict[str, Any]:
 
     if not isinstance(validated, dict):
         raise ValueError("swap_repair publish step requires validated config dict")
-    validated_conf = SwapRepairValidatedConf(**validated)
     if preview_payloads is not None and not isinstance(preview_payloads, list):
         raise ValueError("swap_repair publish step preview payload must be a list when present")
 
@@ -424,7 +481,7 @@ def publish_swap_repair_ops_task(**context) -> dict[str, Any]:
     dag_run = context.get("dag_run")
     audit_rows = _get_loop().run_until_complete(
         write_swap_repair_audit(
-            validated_conf=validated_conf.to_dict(),
+            validated_conf=validated,
             preview_payloads=preview_payloads,
             summary_payloads=summary_payloads,
             dag_id=str(getattr(dag, "dag_id", "okx_swap_repair_v1")),
@@ -456,45 +513,19 @@ dag = DAG(
     default_args=default_args,
     tags=["candles", "repair", "manual"],
     params={
-        "symbol": Param(None, type=["null", "string"], description="Required: OKX swap instId (e.g. BTC-USDT-SWAP)"),
-        "timeframes": Param(
-            list(SUPPORTED_TIMEFRAMES),
-            type="array",
-            items={"type": "string", "enum": list(SUPPORTED_TIMEFRAMES)},
-            minItems=1,
-            description="Repair-safe OKX timeframes",
-        ),
-        "mode": Param(
-            RepairExecutionMode.DETECT_ONLY.value,
+        "trigger": Param(
+            DEFAULT_TRIGGER,
             type="string",
-            enum=[mode.value for mode in RepairExecutionMode],
+            enum=sorted(REPAIR_TRIGGER_PRESETS),
+            description="Manual trigger preset. Runtime repair settings live in code.",
         ),
-        "repair_strategy": Param(
-            RepairStrategy.GAP_REPAIR.value,
-            type="string",
-            enum=[strategy.value for strategy in RepairStrategy],
-        ),
-        "start": Param(None, type=["null", "string"], format="date-time"),
-        "end": Param(None, type=["null", "string"], format="date-time"),
-        "auto_apply_anchor_strategy": Param(
-            "first-coverage",
-            type="string",
-            enum=["first-coverage", "listing-date", "explicit"],
-            description="Anchor strategy for apply runs without existing coverage",
-        ),
-        "auto_apply_anchor": Param(
-            None,
-            type=["null", "string"],
-            format="date-time",
-            description="Optional explicit anchor for apply runs without coverage",
-        ),
-        "window_hours": Param(DEFAULT_WINDOW_HOURS, type="integer", minimum=1),
-        "padding_bars": Param(0, type="integer", minimum=0),
-        "max_gap_tasks_per_run": Param(50, type="integer", minimum=1),
-        "max_requested_bars_per_run": Param(10_000, type="integer", minimum=1),
-        "max_range_days": Param(7, type="integer", minimum=1),
-        "max_fail_ratio": Param(0.1, type="number", minimum=0, maximum=1),
     },
+)
+
+validate_swap_repair_conf = PythonOperator(
+    task_id="validate_swap_repair_conf",
+    python_callable=validate_swap_repair_conf_task,
+    dag=dag,
 )
 
 preflight_instrument_check = PythonOperator(
@@ -503,9 +534,9 @@ preflight_instrument_check = PythonOperator(
     dag=dag,
 )
 
-validate_swap_repair_conf = PythonOperator(
-    task_id="validate_swap_repair_conf",
-    python_callable=validate_swap_repair_conf_task,
+ensure_instruments_loaded = PythonOperator(
+    task_id="ensure_instruments_loaded",
+    python_callable=ensure_instruments_loaded_task,
     dag=dag,
 )
 
@@ -533,4 +564,4 @@ publish_swap_repair_ops = PythonOperator(
     dag=dag,
 )
 
-preflight_instrument_check >> validate_swap_repair_conf >> swap_repair_preview >> swap_repair >> validate_swap_repair_xcom >> publish_swap_repair_ops
+validate_swap_repair_conf >> ensure_instruments_loaded >> preflight_instrument_check >> swap_repair_preview >> swap_repair >> validate_swap_repair_xcom >> publish_swap_repair_ops
