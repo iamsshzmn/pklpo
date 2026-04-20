@@ -54,9 +54,12 @@ def load_symbols_from_file(instruments_file: Path, *, logger: Any | None = None)
             logger.warning("Failed to read symbols from %s (%s)", instruments_file, exc)
         return []
 
+    if isinstance(payload, dict):
+        payload = payload.get("symbols", [])
+
     if not isinstance(payload, list):
         if logger is not None:
-            logger.warning("Invalid symbols payload in %s: expected list", instruments_file)
+            logger.warning("Invalid symbols payload in %s: expected list or dict with 'symbols' key", instruments_file)
         return []
 
     symbols: list[str] = []
