@@ -35,6 +35,23 @@ class RepairOutcome(StrEnum):
     FAIL = "fail"
 
 
+def classify_repair_outcome(
+    *,
+    requested: int,
+    received: int,
+    exception: bool,
+) -> RepairOutcome:
+    if exception:
+        return RepairOutcome.FAIL
+    if requested == 0:
+        return RepairOutcome.SUCCESS
+    if received == 0:
+        return RepairOutcome.EMPTY
+    if received < requested:
+        return RepairOutcome.PARTIAL
+    return RepairOutcome.SUCCESS
+
+
 @dataclass(frozen=True)
 class RepairWindow:
     start_ts_ms: int
