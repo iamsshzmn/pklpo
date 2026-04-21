@@ -53,6 +53,15 @@ def classify_repair_outcome(
 
 
 @dataclass(frozen=True)
+class NoProgressPolicy:
+    critical_timeframes: frozenset[str] = frozenset({"1m", "1H"})
+    no_progress_threshold: int = 3
+
+    def is_critical(self, timeframe: str) -> bool:
+        return timeframe in self.critical_timeframes
+
+
+@dataclass(frozen=True)
 class RepairWindow:
     start_ts_ms: int
     end_ts_ms: int
