@@ -187,8 +187,6 @@ class _BaseRepairUseCase:
             write_success_ratio=write_success_ratio,
             outcome=outcome.value,
         )
-        _ = (outcome, api_fill_ratio, write_success_ratio, progress)
-        _ = (remaining_missing_before, remaining_missing_after)
         return RepairResult(
             mode=command.mode,
             strategy=command.strategy,
