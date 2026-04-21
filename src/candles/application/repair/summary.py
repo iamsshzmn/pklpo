@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from src.candles.domain.repair import (
     RepairExecutionMode,
+    RepairOutcome,
     RepairStrategy,
     RepairVerificationMethod,
     RepairWindow,
@@ -24,6 +25,23 @@ def _coerce_int(value: Any, *, field_name: str) -> int:
         raise ValueError(
             f"repair summary field {field_name!r} must be an integer, got {value!r}"
         ) from exc
+
+
+def _coerce_float(value: Any, *, field_name: str) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"repair summary field {field_name!r} must be a float, got {value!r}"
+        ) from exc
+
+
+def _coerce_outcome(value: Any) -> RepairOutcome:
+    if isinstance(value, RepairOutcome):
+        return value
+    if value is None:
+        return RepairOutcome.SUCCESS
+    return RepairOutcome(str(value))
 
 
 def _coerce_bool(value: Any) -> bool:
@@ -97,6 +115,13 @@ class RepairSummary:
     guardrail_violations: tuple[str, ...] = ()
     watermark_updated: bool = False
     auto_apply_incomplete: bool = False
+    received_bars: int = 0
+    remaining_missing_before: int = 0
+    remaining_missing_after: int = 0
+    progress: int = 0
+    api_fill_ratio: float = 0.0
+    write_success_ratio: float = 0.0
+    outcome: RepairOutcome = RepairOutcome.SUCCESS
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -123,6 +148,13 @@ class RepairSummary:
             "padding_bars": self.padding_bars,
             "guardrail_violations": list(self.guardrail_violations),
             "watermark_updated": self.watermark_updated,
+            "received_bars": self.received_bars,
+            "remaining_missing_before": self.remaining_missing_before,
+            "remaining_missing_after": self.remaining_missing_after,
+            "progress": self.progress,
+            "api_fill_ratio": self.api_fill_ratio,
+            "write_success_ratio": self.write_success_ratio,
+            "outcome": self.outcome.value,
         }
         if self.auto_apply_incomplete:
             payload["auto_apply_incomplete"] = True
@@ -182,6 +214,28 @@ class RepairSummary:
                 or remaining_gap_tasks > 0
                 or remaining_requested_bars > 0
             ),
+            received_bars=_coerce_int(
+                payload.get("received_bars", 0),
+                field_name="received_bars",
+            ),
+            remaining_missing_before=_coerce_int(
+                payload.get("remaining_missing_before", 0),
+                field_name="remaining_missing_before",
+            ),
+            remaining_missing_after=_coerce_int(
+                payload.get("remaining_missing_after", 0),
+                field_name="remaining_missing_after",
+            ),
+            progress=_coerce_int(payload.get("progress", 0), field_name="progress"),
+            api_fill_ratio=_coerce_float(
+                payload.get("api_fill_ratio", 0.0),
+                field_name="api_fill_ratio",
+            ),
+            write_success_ratio=_coerce_float(
+                payload.get("write_success_ratio", 0.0),
+                field_name="write_success_ratio",
+            ),
+            outcome=_coerce_outcome(payload.get("outcome")),
         )
 
     @classmethod
@@ -212,6 +266,13 @@ class RepairSummary:
             auto_apply_incomplete=(
                 result.remaining_gap_tasks > 0 or result.remaining_requested_bars > 0
             ),
+            received_bars=getattr(result, "received_bars", 0),
+            remaining_missing_before=getattr(result, "remaining_missing_before", 0),
+            remaining_missing_after=getattr(result, "remaining_missing_after", 0),
+            progress=getattr(result, "progress", 0),
+            api_fill_ratio=getattr(result, "api_fill_ratio", 0.0),
+            write_success_ratio=getattr(result, "write_success_ratio", 0.0),
+            outcome=getattr(result, "outcome", RepairOutcome.SUCCESS),
         )
 
 
@@ -275,6 +336,12 @@ def merge_repair_summaries(
             for violation in summary.guardrail_violations
         )
     )
+    total_received = sum(summary.received_bars for summary in coerced)
+    total_requested = sum(summary.requested_bars for summary in coerced)
+    total_written = sum(summary.rows_written for summary in coerced)
+    remaining_missing_before = first_summary.remaining_missing_before
+    remaining_missing_after = last_summary.remaining_missing_after
+    progress = remaining_missing_before - remaining_missing_after
     return RepairSummary(
         mode=last_summary.mode,
         strategy=last_summary.strategy,
@@ -288,11 +355,11 @@ def merge_repair_summaries(
             end_ts_ms=closed_until_ts_ms,
         ),
         gap_tasks=sum(summary.gap_tasks for summary in coerced),
-        requested_bars=sum(summary.requested_bars for summary in coerced),
+        requested_bars=total_requested,
         remaining_gap_tasks=last_summary.remaining_gap_tasks,
         remaining_requested_bars=last_summary.remaining_requested_bars,
         verification_method=last_summary.verification_method,
-        rows_written=sum(summary.rows_written for summary in coerced),
+        rows_written=total_written,
         fetch_calls=sum(summary.fetch_calls for summary in coerced),
         verified=last_summary.verified,
         padding_bars=_coerce_int(validated.get("padding_bars", 0), field_name="padding_bars"),
@@ -301,4 +368,11 @@ def merge_repair_summaries(
         auto_apply_incomplete=(
             last_summary.remaining_gap_tasks > 0 or last_summary.remaining_requested_bars > 0
         ),
+        received_bars=total_received,
+        remaining_missing_before=remaining_missing_before,
+        remaining_missing_after=remaining_missing_after,
+        progress=progress,
+        api_fill_ratio=total_received / max(total_requested, 1),
+        write_success_ratio=total_written / max(total_received, 1),
+        outcome=last_summary.outcome,
     )
