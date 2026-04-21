@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from src.candles.application.repair.summary import RepairSummary, merge_repair_summaries
+from src.candles.application.repair.summary import (
+    RepairSummary,
+    build_noop_repair_summary,
+    merge_repair_summaries,
+)
 from src.candles.domain.repair import (
     RepairExecutionMode,
     RepairOutcome,
@@ -233,3 +237,24 @@ def test_merge_two_partial_summaries() -> None:
     assert merged.rows_written == 2
     assert merged.api_fill_ratio == pytest.approx(2 / 4)
     assert merged.write_success_ratio == pytest.approx(2 / 2)
+
+
+def test_noop_summary_outcome_is_success() -> None:
+    summary = build_noop_repair_summary(
+        validated={
+            "symbol": "BTC-USDT-SWAP",
+            "repair_strategy": "gap-repair",
+            "padding_bars": 0,
+        },
+        timeframe="1m",
+        closed_until_ts_ms=180_000,
+    )
+
+    assert summary.outcome is RepairOutcome.SUCCESS
+    assert summary.received_bars == 0
+    assert summary.remaining_missing_before == 0
+    assert summary.remaining_missing_after == 0
+    assert summary.progress == 0
+    assert summary.api_fill_ratio == 0.0
+    assert summary.write_success_ratio == 0.0
+    assert summary.verified is True

@@ -303,6 +303,13 @@ def build_noop_repair_summary(
         guardrail_violations=(),
         watermark_updated=False,
         auto_apply_incomplete=False,
+        received_bars=0,
+        remaining_missing_before=0,
+        remaining_missing_after=0,
+        progress=0,
+        api_fill_ratio=0.0,
+        write_success_ratio=0.0,
+        outcome=RepairOutcome.SUCCESS,
     )
 
 
