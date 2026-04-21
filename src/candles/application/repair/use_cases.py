@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +31,9 @@ if TYPE_CHECKING:
         RepairCandleStorePort,
         TelemetryPort,
     )
+
+
+logger = logging.getLogger(__name__)
 
 
 class _NullTelemetry:
@@ -186,6 +190,29 @@ class _BaseRepairUseCase:
             api_fill_ratio=api_fill_ratio,
             write_success_ratio=write_success_ratio,
             outcome=outcome.value,
+        )
+        logger.info(
+            "repair.outcome",
+            extra={
+                "repair_symbol": plan.symbol,
+                "repair_timeframe": plan.timeframe,
+                "repair_strategy": plan.strategy.value,
+                "repair_mode": command.mode.value,
+                "repair_outcome": outcome.value,
+                "repair_requested_bars": plan.requested_bars,
+                "repair_received_bars": total_received,
+                "repair_rows_written": rows_written,
+                "repair_fetch_calls": fetch_calls,
+                "repair_verified": verified,
+                "repair_verification_method": verification.method.value,
+                "repair_remaining_gap_tasks": verification.remaining_gap_tasks,
+                "repair_remaining_requested_bars": verification.remaining_requested_bars,
+                "repair_remaining_missing_before": remaining_missing_before,
+                "repair_remaining_missing_after": remaining_missing_after,
+                "repair_progress": progress,
+                "repair_api_fill_ratio": api_fill_ratio,
+                "repair_write_success_ratio": write_success_ratio,
+            },
         )
         return RepairResult(
             mode=command.mode,

@@ -530,3 +530,64 @@ async def test_success_outcome_fields_present_in_result() -> None:
     assert payload["progress"] == 5
     assert payload["api_fill_ratio"] == 1.0
     assert payload["write_success_ratio"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_repair_outcome_structured_log_has_repair_prefixed_fields(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging as _logging
+
+    coverage = CoverageQueryStub(timestamps=[])
+    historical = HistoricalSourceStub(
+        responses=[
+            [
+                {"ts": 0, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
+                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
+                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 12},
+                {"ts": 3 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 13},
+                {"ts": 4 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 14},
+            ]
+        ]
+    )
+    store = RepairStoreStub(rows_written_per_call=[5])
+    store.coverage = coverage
+    use_case = RunHistoricalBackfillUseCase(
+        coverage_query=coverage,
+        historical_source=historical,
+        repair_store=store,
+    )
+
+    caplog.set_level(_logging.INFO, logger="src.candles.application.repair.use_cases")
+    await use_case.run(
+        _command(mode=RepairExecutionMode.APPLY, strategy=RepairStrategy.BACKFILL)
+    )
+
+    outcome_records = [r for r in caplog.records if r.message == "repair.outcome"]
+    assert outcome_records, "expected a structured repair.outcome log line"
+    record = outcome_records[-1]
+    expected_log_keys = {
+        "repair_symbol",
+        "repair_timeframe",
+        "repair_strategy",
+        "repair_mode",
+        "repair_outcome",
+        "repair_requested_bars",
+        "repair_received_bars",
+        "repair_rows_written",
+        "repair_fetch_calls",
+        "repair_verified",
+        "repair_verification_method",
+        "repair_remaining_gap_tasks",
+        "repair_remaining_requested_bars",
+        "repair_remaining_missing_before",
+        "repair_remaining_missing_after",
+        "repair_progress",
+        "repair_api_fill_ratio",
+        "repair_write_success_ratio",
+    }
+    missing = expected_log_keys - set(vars(record))
+    assert not missing, f"missing log fields: {missing}"
+    assert record.repair_outcome == "success"
+    assert record.repair_received_bars == 5
+    assert record.repair_progress == 5
