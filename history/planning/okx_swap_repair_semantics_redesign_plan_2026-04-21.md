@@ -167,7 +167,7 @@ Format per task: **id · status · description · files · expected result · ve
 **Цель:** заменить `fail_ratio` на outcome-aware + progress-based логику без breaking API на входе.
 
 #### REPAIR-401
-- **status:** todo
+- **status:** done
 - **description:** In `_BaseRepairUseCase.run()`:
   1. Before the fetch loop: `remaining_missing_before = await self._coverage_query.count_missing_timestamps(...)` over the full `plan.window`.
   2. Inside the loop: accumulate `total_received` = `len(validated)` BEFORE upsert, and accumulate `total_written` (already done).
@@ -179,6 +179,7 @@ Format per task: **id · status · description · files · expected result · ve
 - **files:** `src/candles/application/repair/use_cases.py`
 - **expected result:** exception cases shrink to real failures (DB/HTTP errors) + escalation on critical-TF no-progress; partial/empty no longer raise.
 - **verification:** existing test `tests/candles/application/test_repair_use_cases.py::test_apply_exceeded_max_fail_ratio` will fail — that is expected (rewritten in REPAIR-902). New tests added in REPAIR-402 pass.
+- **commit:** `e022693` (`pytest --no-cov tests/candles/application/repair/test_use_cases.py -v`, `pytest --no-cov tests/candles/application/test_repair_use_cases.py -k "not fail_ratio" -v`, and `ruff check src/candles/application/repair/use_cases.py tests/candles/application/repair/test_use_cases.py tests/candles/application/test_repair_use_cases.py` green; legacy fail-ratio test intentionally left for later rewrite)
 
 #### REPAIR-402
 - **status:** todo
