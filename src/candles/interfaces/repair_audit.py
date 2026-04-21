@@ -17,19 +17,21 @@ async def write_swap_repair_audit(
     dag_run_id: str | None,
     logical_date: datetime | None,
 ) -> int:
-    preview_by_timeframe = {
-        str(payload.get("timeframe")): payload for payload in (preview_payloads or [])
+    preview_by_symbol_timeframe = {
+        (str(payload.get("symbol", "")), str(payload.get("timeframe", ""))): payload
+        for payload in (preview_payloads or [])
     }
     records: list[dict[str, Any]] = []
     for summary in summary_payloads:
         window = summary.get("window") or {}
+        symbol = str(summary.get("symbol", validated_conf.get("symbol", "")))
         timeframe = str(summary.get("timeframe", ""))
         records.append(
             {
                 "dag_id": dag_id,
                 "dag_run_id": dag_run_id,
                 "logical_date": logical_date,
-                "symbol": str(summary.get("symbol", validated_conf.get("symbol", ""))),
+                "symbol": symbol,
                 "timeframe": timeframe,
                 "mode": str(summary.get("mode", validated_conf.get("mode", ""))),
                 "strategy": str(summary.get("strategy", validated_conf.get("repair_strategy", ""))),
@@ -45,9 +47,16 @@ async def write_swap_repair_audit(
                 "window_start_ts_ms": int(window.get("start_ts_ms", 0)),
                 "window_end_ts_ms": int(window.get("end_ts_ms", 0)),
                 "verification_method": summary.get("verification_method"),
-                "preview_payload": preview_by_timeframe.get(timeframe) or {},
+                "preview_payload": preview_by_symbol_timeframe.get((symbol, timeframe)) or {},
                 "summary_payload": summary,
                 "requested_conf": validated_conf,
+                "outcome": summary.get("outcome"),
+                "received_bars": summary.get("received_bars"),
+                "remaining_missing_before": summary.get("remaining_missing_before"),
+                "remaining_missing_after": summary.get("remaining_missing_after"),
+                "progress": summary.get("progress"),
+                "api_fill_ratio": summary.get("api_fill_ratio"),
+                "write_success_ratio": summary.get("write_success_ratio"),
             }
         )
 
