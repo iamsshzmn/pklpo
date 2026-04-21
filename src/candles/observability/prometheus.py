@@ -381,6 +381,48 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
             label_names,
             registry=registry,
         )
+        received_bars_gauge = Gauge(
+            "pklpo_swap_repair_received_bars",
+            "Bars received from OKX across all iterations of a repair run",
+            label_names,
+            registry=registry,
+        )
+        progress_gauge = Gauge(
+            "pklpo_swap_repair_progress",
+            "Net reduction in missing timestamps for a repair run",
+            label_names,
+            registry=registry,
+        )
+        api_fill_ratio_gauge = Gauge(
+            "pklpo_swap_repair_api_fill_ratio",
+            "Fraction of requested bars the exchange actually returned (received/requested)",
+            label_names,
+            registry=registry,
+        )
+        write_success_ratio_gauge = Gauge(
+            "pklpo_swap_repair_write_success_ratio",
+            "Fraction of received bars that were written to the store (written/received)",
+            label_names,
+            registry=registry,
+        )
+        remaining_missing_before_gauge = Gauge(
+            "pklpo_swap_repair_remaining_missing_before",
+            "Missing timestamps in window before the repair run",
+            label_names,
+            registry=registry,
+        )
+        remaining_missing_after_gauge = Gauge(
+            "pklpo_swap_repair_remaining_missing_after",
+            "Missing timestamps in window after the repair run",
+            label_names,
+            registry=registry,
+        )
+        outcome_total_gauge = Gauge(
+            "pklpo_swap_repair_outcome_total",
+            "Count of repair run outcomes by classification",
+            [*label_names, "outcome"],
+            registry=registry,
+        )
 
         for payload in normalized:
             labels = (
@@ -402,6 +444,21 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
             auto_apply_incomplete_gauge.labels(*labels).set(
                 1.0 if payload.get("auto_apply_incomplete") else 0.0
             )
+            received_bars_gauge.labels(*labels).set(float(payload.get("received_bars", 0)))
+            progress_gauge.labels(*labels).set(float(payload.get("progress", 0)))
+            api_fill_ratio_gauge.labels(*labels).set(float(payload.get("api_fill_ratio", 0.0)))
+            write_success_ratio_gauge.labels(*labels).set(
+                float(payload.get("write_success_ratio", 0.0))
+            )
+            remaining_missing_before_gauge.labels(*labels).set(
+                float(payload.get("remaining_missing_before", 0))
+            )
+            remaining_missing_after_gauge.labels(*labels).set(
+                float(payload.get("remaining_missing_after", 0))
+            )
+            outcome_value = payload.get("outcome")
+            if outcome_value is not None:
+                outcome_total_gauge.labels(*labels, str(outcome_value)).inc()
 
         pushed = _push_registry(registry, job_name="swap_repair_v1")
         if pushed:
