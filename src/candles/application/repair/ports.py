@@ -58,6 +58,15 @@ class CandleCoverageQueryPort(Protocol):
         interval_ms: int,
     ) -> list[int]: ...
 
+    async def count_missing_timestamps(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> int: ...
+
     async def list_corrupted_timestamps(
         self,
         *,
