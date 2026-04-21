@@ -139,7 +139,7 @@ Format per task: **id · status · description · files · expected result · ve
 - **commit:** `2fd41a9` (Protocol change — no new mypy errors vs baseline; 4 pre-existing unrelated errors in planning.py/use_cases.py)
 
 #### REPAIR-202
-- **status:** done
+- **status:** done (codex)
 - **description:** Implement `count_missing_timestamps()` on `RepairCandlesRepository` by reusing the existing `generate_series` LEFT JOIN IS NULL SQL in `list_missing_timestamps()` but wrapping with `COUNT(*)`. Preserve the `1M` fallback path (Python loop).
 - **files:** `src/candles/infrastructure/repair_repository.py` (near lines 298-365)
 - **expected result:** method returns int; on empty window returns 0; on fully-covered window returns 0.
@@ -153,11 +153,12 @@ Format per task: **id · status · description · files · expected result · ve
 **Цель:** изолировать state machine «no-progress counter» в отдельный модуль, чтобы use case остался тонким и тестируемым.
 
 #### REPAIR-301
-- **status:** todo
+- **status:** done
 - **description:** Create `src/candles/application/repair/progress.py` with class `NoProgressTracker` that holds `policy: NoProgressPolicy`, `timeframe: str`, internal `_consecutive: int`. Methods: `record(progress: int) -> None` (increments counter when `progress <= 0`, resets otherwise), `should_escalate() -> bool` (True when critical + counter reaches threshold), `snapshot() -> dict` (for logging/audit). Scope: per-DAG-run, in-memory only — no persistence, no audit-history lookup.
 - **files:** `src/candles/application/repair/progress.py` (new)
 - **expected result:** deterministic state machine; no I/O; all methods pure on internal state.
 - **verification:** unit tests `tests/candles/application/test_no_progress_tracker.py` covering: reset on progress > 0, escalation at N=3 on 1m, no escalation on 1D, snapshot shape. `pytest tests/candles/application/test_no_progress_tracker.py -v` passes.
+- **commit:** `b88613b` (`pytest --no-cov tests/candles/application/test_no_progress_tracker.py -v` and `ruff check src/candles/application/repair/progress.py tests/candles/application/test_no_progress_tracker.py` green)
 
 ---
 
