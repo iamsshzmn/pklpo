@@ -394,3 +394,139 @@ async def test_apply_raises_when_fail_ratio_exceeds_limit() -> None:
                 guardrails=_guardrails(max_fail_ratio=0.2),
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_partial_api_fill_does_not_raise() -> None:
+    coverage = CoverageQueryStub(timestamps=[])
+    historical = HistoricalSourceStub(
+        responses=[
+            [
+                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
+                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
+            ]
+        ]
+    )
+    store = RepairStoreStub(rows_written_per_call=[2])
+    store.coverage = coverage
+    telemetry = TelemetryStub()
+    use_case = RunGapRepairUseCase(
+        coverage_query=coverage,
+        historical_source=historical,
+        repair_store=store,
+        telemetry=telemetry,
+    )
+
+    result = await use_case.run(
+        _command(
+            mode=RepairExecutionMode.APPLY,
+            strategy=RepairStrategy.GAP_REPAIR,
+            guardrails=_guardrails(max_fail_ratio=0.01),
+        )
+    )
+
+    assert result.rows_written == 2
+    _, payload = telemetry.events[0]
+    assert payload["outcome"] == "partial"
+    assert payload["received"] == 2
+    assert payload["requested"] == 5
+
+
+@pytest.mark.asyncio
+async def test_empty_response_without_exception_does_not_raise() -> None:
+    coverage = CoverageQueryStub(timestamps=[])
+    historical = HistoricalSourceStub(responses=[[]])
+    store = RepairStoreStub(rows_written_per_call=[0])
+    store.coverage = coverage
+    telemetry = TelemetryStub()
+    use_case = RunGapRepairUseCase(
+        coverage_query=coverage,
+        historical_source=historical,
+        repair_store=store,
+        telemetry=telemetry,
+    )
+
+    result = await use_case.run(
+        _command(
+            mode=RepairExecutionMode.APPLY,
+            strategy=RepairStrategy.GAP_REPAIR,
+            guardrails=_guardrails(max_fail_ratio=0.01),
+        )
+    )
+
+    assert result.rows_written == 0
+    _, payload = telemetry.events[0]
+    assert payload["outcome"] == "empty"
+    assert payload["received"] == 0
+    assert payload["progress"] == 0
+
+
+@pytest.mark.asyncio
+async def test_no_progress_escalation_on_1m_after_N_iterations() -> None:
+    coverage = CoverageQueryStub(timestamps=[])
+    historical = HistoricalSourceStub(responses=[[], [], []])
+    store = RepairStoreStub(rows_written_per_call=[0, 0, 0])
+    store.coverage = coverage
+    use_case = RunGapRepairUseCase(
+        coverage_query=coverage,
+        historical_source=historical,
+        repair_store=store,
+    )
+
+    command = _command(
+        mode=RepairExecutionMode.APPLY,
+        strategy=RepairStrategy.GAP_REPAIR,
+    )
+
+    await use_case.run(command)
+    await use_case.run(command)
+    with pytest.raises(ValueError, match="no progress on critical TF 1m"):
+        await use_case.run(command)
+
+
+@pytest.mark.asyncio
+async def test_success_outcome_fields_present_in_result() -> None:
+    coverage = CoverageQueryStub(timestamps=[])
+    historical = HistoricalSourceStub(
+        responses=[
+            [
+                {"ts": 0, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
+                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
+                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 12},
+                {"ts": 3 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 13},
+                {"ts": 4 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 14},
+            ]
+        ]
+    )
+    store = RepairStoreStub(rows_written_per_call=[5])
+    store.coverage = coverage
+    telemetry = TelemetryStub()
+    use_case = RunHistoricalBackfillUseCase(
+        coverage_query=coverage,
+        historical_source=historical,
+        repair_store=store,
+        telemetry=telemetry,
+    )
+
+    await use_case.run(
+        _command(mode=RepairExecutionMode.APPLY, strategy=RepairStrategy.BACKFILL)
+    )
+
+    _, payload = telemetry.events[0]
+    expected_keys = {
+        "requested",
+        "received",
+        "written",
+        "remaining_missing_before",
+        "remaining_missing_after",
+        "progress",
+        "api_fill_ratio",
+        "write_success_ratio",
+        "outcome",
+    }
+    assert expected_keys.issubset(payload.keys())
+    assert payload["outcome"] == "success"
+    assert payload["received"] == 5
+    assert payload["progress"] == 5
+    assert payload["api_fill_ratio"] == 1.0
+    assert payload["write_success_ratio"] == 1.0
