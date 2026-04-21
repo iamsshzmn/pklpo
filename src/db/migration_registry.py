@@ -59,6 +59,9 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_create_ops_swap_repair_audit import (
         migrate_create_ops_swap_repair_audit,
     )
+    from src.db.migrations.migrate_extend_ops_swap_repair_audit_semantics import (
+        migrate_extend_ops_swap_repair_audit_semantics,
+    )
     from src.db.migrations.migrate_create_positions import (
         run_migrations as mig_positions,
     )
@@ -219,5 +222,10 @@ def get_migrations() -> list[Migration]:
             "320_instruments_metadata_refreshed_at_ms",
             "add instruments metadata_refreshed_at_ms",
             migrate_add_instruments_metadata_refreshed_at_ms,
+        ),
+        Migration(
+            "330_ops_swap_repair_audit_semantics",
+            "extend ops.swap_repair_audit with outcome + progress fields",
+            migrate_extend_ops_swap_repair_audit_semantics,
         ),
     ]
