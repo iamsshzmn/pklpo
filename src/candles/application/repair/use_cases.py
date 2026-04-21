@@ -171,12 +171,21 @@ class _BaseRepairUseCase:
             symbol=plan.symbol,
             timeframe=plan.timeframe,
             strategy=plan.strategy.value,
+            requested=plan.requested_bars,
+            received=total_received,
+            written=rows_written,
             rows_written=rows_written,
             fetch_calls=fetch_calls,
             verified=verified,
             verification_method=verification.method.value,
             remaining_gap_tasks=verification.remaining_gap_tasks,
             remaining_requested_bars=verification.remaining_requested_bars,
+            remaining_missing_before=remaining_missing_before,
+            remaining_missing_after=remaining_missing_after,
+            progress=progress,
+            api_fill_ratio=api_fill_ratio,
+            write_success_ratio=write_success_ratio,
+            outcome=outcome.value,
         )
         _ = (outcome, api_fill_ratio, write_success_ratio, progress)
         _ = (remaining_missing_before, remaining_missing_after)
