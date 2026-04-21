@@ -57,12 +57,14 @@ REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
         "max_gap_tasks_per_run": 50,
         "max_requested_bars_per_run": 10_000,
         "max_range_days": 7,
-        "max_fail_ratio": 0.1,
+        "max_fail_ratio": 1.0,
         "auto_apply_anchor_strategy": "listing-date",
         "anchor_ts_ms": None,
         "auto_apply_window": True,
         "start_ts_ms": None,
         "end_ts_ms": None,
+        "critical_timeframes": ["1m", "1H"],
+        "no_progress_threshold": 3,
     }
 }
 
