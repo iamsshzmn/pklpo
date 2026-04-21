@@ -28,6 +28,13 @@ class RepairVerificationMethod(StrEnum):
     GAP_DETECTION = "gap-detection"
 
 
+class RepairOutcome(StrEnum):
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    EMPTY = "empty"
+    FAIL = "fail"
+
+
 @dataclass(frozen=True)
 class RepairWindow:
     start_ts_ms: int
