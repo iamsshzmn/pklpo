@@ -364,6 +364,54 @@ class RepairCandlesRepository(SwapCandlesRepository):
             ts = expected_next_open(ts, "1M")
         return missing
 
+    async def count_missing_timestamps(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> int:
+        if start_ts_ms >= end_ts_ms:
+            return 0
+        if timeframe == "1M":
+            missing = await self._list_missing_1m(
+                symbol=symbol, start_ts_ms=start_ts_ms, end_ts_ms=end_ts_ms
+            )
+            return len(missing)
+
+        interval_ms = TF_TO_MS[timeframe]
+
+        async def _operation() -> int:
+            async with get_db_session() as session:
+                result = await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM generate_series(
+                            CAST(:start_ts_ms AS bigint),
+                            CAST(:end_ts_ms AS bigint) - CAST(:interval_ms AS bigint),
+                            CAST(:interval_ms AS bigint)
+                        ) AS gs(ts)
+                        LEFT JOIN swap_ohlcv_p c
+                            ON c.symbol = :symbol
+                            AND c.timeframe = :timeframe
+                            AND c.timestamp = gs.ts
+                        WHERE c.timestamp IS NULL
+                        """
+                    ),
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "start_ts_ms": start_ts_ms,
+                        "end_ts_ms": end_ts_ms,
+                        "interval_ms": interval_ms,
+                    },
+                )
+                return int(result.scalar() or 0)
+
+        return int(await self._run_with_db_retry(_operation))
+
     async def list_corrupted_timestamps(
         self,
         *,
