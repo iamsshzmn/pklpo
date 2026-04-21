@@ -119,6 +119,15 @@ class RepairVerificationSummary:
 
 @dataclass(frozen=True)
 class RepairGuardrails:
+    """Preflight limits for a repair plan.
+
+    ``max_fail_ratio`` is **deprecated in 2026-04**. Replaced by
+    ``NoProgressPolicy`` + ``RepairOutcome``. The field is retained for
+    backward compatibility with existing DAG presets and audit payloads,
+    but the use case no longer consults it. Scheduled for removal after
+    2026-07.
+    """
+
     max_gap_tasks_per_run: int
     max_requested_bars_per_run: int
     max_range_days: int
