@@ -182,18 +182,20 @@ Format per task: **id · status · description · files · expected result · ve
 - **commit:** `e022693` (`pytest --no-cov tests/candles/application/repair/test_use_cases.py -v`, `pytest --no-cov tests/candles/application/test_repair_use_cases.py -k "not fail_ratio" -v`, and `ruff check src/candles/application/repair/use_cases.py tests/candles/application/repair/test_use_cases.py tests/candles/application/test_repair_use_cases.py` green; legacy fail-ratio test intentionally left for later rewrite)
 
 #### REPAIR-402
-- **status:** todo
+- **status:** blocked
+- **blocked reason:** task text requires `test_success_outcome_fields_present_in_result`, but `RepairResult` does not yet expose `received_bars`, `remaining_missing_before`, `remaining_missing_after`, `progress`, `api_fill_ratio`, `write_success_ratio`, or `outcome`; those fields are scheduled only in `REPAIR-501`. Completing this test now would require pulling DTO work forward and would violate the plan's one-task / no-architectural-drift rules.
 - **description:** Add unit tests in `tests/candles/application/test_repair_use_cases.py`: `test_partial_api_fill_does_not_raise`, `test_empty_response_without_exception_does_not_raise`, `test_no_progress_escalation_on_1m_after_N_iterations` (simulate multi-iteration via auto-apply loop in `runner.py` or by calling the tracker directly), `test_success_outcome_fields_present_in_result`.
 - **files:** `tests/candles/application/test_repair_use_cases.py`
 - **expected result:** 4 new tests green; pre-existing success tests still green.
 - **verification:** `pytest tests/candles/application/test_repair_use_cases.py -v` — all green except the soon-to-be-rewritten `test_apply_exceeded_max_fail_ratio`.
 
 #### REPAIR-403
-- **status:** todo
+- **status:** done
 - **description:** Update the telemetry event `candles.repair.completed` payload in `use_cases.py:135-146` to include `requested`, `received`, `written`, `remaining_missing_before`, `remaining_missing_after`, `progress`, `api_fill_ratio`, `write_success_ratio`, `outcome`.
 - **files:** `src/candles/application/repair/use_cases.py:135-146`
 - **expected result:** event payload has all 9 new keys.
 - **verification:** unit test `tests/candles/application/test_repair_telemetry.py` asserts the event payload keys — `pytest tests/candles/application/test_repair_telemetry.py -v`.
+- **commit:** `97985a9` (`pytest --no-cov tests/candles/application/test_repair_telemetry.py -v` and `ruff check src/candles/application/repair/use_cases.py tests/candles/application/test_repair_telemetry.py` green)
 
 ---
 
