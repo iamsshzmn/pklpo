@@ -306,7 +306,7 @@ Format per task: **id · status · description · files · expected result · ve
 - **files:** `ops/airflow/dags/okx_swap_repair_v1.py` (search for `validate_swap_repair_xcom_payload`)
 - **expected result:** backward-compatible read of old payloads; forward-compatible read of new.
 - **verification:** unit test `tests/db/test_okx_swap_repair_v1_dag.py::test_xcom_accepts_new_fields` passes.
-- **commit:** _pending_ — soft validation lives in `ops/airflow/dags/_common/repair.py`. 5 new tests green: accepts payload without new fields; accepts with new fields; rejects invalid outcome; rejects non-numeric `api_fill_ratio`; rejects non-integer `progress`.
+- **commit:** `e3251c4` — soft validation lives in `ops/airflow/dags/_common/repair.py`. 5 new tests green: accepts payload without new fields; accepts with new fields; rejects invalid outcome; rejects non-numeric `api_fill_ratio`; rejects non-integer `progress`.
 
 #### REPAIR-804
 - **status:** todo
