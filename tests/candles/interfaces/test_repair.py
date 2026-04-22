@@ -173,6 +173,13 @@ async def test_run_swap_repair_wires_gap_repair_use_case_without_market_adapter(
         "guardrail_violations": [],
         "watermark_updated": False,
         "auto_apply_incomplete": True,
+        "received_bars": 0,
+        "remaining_missing_before": 0,
+        "remaining_missing_after": 0,
+        "progress": 0,
+        "api_fill_ratio": 0.0,
+        "write_success_ratio": 0.0,
+        "outcome": "success",
     }
 
 

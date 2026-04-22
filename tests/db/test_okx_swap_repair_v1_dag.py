@@ -298,6 +298,125 @@ def test_swap_repair_task_runs_for_each_symbol_and_timeframe(
     assert len(result) == 4
 
 
+def test_swap_repair_task_forwards_no_progress_policy_from_preset(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def _fake_run_swap_repair_auto_apply(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {
+            "mode": "apply",
+            "strategy": kwargs["strategy"].value,
+            "symbol": kwargs["symbol"],
+            "timeframe": kwargs["timeframe"],
+            "window": {"start_ts_ms": 10, "end_ts_ms": 100},
+            "gap_tasks": 0,
+            "requested_bars": 0,
+            "remaining_gap_tasks": 0,
+            "remaining_requested_bars": 0,
+            "verification_method": "gap-detection",
+            "rows_written": 0,
+            "fetch_calls": 0,
+            "verified": True,
+            "padding_bars": 0,
+            "guardrail_violations": [],
+            "watermark_updated": False,
+        }
+
+    class _Loop:
+        @staticmethod
+        def run_until_complete(coro: Any) -> dict[str, Any]:
+            import asyncio
+
+            return asyncio.run(coro)
+
+    monkeypatch.setattr(
+        repair_dag_module.repair_interface,
+        "run_swap_repair_auto_apply",
+        _fake_run_swap_repair_auto_apply,
+    )
+    monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
+    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
+
+    repair_dag_module.swap_repair_task(
+        ti=_TaskInstance(
+            {
+                "trigger": "repair-all-swaps",
+                "symbols": ["BTC-USDT-SWAP"],
+                "timeframes": ["1m"],
+                "mode": "apply",
+                "repair_strategy": "gap-repair",
+                "start_ts_ms": None,
+                "end_ts_ms": None,
+                "padding_bars": 0,
+                "max_gap_tasks_per_run": 50,
+                "max_requested_bars_per_run": 10_000,
+                "max_range_days": 7,
+                "max_fail_ratio": 1.0,
+                "auto_apply_anchor_strategy": "listing-date",
+                "anchor_ts_ms": None,
+                "auto_apply_window": True,
+                "critical_timeframes": ["1m", "1H"],
+                "no_progress_threshold": 1,
+            }
+        )
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["critical_timeframes"] == ["1m", "1H"]
+    assert calls[0]["no_progress_threshold"] == 1
+
+
+def test_run_swap_repair_once_forwards_no_progress_policy_from_preset(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    async def _fake_run_swap_repair(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {}
+
+    class _Loop:
+        @staticmethod
+        def run_until_complete(coro: Any) -> dict[str, Any]:
+            import asyncio
+
+            return asyncio.run(coro)
+
+    monkeypatch.setattr(
+        repair_dag_module.repair_interface,
+        "run_swap_repair",
+        _fake_run_swap_repair,
+    )
+    monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
+
+    repair_dag_module._run_swap_repair_once(
+        validated={
+            "symbol": "BTC-USDT-SWAP",
+            "mode": "apply",
+            "repair_strategy": "gap-repair",
+            "max_gap_tasks_per_run": 50,
+            "max_requested_bars_per_run": 10_000,
+            "max_range_days": 7,
+            "max_fail_ratio": 1.0,
+            "padding_bars": 0,
+            "critical_timeframes": ["1m"],
+            "no_progress_threshold": 2,
+        },
+        timeframe="1m",
+        start_ts_ms=10,
+        end_ts_ms=100,
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["critical_timeframes"] == ["1m"]
+    assert calls[0]["no_progress_threshold"] == 2
+
+
 def test_publish_swap_repair_ops_task_pushes_metrics_and_writes_audit(
     repair_dag_module: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,

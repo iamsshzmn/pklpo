@@ -15,6 +15,7 @@ from src.candles.application.repair import (
     run_repair_timeframe,
 )
 from src.candles.domain.repair import (
+    NoProgressPolicy,
     RepairExecutionMode,
     RepairGuardrails,
     RepairStrategy,
@@ -126,6 +127,7 @@ def _build_repair_use_case(
     telemetry: _TracingTelemetryAdapter,
     strategy: RepairStrategy,
     source: Any,
+    no_progress_policy: NoProgressPolicy | None = None,
 ) -> RunGapRepairUseCase | RunHistoricalBackfillUseCase:
     use_case_cls = (
         RunHistoricalBackfillUseCase
@@ -137,7 +139,23 @@ def _build_repair_use_case(
         historical_source=source,
         repair_store=repository,
         telemetry=telemetry,
+        no_progress_policy=no_progress_policy,
     )
+
+
+def _build_no_progress_policy(
+    *,
+    critical_timeframes: list[str] | tuple[str, ...] | None,
+    no_progress_threshold: int | None,
+) -> NoProgressPolicy | None:
+    if critical_timeframes is None and no_progress_threshold is None:
+        return None
+    kwargs: dict[str, Any] = {}
+    if critical_timeframes is not None:
+        kwargs["critical_timeframes"] = frozenset(str(tf) for tf in critical_timeframes)
+    if no_progress_threshold is not None:
+        kwargs["no_progress_threshold"] = int(no_progress_threshold)
+    return NoProgressPolicy(**kwargs)
 
 
 @asynccontextmanager
@@ -146,6 +164,7 @@ async def _open_repair_runtime(
     mode: RepairExecutionMode,
     strategy: RepairStrategy,
     config: dict[str, Any] | None,
+    no_progress_policy: NoProgressPolicy | None = None,
 ) -> AsyncIterator[_RepairRuntime]:
     repository = RepairCandlesRepository()
     telemetry = _TracingTelemetryAdapter()
@@ -162,6 +181,7 @@ async def _open_repair_runtime(
                     telemetry=telemetry,
                     strategy=strategy,
                     source=source,
+                    no_progress_policy=no_progress_policy,
                 ),
             )
         return
@@ -174,6 +194,7 @@ async def _open_repair_runtime(
             telemetry=telemetry,
             strategy=strategy,
             source=_NoopHistoricalRangeSource(),
+            no_progress_policy=no_progress_policy,
         ),
     )
 
@@ -243,6 +264,8 @@ async def _run_swap_repair_once_summary(
     max_fail_ratio: float,
     padding_bars: int,
     config: dict[str, Any] | None = None,
+    critical_timeframes: list[str] | tuple[str, ...] | None = None,
+    no_progress_threshold: int | None = None,
 ) -> RepairSummary:
     now_ts_ms = int(datetime.now(UTC).timestamp() * 1000)
     guardrails = _build_guardrails(
@@ -251,10 +274,15 @@ async def _run_swap_repair_once_summary(
         max_range_days=max_range_days,
         max_fail_ratio=max_fail_ratio,
     )
+    no_progress_policy = _build_no_progress_policy(
+        critical_timeframes=critical_timeframes,
+        no_progress_threshold=no_progress_threshold,
+    )
     async with _open_repair_runtime(
         mode=mode,
         strategy=strategy,
         config=config,
+        no_progress_policy=no_progress_policy,
     ) as runtime:
         execute_once = _build_execute_once(
             use_case=runtime.use_case,
@@ -286,6 +314,8 @@ async def run_swap_repair(
     max_fail_ratio: float,
     padding_bars: int,
     config: dict[str, Any] | None = None,
+    critical_timeframes: list[str] | tuple[str, ...] | None = None,
+    no_progress_threshold: int | None = None,
 ) -> dict[str, Any]:
     summary = await _run_swap_repair_once_summary(
         symbol=symbol,
@@ -300,6 +330,8 @@ async def run_swap_repair(
         max_fail_ratio=max_fail_ratio,
         padding_bars=padding_bars,
         config=config,
+        critical_timeframes=critical_timeframes,
+        no_progress_threshold=no_progress_threshold,
     )
     return summary.to_dict()
 
@@ -370,6 +402,8 @@ async def run_swap_repair_timeframe(
     auto_apply_iteration_limit: int = 100,
     anchor_ts_ms: int | None = None,
     auto_apply_anchor_strategy: str = "first-coverage",
+    critical_timeframes: list[str] | tuple[str, ...] | None = None,
+    no_progress_threshold: int | None = None,
 ) -> dict[str, Any]:
     if auto_apply_window and mode is not RepairExecutionMode.APPLY:
         raise ValueError("swap_repair auto-apply requires apply mode")
@@ -379,6 +413,10 @@ async def run_swap_repair_timeframe(
         max_requested_bars_per_run=max_requested_bars_per_run,
         max_range_days=max_range_days,
         max_fail_ratio=max_fail_ratio,
+    )
+    no_progress_policy = _build_no_progress_policy(
+        critical_timeframes=critical_timeframes,
+        no_progress_threshold=no_progress_threshold,
     )
     validated = {
         "symbol": symbol,
@@ -391,6 +429,7 @@ async def run_swap_repair_timeframe(
         mode=mode,
         strategy=strategy,
         config=config,
+        no_progress_policy=no_progress_policy,
     ) as runtime:
         summary = await run_repair_timeframe(
             validated=validated,
@@ -434,6 +473,8 @@ async def run_swap_repair_auto_apply(
     config: dict[str, Any] | None = None,
     anchor_ts_ms: int | None = None,
     auto_apply_anchor_strategy: str = "first-coverage",
+    critical_timeframes: list[str] | tuple[str, ...] | None = None,
+    no_progress_threshold: int | None = None,
 ) -> dict[str, Any]:
     return await run_swap_repair_timeframe(
         symbol=symbol,
@@ -453,4 +494,6 @@ async def run_swap_repair_auto_apply(
         auto_apply_iteration_limit=auto_apply_max_iterations,
         anchor_ts_ms=anchor_ts_ms,
         auto_apply_anchor_strategy=auto_apply_anchor_strategy,
+        critical_timeframes=critical_timeframes,
+        no_progress_threshold=no_progress_threshold,
     )

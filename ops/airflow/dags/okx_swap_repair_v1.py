@@ -145,6 +145,23 @@ def _get_validated_conf(context: dict[str, Any]) -> dict[str, Any]:
     return _build_validated_conf_from_trigger(trigger)
 
 
+def _extract_no_progress_policy(
+    validated: dict[str, Any],
+) -> tuple[list[str] | None, int | None]:
+    critical_raw = validated.get("critical_timeframes")
+    critical = None if critical_raw is None else [str(tf) for tf in critical_raw]
+    threshold_raw = validated.get("no_progress_threshold")
+    threshold = (
+        None
+        if threshold_raw is None
+        else _coerce_int(
+            threshold_raw,
+            field_name="validated.no_progress_threshold",
+        )
+    )
+    return critical, threshold
+
+
 def _run_swap_repair_once(
     *,
     validated: dict[str, Any],
@@ -152,6 +169,7 @@ def _run_swap_repair_once(
     start_ts_ms: int,
     end_ts_ms: int,
 ) -> dict[str, Any]:
+    critical_timeframes, no_progress_threshold = _extract_no_progress_policy(validated)
     return _get_loop().run_until_complete(
         repair_interface.run_swap_repair(
             symbol=str(validated["symbol"]),
@@ -180,6 +198,8 @@ def _run_swap_repair_once(
                 validated["padding_bars"],
                 field_name="validated.padding_bars",
             ),
+            critical_timeframes=critical_timeframes,
+            no_progress_threshold=no_progress_threshold,
         )
     )
 
@@ -189,6 +209,7 @@ def _run_auto_apply_for_timeframe(
     validated: dict[str, Any],
     timeframe: str,
 ) -> dict[str, Any]:
+    critical_timeframes, no_progress_threshold = _extract_no_progress_policy(validated)
     return _get_loop().run_until_complete(
         repair_interface.run_swap_repair_auto_apply(
             symbol=str(validated["symbol"]),
@@ -226,6 +247,8 @@ def _run_auto_apply_for_timeframe(
             auto_apply_anchor_strategy=str(
                 validated.get("auto_apply_anchor_strategy", "first-coverage")
             ),
+            critical_timeframes=critical_timeframes,
+            no_progress_threshold=no_progress_threshold,
         )
     )
 

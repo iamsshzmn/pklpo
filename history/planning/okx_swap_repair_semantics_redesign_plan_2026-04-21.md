@@ -153,13 +153,12 @@ Format per task: **id · status · description · files · expected result · ve
 **Цель:** изолировать state machine «no-progress counter» в отдельный модуль, чтобы use case остался тонким и тестируемым.
 
 #### REPAIR-301
-- **status:** done
+- **status:** done (codex)
 - **description:** Create `src/candles/application/repair/progress.py` with class `NoProgressTracker` that holds `policy: NoProgressPolicy`, `timeframe: str`, internal `_consecutive: int`. Methods: `record(progress: int) -> None` (increments counter when `progress <= 0`, resets otherwise), `should_escalate() -> bool` (True when critical + counter reaches threshold), `snapshot() -> dict` (for logging/audit). Scope: per-DAG-run, in-memory only — no persistence, no audit-history lookup.
 - **files:** `src/candles/application/repair/progress.py` (new)
 - **expected result:** deterministic state machine; no I/O; all methods pure on internal state.
 - **verification:** unit tests `tests/candles/application/test_no_progress_tracker.py` covering: reset on progress > 0, escalation at N=3 on 1m, no escalation on 1D, snapshot shape. `pytest tests/candles/application/test_no_progress_tracker.py -v` passes.
 - **commit:** `b88613b` (`pytest --no-cov tests/candles/application/test_no_progress_tracker.py -v` and `ruff check src/candles/application/repair/progress.py tests/candles/application/test_no_progress_tracker.py` green)
-
 ---
 
 ### Этап 4 · Use case rewrite (PR1)
@@ -167,7 +166,7 @@ Format per task: **id · status · description · files · expected result · ve
 **Цель:** заменить `fail_ratio` на outcome-aware + progress-based логику без breaking API на входе.
 
 #### REPAIR-401
-- **status:** done
+- **status:** done (codex)
 - **description:** In `_BaseRepairUseCase.run()`:
   1. Before the fetch loop: `remaining_missing_before = await self._coverage_query.count_missing_timestamps(...)` over the full `plan.window`.
   2. Inside the loop: accumulate `total_received` = `len(validated)` BEFORE upsert, and accumulate `total_written` (already done).
@@ -179,23 +178,23 @@ Format per task: **id · status · description · files · expected result · ve
 - **files:** `src/candles/application/repair/use_cases.py`
 - **expected result:** exception cases shrink to real failures (DB/HTTP errors) + escalation on critical-TF no-progress; partial/empty no longer raise.
 - **verification:** existing test `tests/candles/application/test_repair_use_cases.py::test_apply_exceeded_max_fail_ratio` will fail — that is expected (rewritten in REPAIR-902). New tests added in REPAIR-402 pass.
-- **commit:** `e022693` (`pytest --no-cov tests/candles/application/repair/test_use_cases.py -v`, `pytest --no-cov tests/candles/application/test_repair_use_cases.py -k "not fail_ratio" -v`, and `ruff check src/candles/application/repair/use_cases.py tests/candles/application/repair/test_use_cases.py tests/candles/application/test_repair_use_cases.py` green; legacy fail-ratio test intentionally left for later rewrite)
+- **commit:** `e022693` (codex) + cleanup `e792f37` (removed dead `_ = (...)` lines after REPAIR-403 consumed them). Legacy `test_apply_raises_when_fail_ratio_exceeds_limit` expected-fails as designed; 10 other use-case tests green.
 
 #### REPAIR-402
-- **status:** blocked
-- **blocked reason:** task text requires `test_success_outcome_fields_present_in_result`, but `RepairResult` does not yet expose `received_bars`, `remaining_missing_before`, `remaining_missing_after`, `progress`, `api_fill_ratio`, `write_success_ratio`, or `outcome`; those fields are scheduled only in `REPAIR-501`. Completing this test now would require pulling DTO work forward and would violate the plan's one-task / no-architectural-drift rules.
+- **status:** done
 - **description:** Add unit tests in `tests/candles/application/test_repair_use_cases.py`: `test_partial_api_fill_does_not_raise`, `test_empty_response_without_exception_does_not_raise`, `test_no_progress_escalation_on_1m_after_N_iterations` (simulate multi-iteration via auto-apply loop in `runner.py` or by calling the tracker directly), `test_success_outcome_fields_present_in_result`.
 - **files:** `tests/candles/application/test_repair_use_cases.py`
 - **expected result:** 4 new tests green; pre-existing success tests still green.
 - **verification:** `pytest tests/candles/application/test_repair_use_cases.py -v` — all green except the soon-to-be-rewritten `test_apply_exceeded_max_fail_ratio`.
+- **commit:** `336cfda` (4 new tests green + 7 pre-existing still green; legacy `test_apply_raises_when_fail_ratio_exceeds_limit` expected-fails per REPAIR-401)
 
 #### REPAIR-403
-- **status:** done
+- **status:** done (codex)
 - **description:** Update the telemetry event `candles.repair.completed` payload in `use_cases.py:135-146` to include `requested`, `received`, `written`, `remaining_missing_before`, `remaining_missing_after`, `progress`, `api_fill_ratio`, `write_success_ratio`, `outcome`.
 - **files:** `src/candles/application/repair/use_cases.py:135-146`
 - **expected result:** event payload has all 9 new keys.
 - **verification:** unit test `tests/candles/application/test_repair_telemetry.py` asserts the event payload keys — `pytest tests/candles/application/test_repair_telemetry.py -v`.
-- **commit:** `97985a9` (`pytest --no-cov tests/candles/application/test_repair_telemetry.py -v` and `ruff check src/candles/application/repair/use_cases.py tests/candles/application/test_repair_telemetry.py` green)
+- **commit:** `97985a9` (codex) — `test_repair_completed_telemetry_includes_semantic_fields` green.
 
 ---
 
@@ -204,21 +203,24 @@ Format per task: **id · status · description · files · expected result · ve
 **Цель:** прокинуть новые поля через `RepairResult → RepairSummary → to_dict/from_mapping → XCom`, с обратной совместимостью на чтение старых payload'ов.
 
 #### REPAIR-501
-- **status:** todo
+- **status:** done
+- **commit:** bd2400a
 - **description:** Extend `RepairResult` (in `dto.py`) with fields: `received_bars: int = 0`, `remaining_missing_before: int = 0`, `remaining_missing_after: int = 0`, `progress: int = 0`, `api_fill_ratio: float = 0.0`, `write_success_ratio: float = 0.0`, `outcome: RepairOutcome = RepairOutcome.SUCCESS`.
 - **files:** `src/candles/application/repair/dto.py`
 - **expected result:** dataclass `frozen=True` preserved; default values keep callers compiling.
 - **verification:** `make typecheck` green; existing tests still construct `RepairResult` successfully.
 
 #### REPAIR-502
-- **status:** todo
+- **status:** done
+- **commit:** 5e5dcc1
 - **description:** Extend `RepairSummary` with same fields; update `to_dict()`, `from_mapping()` round-trip, `from_result()`, `merge_repair_summaries()` (last-iteration semantics for `outcome`, sum for `received_bars`, last for `remaining_missing_after`, recompute `progress = remaining_missing_before_first - remaining_missing_after_last`).
 - **files:** `src/candles/application/repair/summary.py`
 - **expected result:** round-trip `RepairSummary → dict → RepairSummary` preserves all new fields; merge of 2 partial summaries yields `PARTIAL` outcome with correct progress.
 - **verification:** expand `tests/candles/application/test_repair_summary.py` (or equivalent) with `test_summary_round_trip_includes_new_fields`, `test_merge_two_partial_summaries`. `pytest tests/candles/application/test_repair_summary.py -v` green.
 
 #### REPAIR-503
-- **status:** todo
+- **status:** done
+- **commit:** d8948ca
 - **description:** `build_noop_repair_summary()` should set `outcome=RepairOutcome.SUCCESS`, `received_bars=0`, `remaining_missing_before=0`, `remaining_missing_after=0`, `progress=0`, ratios = 0.0.
 - **files:** `src/candles/application/repair/summary.py:218-245`
 - **expected result:** noop stays benign and explicit in audit.
@@ -231,21 +233,24 @@ Format per task: **id · status · description · files · expected result · ve
 **Цель:** persist новые поля в `ops.swap_repair_audit` с безопасной миграцией (nullable + default).
 
 #### REPAIR-601
-- **status:** todo
+- **status:** done
+- **commit:** 36ae8e0
 - **description:** Create new migration `src/db/migrations/migrate_extend_ops_swap_repair_audit_semantics.py` adding columns: `outcome TEXT NULL`, `received_bars INTEGER NULL`, `remaining_missing_before INTEGER NULL`, `remaining_missing_after INTEGER NULL`, `progress INTEGER NULL`, `api_fill_ratio DOUBLE PRECISION NULL`, `write_success_ratio DOUBLE PRECISION NULL`. Use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`. No default, no backfill (historical rows stay NULL).
 - **files:** `src/db/migrations/migrate_extend_ops_swap_repair_audit_semantics.py` (new)
 - **expected result:** idempotent; can run twice without error.
 - **verification:** apply via `python -m src.db.cli migrate` on a test DB; `psql -c "\\d ops.swap_repair_audit"` shows new columns nullable.
 
 #### REPAIR-602
-- **status:** todo
+- **status:** done
+- **commit:** ebf20f5
 - **description:** Extend `SwapRepairAuditRepository.insert_records()` columns list + VALUES placeholders to include the 7 new fields. Read from `summary_payload` defensively (fall back to NULL if key missing — protects against old callers).
 - **files:** `src/candles/infrastructure/repair_audit_repository.py:18-40`
 - **expected result:** inserts new columns when payload has them; tolerates missing keys.
 - **verification:** unit test `tests/candles/infrastructure/test_repair_audit_repository_new_fields.py` — insert with and without new fields; assert row contents via a stub connection.
 
 #### REPAIR-603
-- **status:** todo
+- **status:** done
+- **commit:** a6bb127
 - **description:** Update `write_swap_repair_audit()` in `src/candles/interfaces/repair_audit.py` to pluck new fields out of `summary_payload` and attach them to the audit row dict passed to the repository.
 - **files:** `src/candles/interfaces/repair_audit.py`
 - **expected result:** audit row has 7 new keys when available.
@@ -258,14 +263,16 @@ Format per task: **id · status · description · files · expected result · ve
 **Цель:** отделить сигнал прогресса от сигнала ошибки на уровне метрик.
 
 #### REPAIR-701
-- **status:** todo
+- **status:** done
+- **commit:** 91c1fb5
 - **description:** In `src/candles/observability/prometheus.py:push_swap_repair_metrics`, add gauges: `pklpo_swap_repair_received_bars`, `pklpo_swap_repair_progress`, `pklpo_swap_repair_api_fill_ratio`, `pklpo_swap_repair_write_success_ratio`, `pklpo_swap_repair_remaining_missing_before`, `pklpo_swap_repair_remaining_missing_after`. Add counter-style gauge `pklpo_swap_repair_outcome_total{outcome=...}` incremented by 1 per summary.
 - **files:** `src/candles/observability/prometheus.py:332-412`
 - **expected result:** `pushgateway` receives new metric lines; old gauges still emitted.
 - **verification:** unit test `tests/candles/observability/test_prometheus_swap_repair.py` — build a fake payload with new fields, capture pushed text, assert metric names present.
 
 #### REPAIR-702
-- **status:** todo
+- **status:** done
+- **commit:** 51bdbf1
 - **description:** At the end of `_BaseRepairUseCase.run()`, emit a `logger.info("repair.outcome", extra={...})` with the full new field set. Prefix key names with `repair_` to avoid collision with other log fields.
 - **files:** `src/candles/application/repair/use_cases.py`
 - **expected result:** one structured log line per repair run, grep-able.
@@ -278,18 +285,20 @@ Format per task: **id · status · description · files · expected result · ve
 **Цель:** поверхность оркестрации должна подхватить новые поля, не сломав existing XCom-контракт.
 
 #### REPAIR-801
-- **status:** todo
+- **status:** done
+- **commit:** 993f032
 - **description:** In `ops/airflow/dags/okx_swap_repair_v1.py:REPAIR_TRIGGER_PRESETS`, replace / augment `"repair-all-swaps"` preset: remove reliance on `max_fail_ratio` (keep the key with value `1.0` for backward compat to signal "disabled"); add `"critical_timeframes": ["1m", "1H"]`, `"no_progress_threshold": 3`.
 - **files:** `ops/airflow/dags/okx_swap_repair_v1.py:51-67`
 - **expected result:** new preset loads without validation errors.
 - **verification:** `pytest tests/db/test_okx_swap_repair_v1_dag.py -v` green; DAG import test `pytest tests/airflow/test_dags_import.py` green.
 
 #### REPAIR-802
-- **status:** todo
+- **status:** done
 - **description:** Thread `critical_timeframes` + `no_progress_threshold` from preset through to `RepairCommand` / use-case construction. Update `src/candles/application/repair/runner.py:_open_repair_runtime` and `src/candles/interfaces/repair.py:run_swap_repair` to accept and forward a `NoProgressPolicy`.
 - **files:** `src/candles/application/repair/runner.py`, `src/candles/interfaces/repair.py`, `ops/airflow/dags/okx_swap_repair_v1.py`
 - **expected result:** DAG can override defaults from preset.
 - **verification:** DAG contract test checks that when preset sets `no_progress_threshold=1`, the tracker escalates immediately after one no-progress iteration.
+- **commit:** _pending_ — `tests/db/test_okx_swap_repair_v1_dag.py::test_swap_repair_task_forwards_no_progress_policy_from_preset` + `test_run_swap_repair_once_forwards_no_progress_policy_from_preset` green; `critical_timeframes`/`no_progress_threshold` forwarded end-to-end from DAG preset → interface → `_open_repair_runtime` → `_build_no_progress_policy()` → `_build_repair_use_case`. (Also fixed `tests/candles/interfaces/test_repair.py` snapshot for REPAIR-501/502 carry-over.)
 
 #### REPAIR-803
 - **status:** todo
