@@ -353,11 +353,12 @@ Format per task: **id · status · description · files · expected result · ve
 **Цель:** синхронизировать документацию с новой семантикой.
 
 #### REPAIR-1001
-- **status:** todo
+- **status:** done
 - **description:** Update `docs/okx_swap_repair_v1_plan_vs_actual.md` (currently deleted on disk per `git status` — restore or recreate) to reflect the new outcome model, new metric names, and reference this plan.
 - **files:** `docs/okx_swap_repair_v1_plan_vs_actual.md`
 - **expected result:** doc exists, references the plan in `history/planning/`.
 - **verification:** `git status` clean for docs; `grep -l "okx_swap_repair_semantics_redesign_plan" docs/` lists the file.
+- **commit:** `479ece7` — recreated doc with a new "Outcome model" section (table for SUCCESS/PARTIAL/EMPTY/FAIL), a "Per-outcome audit fields" subsection listing the 7 fields, a "No-progress escalation" section documenting `NoProgressPolicy` and the terminal-error translation, and two links back to this plan file. Existing trigger-contract, anchor-strategy, SQL-correctness-layer, and multi-symbol sections preserved. `grep -l` finds the plan reference.
 
 #### REPAIR-1002
 - **status:** todo
