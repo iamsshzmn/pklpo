@@ -28,6 +28,13 @@ def _load_repair_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType
     airflow_module.DAG = _DummyDAG
     monkeypatch.setitem(sys.modules, "airflow", airflow_module)
 
+    class _AirflowFailException(Exception):
+        pass
+
+    airflow_exceptions = types.ModuleType("airflow.exceptions")
+    airflow_exceptions.AirflowFailException = _AirflowFailException
+    monkeypatch.setitem(sys.modules, "airflow.exceptions", airflow_exceptions)
+
     airflow_models = types.ModuleType("airflow.models")
     monkeypatch.setitem(sys.modules, "airflow.models", airflow_models)
 
@@ -697,3 +704,156 @@ def test_xcom_rejects_non_integer_progress() -> None:
     payload = _make_swap_repair_xcom_payload(progress="not-an-int")
     with pytest.raises(ValueError, match="'progress'"):
         validate_swap_repair_xcom_payload(payload)
+
+
+def test_swap_repair_task_translates_guardrail_valueerror_to_airflow_fail(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    async def _raise_guardrail(**_kwargs: Any) -> dict[str, Any]:
+        raise ValueError("apply blocked by guardrails: RANGE_TOO_LONG")
+
+    class _Loop:
+        @staticmethod
+        def run_until_complete(coro: Any) -> dict[str, Any]:
+            import asyncio
+
+            return asyncio.run(coro)
+
+    monkeypatch.setattr(
+        repair_dag_module.repair_interface,
+        "run_swap_repair_auto_apply",
+        _raise_guardrail,
+    )
+    monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
+    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
+
+    airflow_exceptions = sys.modules.get("airflow.exceptions")
+    assert airflow_exceptions is not None, "airflow.exceptions not loaded via DAG module"
+    AirflowFailException = airflow_exceptions.AirflowFailException
+
+    with pytest.raises(AirflowFailException, match="apply blocked by guardrails"):
+        repair_dag_module.swap_repair_task(
+            ti=_TaskInstance(
+                {
+                    "trigger": "repair-all-swaps",
+                    "symbols": ["BTC-USDT-SWAP"],
+                    "timeframes": ["1m"],
+                    "mode": "apply",
+                    "repair_strategy": "gap-repair",
+                    "padding_bars": 0,
+                    "max_gap_tasks_per_run": 50,
+                    "max_requested_bars_per_run": 10_000,
+                    "max_range_days": 7,
+                    "max_fail_ratio": 1.0,
+                    "auto_apply_anchor_strategy": "listing-date",
+                    "anchor_ts_ms": None,
+                    "auto_apply_window": True,
+                    "critical_timeframes": ["1m"],
+                    "no_progress_threshold": 1,
+                }
+            )
+        )
+
+
+def test_swap_repair_task_translates_no_progress_valueerror_to_airflow_fail(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    async def _raise_no_progress(**_kwargs: Any) -> dict[str, Any]:
+        raise ValueError("no progress on critical TF 1m: 1 iterations in a row")
+
+    class _Loop:
+        @staticmethod
+        def run_until_complete(coro: Any) -> dict[str, Any]:
+            import asyncio
+
+            return asyncio.run(coro)
+
+    monkeypatch.setattr(
+        repair_dag_module.repair_interface,
+        "run_swap_repair_auto_apply",
+        _raise_no_progress,
+    )
+    monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
+    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
+
+    airflow_exceptions = sys.modules.get("airflow.exceptions")
+    assert airflow_exceptions is not None
+    AirflowFailException = airflow_exceptions.AirflowFailException
+
+    with pytest.raises(AirflowFailException, match="no progress on critical TF"):
+        repair_dag_module.swap_repair_task(
+            ti=_TaskInstance(
+                {
+                    "trigger": "repair-all-swaps",
+                    "symbols": ["BTC-USDT-SWAP"],
+                    "timeframes": ["1m"],
+                    "mode": "apply",
+                    "repair_strategy": "gap-repair",
+                    "padding_bars": 0,
+                    "max_gap_tasks_per_run": 50,
+                    "max_requested_bars_per_run": 10_000,
+                    "max_range_days": 7,
+                    "max_fail_ratio": 1.0,
+                    "auto_apply_anchor_strategy": "listing-date",
+                    "anchor_ts_ms": None,
+                    "auto_apply_window": True,
+                    "critical_timeframes": ["1m"],
+                    "no_progress_threshold": 1,
+                }
+            )
+        )
+
+
+def test_swap_repair_task_does_not_translate_other_exceptions(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _raise_transport(**_kwargs: Any) -> dict[str, Any]:
+        raise TimeoutError("upstream OKX API timeout")
+
+    class _Loop:
+        @staticmethod
+        def run_until_complete(coro: Any) -> dict[str, Any]:
+            import asyncio
+
+            return asyncio.run(coro)
+
+    monkeypatch.setattr(
+        repair_dag_module.repair_interface,
+        "run_swap_repair_auto_apply",
+        _raise_transport,
+    )
+    monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
+    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
+
+    with pytest.raises(TimeoutError, match="upstream OKX API timeout"):
+        repair_dag_module.swap_repair_task(
+            ti=_TaskInstance(
+                {
+                    "trigger": "repair-all-swaps",
+                    "symbols": ["BTC-USDT-SWAP"],
+                    "timeframes": ["1m"],
+                    "mode": "apply",
+                    "repair_strategy": "gap-repair",
+                    "padding_bars": 0,
+                    "max_gap_tasks_per_run": 50,
+                    "max_requested_bars_per_run": 10_000,
+                    "max_range_days": 7,
+                    "max_fail_ratio": 1.0,
+                    "auto_apply_anchor_strategy": "listing-date",
+                    "anchor_ts_ms": None,
+                    "auto_apply_window": True,
+                    "critical_timeframes": ["1m"],
+                    "no_progress_threshold": 1,
+                }
+            )
+        )

@@ -24,6 +24,7 @@ from _common import (
     validate_swap_repair_xcom_payload,
 )
 from airflow import DAG
+from airflow.exceptions import AirflowFailException
 from airflow.models.param import Param
 from airflow.operators.python import PythonOperator
 
@@ -143,6 +144,19 @@ def _get_validated_conf(context: dict[str, Any]) -> dict[str, Any]:
     conf = _get_run_conf(context)
     trigger = str(conf.get("trigger") or DEFAULT_TRIGGER).strip()
     return _build_validated_conf_from_trigger(trigger)
+
+
+TERMINAL_REPAIR_ERROR_PREFIXES: tuple[str, ...] = (
+    "apply blocked by guardrails",
+    "no progress on critical TF",
+)
+
+
+def _is_terminal_repair_error(exc: BaseException) -> bool:
+    if not isinstance(exc, ValueError):
+        return False
+    message = str(exc)
+    return any(message.startswith(prefix) for prefix in TERMINAL_REPAIR_ERROR_PREFIXES)
 
 
 def _extract_no_progress_policy(
@@ -342,24 +356,36 @@ def swap_repair_task(**context) -> list[dict[str, Any]]:
         per_symbol_validated = dict(validated)
         per_symbol_validated["symbol"] = symbol
         for timeframe in timeframes:
-            if bool(validated.get("auto_apply_window", False)):
-                summary = _run_auto_apply_for_timeframe(
-                    validated=per_symbol_validated,
-                    timeframe=str(timeframe),
-                )
-            else:
-                summary = _run_swap_repair_once(
-                    validated=per_symbol_validated,
-                    timeframe=str(timeframe),
-                    start_ts_ms=_coerce_int(
-                        validated.get("start_ts_ms"),
-                        field_name="validated.start_ts_ms",
-                    ),
-                    end_ts_ms=_coerce_int(
-                        validated.get("end_ts_ms"),
-                        field_name="validated.end_ts_ms",
-                    ),
-                )
+            try:
+                if bool(validated.get("auto_apply_window", False)):
+                    summary = _run_auto_apply_for_timeframe(
+                        validated=per_symbol_validated,
+                        timeframe=str(timeframe),
+                    )
+                else:
+                    summary = _run_swap_repair_once(
+                        validated=per_symbol_validated,
+                        timeframe=str(timeframe),
+                        start_ts_ms=_coerce_int(
+                            validated.get("start_ts_ms"),
+                            field_name="validated.start_ts_ms",
+                        ),
+                        end_ts_ms=_coerce_int(
+                            validated.get("end_ts_ms"),
+                            field_name="validated.end_ts_ms",
+                        ),
+                    )
+            except ValueError as exc:
+                if _is_terminal_repair_error(exc):
+                    logger.error(
+                        "swap_repair terminal failure %s symbol=%s timeframe=%s reason=%s",
+                        log_ctx,
+                        symbol,
+                        timeframe,
+                        exc,
+                    )
+                    raise AirflowFailException(str(exc)) from exc
+                raise
             logger.info(
                 "swap_repair finish %s symbol=%s timeframe=%s summary=%s",
                 log_ctx,
