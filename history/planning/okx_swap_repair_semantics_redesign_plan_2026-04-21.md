@@ -314,7 +314,7 @@ Format per task: **id · status · description · files · expected result · ve
 - **files:** `ops/airflow/dags/okx_swap_repair_v1.py`
 - **expected result:** exit codes / `retry_delay` consistent with classification.
 - **verification:** manual Airflow UI check on a dev instance: trigger DAG with `no_progress_threshold=1`, expect single failure, no retry loop.
-- **commit:** _pending_ — `swap_repair_task` translates terminal `ValueError("apply blocked by guardrails" | "no progress on critical TF" ...)` to `AirflowFailException` (no retry). Other exceptions continue to propagate → global `retries: 2` still applies. 3 new unit tests cover both terminal prefixes + a transport-style `TimeoutError` passing through untranslated. Manual Airflow UI verification remains recommended per plan.
+- **commit:** `47045a7` — `swap_repair_task` translates terminal `ValueError("apply blocked by guardrails" | "no progress on critical TF" ...)` to `AirflowFailException` (no retry). Other exceptions continue to propagate → global `retries: 2` still applies. 3 new unit tests cover both terminal prefixes + a transport-style `TimeoutError` passing through untranslated. Manual Airflow UI verification remains recommended per plan.
 
 ---
 
