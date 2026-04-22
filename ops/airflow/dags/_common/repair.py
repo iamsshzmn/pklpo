@@ -32,6 +32,18 @@ DEFAULT_SWAP_REPAIR_XCOM_KEYS = (
     "watermark_updated",
 )
 
+OPTIONAL_SWAP_REPAIR_OUTCOME_VALUES = ("success", "partial", "empty", "fail")
+OPTIONAL_SWAP_REPAIR_INT_KEYS = (
+    "received_bars",
+    "remaining_missing_before",
+    "remaining_missing_after",
+    "progress",
+)
+OPTIONAL_SWAP_REPAIR_FLOAT_KEYS = (
+    "api_fill_ratio",
+    "write_success_ratio",
+)
+
 DEFAULT_SWAP_REPAIR_TIMEFRAMES = ("1m", "1H", "4H", "1D", "1W", "1M")
 DEFAULT_SWAP_REPAIR_WINDOW_HOURS = 6
 DEFAULT_SWAP_REPAIR_SYMBOL = "BTC-USDT-SWAP"
@@ -381,6 +393,32 @@ def validate_swap_repair_xcom_payload(
                 raise ValueError(
                     f"{context_name} apply run must use gap-detection verification"
                 )
+
+    if "outcome" in normalized and normalized["outcome"] is not None:
+        outcome_value = normalized["outcome"]
+        if (
+            not isinstance(outcome_value, str)
+            or outcome_value not in OPTIONAL_SWAP_REPAIR_OUTCOME_VALUES
+        ):
+            raise ValueError(
+                f"{context_name} outcome must be one of {OPTIONAL_SWAP_REPAIR_OUTCOME_VALUES}, "
+                f"got {outcome_value!r}"
+            )
+    for key in OPTIONAL_SWAP_REPAIR_INT_KEYS:
+        if key in normalized and normalized[key] is not None:
+            normalized[key] = coerce_int(
+                normalized[key],
+                field_name=key,
+                context_name=context_name,
+            )
+    for key in OPTIONAL_SWAP_REPAIR_FLOAT_KEYS:
+        if key in normalized and normalized[key] is not None:
+            value = normalized[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(
+                    f"{context_name} {key} must be numeric, got {type(value).__name__}"
+                )
+            normalized[key] = float(value)
     return normalized
 
 

@@ -301,11 +301,12 @@ Format per task: **id · status · description · files · expected result · ve
 - **commit:** `14b1d30` — `tests/db/test_okx_swap_repair_v1_dag.py::test_swap_repair_task_forwards_no_progress_policy_from_preset` + `test_run_swap_repair_once_forwards_no_progress_policy_from_preset` green; `critical_timeframes`/`no_progress_threshold` forwarded end-to-end from DAG preset → interface → `_open_repair_runtime` → `_build_no_progress_policy()` → `_build_repair_use_case`. (Also fixed `tests/candles/interfaces/test_repair.py` snapshot for REPAIR-501/502 carry-over.)
 
 #### REPAIR-803
-- **status:** todo
+- **status:** done
 - **description:** Update XCom validator `validate_swap_repair_xcom_payload()` to accept but not require new fields (soft validation: if key present, must be of correct type).
 - **files:** `ops/airflow/dags/okx_swap_repair_v1.py` (search for `validate_swap_repair_xcom_payload`)
 - **expected result:** backward-compatible read of old payloads; forward-compatible read of new.
 - **verification:** unit test `tests/db/test_okx_swap_repair_v1_dag.py::test_xcom_accepts_new_fields` passes.
+- **commit:** _pending_ — soft validation lives in `ops/airflow/dags/_common/repair.py`. 5 new tests green: accepts payload without new fields; accepts with new fields; rejects invalid outcome; rejects non-numeric `api_fill_ratio`; rejects non-integer `progress`.
 
 #### REPAIR-804
 - **status:** todo

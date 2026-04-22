@@ -622,3 +622,78 @@ def test_ensure_instruments_loaded_task_calls_ensure_symbols_registered(
 
     assert len(ensure_calls) == 1
     assert ensure_calls[0]["symbols"] == ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
+
+
+def _make_swap_repair_xcom_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "mode": "apply",
+        "strategy": "gap-repair",
+        "symbol": "BTC-USDT-SWAP",
+        "timeframe": "1m",
+        "window": {"start_ts_ms": 10, "end_ts_ms": 100},
+        "gap_tasks": 1,
+        "requested_bars": 5,
+        "remaining_gap_tasks": 0,
+        "remaining_requested_bars": 0,
+        "verification_method": "gap-detection",
+        "rows_written": 5,
+        "fetch_calls": 1,
+        "verified": True,
+        "guardrail_violations": [],
+        "watermark_updated": False,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_xcom_accepts_payload_without_new_fields() -> None:
+    from ops.airflow.dags._common.repair import validate_swap_repair_xcom_payload
+
+    payload = _make_swap_repair_xcom_payload()
+    normalized = validate_swap_repair_xcom_payload(payload)
+    assert "outcome" not in normalized
+    assert "received_bars" not in normalized
+
+
+def test_xcom_accepts_payload_with_new_fields() -> None:
+    from ops.airflow.dags._common.repair import validate_swap_repair_xcom_payload
+
+    payload = _make_swap_repair_xcom_payload(
+        outcome="partial",
+        received_bars=3,
+        remaining_missing_before=5,
+        remaining_missing_after=2,
+        progress=3,
+        api_fill_ratio=0.6,
+        write_success_ratio=1.0,
+    )
+    normalized = validate_swap_repair_xcom_payload(payload)
+    assert normalized["outcome"] == "partial"
+    assert normalized["received_bars"] == 3
+    assert normalized["progress"] == 3
+    assert normalized["api_fill_ratio"] == pytest.approx(0.6)
+    assert normalized["write_success_ratio"] == pytest.approx(1.0)
+
+
+def test_xcom_rejects_invalid_outcome_value() -> None:
+    from ops.airflow.dags._common.repair import validate_swap_repair_xcom_payload
+
+    payload = _make_swap_repair_xcom_payload(outcome="bogus")
+    with pytest.raises(ValueError, match="outcome must be one of"):
+        validate_swap_repair_xcom_payload(payload)
+
+
+def test_xcom_rejects_non_numeric_api_fill_ratio() -> None:
+    from ops.airflow.dags._common.repair import validate_swap_repair_xcom_payload
+
+    payload = _make_swap_repair_xcom_payload(api_fill_ratio="not-a-number")
+    with pytest.raises(ValueError, match="api_fill_ratio must be numeric"):
+        validate_swap_repair_xcom_payload(payload)
+
+
+def test_xcom_rejects_non_integer_progress() -> None:
+    from ops.airflow.dags._common.repair import validate_swap_repair_xcom_payload
+
+    payload = _make_swap_repair_xcom_payload(progress="not-an-int")
+    with pytest.raises(ValueError, match="'progress'"):
+        validate_swap_repair_xcom_payload(payload)
