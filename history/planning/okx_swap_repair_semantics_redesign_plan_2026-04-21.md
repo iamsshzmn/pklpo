@@ -331,11 +331,12 @@ Format per task: **id · status · description · files · expected result · ve
 - **commit:** `34423a8` — old `test_apply_raises_when_fail_ratio_exceeds_limit` replaced by `test_no_progress_escalation_raises_on_critical_tf`. New test: first iteration makes progress (rows_written=2, counter resets) → no raise; then 3 consecutive empty iterations accumulate the tracker → fourth call raises `ValueError("no progress on critical TF 1m")`. All 13 use-case tests green.
 
 #### REPAIR-902
-- **status:** todo
+- **status:** done
 - **description:** Add integration test `tests/integration/test_swap_repair_semantics.py` that exercises the full pipeline with a fake API returning: (a) full window → `success`, (b) half window → `partial`, no exception, (c) empty → `empty`, no exception, (d) 3 consecutive empty on 1m → exception.
 - **files:** `tests/integration/test_swap_repair_semantics.py` (new)
 - **expected result:** all four scenarios pass.
 - **verification:** `pytest -m integration tests/integration/test_swap_repair_semantics.py -v`.
+- **commit:** `4f772d5` — 4 scenarios green. Outcome asserted via the `candles.repair.completed` telemetry payload (current contract — `RepairResult` fields like `outcome`, `received_bars`, etc. still use dataclass defaults and are not populated by the use case; only the telemetry event and the structured `repair.outcome` log line carry them).
 
 #### REPAIR-903
 - **status:** todo
