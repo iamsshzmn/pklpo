@@ -298,7 +298,7 @@ Format per task: **id · status · description · files · expected result · ve
 - **files:** `src/candles/application/repair/runner.py`, `src/candles/interfaces/repair.py`, `ops/airflow/dags/okx_swap_repair_v1.py`
 - **expected result:** DAG can override defaults from preset.
 - **verification:** DAG contract test checks that when preset sets `no_progress_threshold=1`, the tracker escalates immediately after one no-progress iteration.
-- **commit:** _pending_ — `tests/db/test_okx_swap_repair_v1_dag.py::test_swap_repair_task_forwards_no_progress_policy_from_preset` + `test_run_swap_repair_once_forwards_no_progress_policy_from_preset` green; `critical_timeframes`/`no_progress_threshold` forwarded end-to-end from DAG preset → interface → `_open_repair_runtime` → `_build_no_progress_policy()` → `_build_repair_use_case`. (Also fixed `tests/candles/interfaces/test_repair.py` snapshot for REPAIR-501/502 carry-over.)
+- **commit:** `14b1d30` — `tests/db/test_okx_swap_repair_v1_dag.py::test_swap_repair_task_forwards_no_progress_policy_from_preset` + `test_run_swap_repair_once_forwards_no_progress_policy_from_preset` green; `critical_timeframes`/`no_progress_threshold` forwarded end-to-end from DAG preset → interface → `_open_repair_runtime` → `_build_no_progress_policy()` → `_build_repair_use_case`. (Also fixed `tests/candles/interfaces/test_repair.py` snapshot for REPAIR-501/502 carry-over.)
 
 #### REPAIR-803
 - **status:** todo
