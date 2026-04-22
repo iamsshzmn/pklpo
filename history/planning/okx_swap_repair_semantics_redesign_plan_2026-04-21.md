@@ -361,11 +361,12 @@ Format per task: **id · status · description · files · expected result · ve
 - **commit:** `479ece7` — recreated doc with a new "Outcome model" section (table for SUCCESS/PARTIAL/EMPTY/FAIL), a "Per-outcome audit fields" subsection listing the 7 fields, a "No-progress escalation" section documenting `NoProgressPolicy` and the terminal-error translation, and two links back to this plan file. Existing trigger-contract, anchor-strategy, SQL-correctness-layer, and multi-symbol sections preserved. `grep -l` finds the plan reference.
 
 #### REPAIR-1002
-- **status:** todo
+- **status:** done
 - **description:** Update `ops/airflow/dags/README.md` to describe the new preset keys `critical_timeframes`, `no_progress_threshold`; note that `max_fail_ratio` is deprecated.
 - **files:** `ops/airflow/dags/README.md`
 - **expected result:** README lists every active preset key; deprecated note for `max_fail_ratio`.
 - **verification:** reviewer grep + visual inspection.
+- **commit:** `275bee9` — replaced the old preset blob with a table listing every active key in `REPAIR_TRIGGER_PRESETS`. `critical_timeframes` / `no_progress_threshold` documented; `max_fail_ratio=1.0` explicitly marked **deprecated** with a pointer to REPAIR-1101. Added "Outcome model" (success/partial/empty/fail) and "No-progress escalation" subsections + backlink to `docs/okx_swap_repair_v1_plan_vs_actual.md`.
 
 ---
 
