@@ -111,3 +111,118 @@ async def test_write_swap_repair_audit_builds_records_per_timeframe(
     assert eth_record["outcome"] is None
     assert eth_record["received_bars"] is None
     assert eth_record["api_fill_ratio"] is None
+
+
+@pytest.mark.asyncio
+async def test_audit_payload_carries_new_outcome_fields_per_outcome_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Audit records must carry all 7 new outcome fields unchanged per summary.
+
+    Asserts the mapping from ``summary_payload`` → audit record for the three
+    non-failure outcome types defined in ``RepairOutcome`` (success, partial,
+    empty). See REPAIR-903.
+    """
+    captured: list[list[dict[str, Any]]] = []
+
+    class _FakeRepository:
+        async def insert_records(self, records: list[dict[str, Any]]) -> int:
+            captured.append(records)
+            return len(records)
+
+    monkeypatch.setattr(repair_audit, "SwapRepairAuditRepository", _FakeRepository)
+
+    new_field_names = (
+        "outcome",
+        "received_bars",
+        "remaining_missing_before",
+        "remaining_missing_after",
+        "progress",
+        "api_fill_ratio",
+        "write_success_ratio",
+    )
+
+    summaries = [
+        {
+            "symbol": "BTC-USDT-SWAP",
+            "timeframe": "1m",
+            "mode": "apply",
+            "strategy": "gap-repair",
+            "window": {"start_ts_ms": 0, "end_ts_ms": 300_000},
+            "rows_written": 5,
+            "fetch_calls": 1,
+            "verified": True,
+            "outcome": "success",
+            "received_bars": 5,
+            "remaining_missing_before": 5,
+            "remaining_missing_after": 0,
+            "progress": 5,
+            "api_fill_ratio": 1.0,
+            "write_success_ratio": 1.0,
+        },
+        {
+            "symbol": "ETH-USDT-SWAP",
+            "timeframe": "1m",
+            "mode": "apply",
+            "strategy": "gap-repair",
+            "window": {"start_ts_ms": 0, "end_ts_ms": 300_000},
+            "rows_written": 2,
+            "fetch_calls": 1,
+            "verified": False,
+            "outcome": "partial",
+            "received_bars": 2,
+            "remaining_missing_before": 5,
+            "remaining_missing_after": 3,
+            "progress": 2,
+            "api_fill_ratio": 0.4,
+            "write_success_ratio": 1.0,
+        },
+        {
+            "symbol": "SOL-USDT-SWAP",
+            "timeframe": "1m",
+            "mode": "apply",
+            "strategy": "gap-repair",
+            "window": {"start_ts_ms": 0, "end_ts_ms": 300_000},
+            "rows_written": 0,
+            "fetch_calls": 1,
+            "verified": False,
+            "outcome": "empty",
+            "received_bars": 0,
+            "remaining_missing_before": 5,
+            "remaining_missing_after": 5,
+            "progress": 0,
+            "api_fill_ratio": 0.0,
+            "write_success_ratio": 0.0,
+        },
+    ]
+
+    await repair_audit.write_swap_repair_audit(
+        validated_conf={
+            "trigger": "repair-all-swaps",
+            "symbols": ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"],
+            "mode": "apply",
+            "repair_strategy": "gap-repair",
+            "auto_apply_window": True,
+        },
+        preview_payloads=None,
+        summary_payloads=summaries,
+        dag_id="okx_swap_repair_v1",
+        dag_run_id="manual__2026-04-22T00:00:00+00:00",
+        logical_date=datetime(2026, 4, 22, 0, 0, tzinfo=UTC),
+    )
+
+    assert len(captured) == 1
+    records = captured[0]
+    assert len(records) == 3
+
+    for record, summary in zip(records, summaries, strict=True):
+        for field_name in new_field_names:
+            assert field_name in record, (
+                f"audit record missing field {field_name!r}"
+            )
+            assert record[field_name] == summary[field_name], (
+                f"audit {field_name!r} mismatch for {summary['symbol']}: "
+                f"expected {summary[field_name]!r}, got {record[field_name]!r}"
+            )
+
+    assert [r["outcome"] for r in records] == ["success", "partial", "empty"]
