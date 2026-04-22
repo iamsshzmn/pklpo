@@ -441,58 +441,45 @@ airflow connections list | grep pklpo_db
 
 ```json
 {
-  "symbol": "BTC-USDT-SWAP",
-  "timeframes": ["1m", "1H", "4H", "1D", "1W", "1M"],
-  "mode": "detect-only",
-  "repair_strategy": "gap-repair",
-  "start": null,
-  "end": null,
-  "auto_apply_anchor_strategy": "first-coverage",
-  "auto_apply_anchor": null,
-  "window_hours": 6,
-  "padding_bars": 0,
-  "max_gap_tasks_per_run": 50,
-  "max_requested_bars_per_run": 10000,
-  "max_range_days": 7,
-  "max_fail_ratio": 0.1
+  "trigger": "repair-all-swaps"
 }
 ```
 
-**Режимы:**
+`trigger` — единственный внешний параметр. Остальной runtime preset зашит в `REPAIR_TRIGGER_PRESETS` внутри `okx_swap_repair_v1.py`:
 
-| Режим | Описание |
-|---|---|
-| `detect-only` | Только поиск пробелов, без записи. По умолчанию. |
-| `dry-run` | Планирует ремонт, показывает что будет записано — без применения |
-| `apply` | Применяет ремонт: скачивает и записывает недостающие свечи |
+| Ключ | Значение | Назначение |
+|---|---|---|
+| `symbols` | curated список из `src/candles/instruments_list.json` | набор инструментов |
+| `timeframes` | `["1m", "1H", "4H", "1D", "1W", "1M"]` | перечень ТФ |
+| `mode` | `apply` | режим запуска |
+| `repair_strategy` | `gap-repair` | стратегия |
+| `auto_apply_window` | `true` | окно вычисляется автоматически из coverage |
+| `auto_apply_anchor_strategy` | `listing-date` | bootstrap от даты листинга |
+| `padding_bars` | `0` | отступы вокруг окна |
+| `max_gap_tasks_per_run` | `50` | guardrail по числу gap-задач |
+| `max_requested_bars_per_run` | `10000` | guardrail по объёму bars |
+| `max_range_days` | `7` | guardrail по длине окна |
+| `critical_timeframes` | `["1m", "1H"]` | TF, на которых no-progress эскалируется в FAIL |
+| `no_progress_threshold` | `3` | число подряд no-progress итераций до эскалации |
+| `max_fail_ratio` | `1.0` | **deprecated** — больше не блокирует apply, оставлен для обратной совместимости; удалится в REPAIR-1101 после прод-соака |
 
-**Anchor-стратегии (только для `apply` без `start`/`end`):**
+**Runtime semantics:**
+- DAG всегда работает в `apply` режиме.
+- Окно всегда вычисляется автоматически из coverage state (`auto_apply_window=True`).
+- Для bootstrap используется `listing-date`, но при существующем coverage run продолжает repair от первого gap.
+- Repair выполняется для каждого `symbol × timeframe` из внутреннего preset-а.
 
-| Стратегия | Описание |
-|---|---|
-| `first-coverage` | Начинает от первого непокрытого участка относительно существующих данных |
-| `listing-date` | Bootstrap от даты листинга инструмента (таблица `instruments`) |
-| `explicit` | Bootstrap от явного `auto_apply_anchor` (ISO-8601 UTC timestamp) |
+**Outcome model:**
+Каждая итерация repair классифицируется в один из `RepairOutcome`:
+- `success` — окно закрыто (`received >= requested`).
+- `partial` — API вернул часть бар; run продолжается, task state = success.
+- `empty` — API вернул пусто; legitimate no-op; task state = success.
+- `fail` — исключение из API/store; проброшено наверх.
 
-**Operator presets:**
+**No-progress escalation:**
+Если на ТФ из `critical_timeframes` подряд произошло `no_progress_threshold` итераций с `progress == 0`, use case бросает `ValueError`, а DAG оборачивает его в `AirflowFailException` — retry НЕ производится (см. `TERMINAL_REPAIR_ERROR_PREFIXES`). Аналогично для guardrail violations на apply.
 
-```json5
-// Preview: поиск пробелов в окне
-{ "mode": "detect-only", "repair_strategy": "gap-repair",
-  "timeframes": ["1m", "1H"], "start": "2026-04-01T00:00:00Z", "end": "2026-04-01T08:00:00Z" }
-
-// Apply: auto-apply от первого пробела (повторять до remaining_gap_tasks=0)
-{ "mode": "apply", "repair_strategy": "gap-repair", "timeframes": ["1m", "1H"],
-  "auto_apply_anchor_strategy": "first-coverage" }
-
-// Apply: bootstrap с даты листинга
-{ "mode": "apply", "repair_strategy": "backfill", "timeframes": ["1D"],
-  "auto_apply_anchor_strategy": "listing-date" }
-
-// Apply: явный anchor
-{ "mode": "apply", "repair_strategy": "gap-repair", "timeframes": ["1W"],
-  "auto_apply_anchor_strategy": "explicit", "auto_apply_anchor": "2026-01-01T00:00:00Z" }
-```
+Детали runtime-контракта и per-outcome поля аудита описаны в [docs/okx_swap_repair_v1_plan_vs_actual.md](../../../docs/okx_swap_repair_v1_plan_vs_actual.md).
 
 **Partial auto-apply:**
 - Если `max_requested_bars_per_run` недостаточно для закрытия всех пробелов за один запуск, таск завершается с `auto_apply_incomplete=true` (task state = success).
