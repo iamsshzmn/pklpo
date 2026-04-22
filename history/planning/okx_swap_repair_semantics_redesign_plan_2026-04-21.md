@@ -339,11 +339,12 @@ Format per task: **id · status · description · files · expected result · ve
 - **commit:** `4f772d5` — 4 scenarios green. Outcome asserted via the `candles.repair.completed` telemetry payload (current contract — `RepairResult` fields like `outcome`, `received_bars`, etc. still use dataclass defaults and are not populated by the use case; only the telemetry event and the structured `repair.outcome` log line carry them).
 
 #### REPAIR-903
-- **status:** todo
+- **status:** done
 - **description:** Extend `tests/candles/interfaces/test_repair_audit.py` with a case asserting the new 7 fields reach the audit payload.
 - **files:** `tests/candles/interfaces/test_repair_audit.py`
 - **expected result:** test green; snapshot comparison matches.
 - **verification:** `pytest tests/candles/interfaces/test_repair_audit.py -v`.
+- **commit:** `d28cf3e` — added `test_audit_payload_carries_new_outcome_fields_per_outcome_type` covering success, partial, and empty outcomes; asserts every one of the 7 fields (outcome, received_bars, remaining_missing_before, remaining_missing_after, progress, api_fill_ratio, write_success_ratio) flows unchanged from `summary_payload` to the audit record. 2 audit tests green.
 
 ---
 
