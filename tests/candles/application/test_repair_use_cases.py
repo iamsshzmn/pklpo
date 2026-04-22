@@ -367,33 +367,46 @@ async def test_apply_marks_result_unverified_when_window_still_has_gaps() -> Non
 
 
 @pytest.mark.asyncio
-async def test_apply_raises_when_fail_ratio_exceeds_limit() -> None:
-    coverage = CoverageQueryStub(timestamps=[0], count_result=1)
+async def test_no_progress_escalation_raises_on_critical_tf() -> None:
+    """After REPAIR-401 the old max_fail_ratio hard-fail is gone.
+
+    The only remaining hard-stop on apply mode is repeated no-progress on a
+    critical timeframe. A single partial fill that still makes progress must
+    not raise; only after N consecutive no-progress iterations does the tracker
+    escalate.
+    """
+
+    coverage = CoverageQueryStub(timestamps=[])
     historical = HistoricalSourceStub(
         responses=[
             [
-                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
-                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
-                {"ts": 3 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 12},
-                {"ts": 4 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 13},
-            ]
+                {"ts": 0, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
+                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
+            ],
+            [],
+            [],
+            [],
         ]
     )
-    store = RepairStoreStub(rows_written_per_call=[1])
+    store = RepairStoreStub(rows_written_per_call=[2, 0, 0, 0])
+    store.coverage = coverage
     use_case = RunGapRepairUseCase(
         coverage_query=coverage,
         historical_source=historical,
         repair_store=store,
     )
+    command = _command(
+        mode=RepairExecutionMode.APPLY,
+        strategy=RepairStrategy.GAP_REPAIR,
+    )
 
-    with pytest.raises(ValueError, match="apply exceeded max_fail_ratio"):
-        await use_case.run(
-            _command(
-                mode=RepairExecutionMode.APPLY,
-                strategy=RepairStrategy.GAP_REPAIR,
-                guardrails=_guardrails(max_fail_ratio=0.2),
-            )
-        )
+    first = await use_case.run(command)
+    assert first.rows_written == 2
+
+    await use_case.run(command)
+    await use_case.run(command)
+    with pytest.raises(ValueError, match="no progress on critical TF 1m"):
+        await use_case.run(command)
 
 
 @pytest.mark.asyncio
