@@ -328,7 +328,7 @@ Format per task: **id · status · description · files · expected result · ve
 - **files:** `tests/candles/application/test_repair_use_cases.py:378`
 - **expected result:** new test asserts that only after N consecutive no-progress iterations on `1m`, `ValueError` is raised; single partial fill does NOT raise.
 - **verification:** `pytest tests/candles/application/test_repair_use_cases.py::test_no_progress_escalation_raises_on_critical_tf -v` green.
-- **commit:** _pending_ — old `test_apply_raises_when_fail_ratio_exceeds_limit` replaced by `test_no_progress_escalation_raises_on_critical_tf`. New test: first iteration makes progress (rows_written=2, counter resets) → no raise; then 3 consecutive empty iterations accumulate the tracker → fourth call raises `ValueError("no progress on critical TF 1m")`. All 13 use-case tests green.
+- **commit:** `34423a8` — old `test_apply_raises_when_fail_ratio_exceeds_limit` replaced by `test_no_progress_escalation_raises_on_critical_tf`. New test: first iteration makes progress (rows_written=2, counter resets) → no raise; then 3 consecutive empty iterations accumulate the tracker → fourth call raises `ValueError("no progress on critical TF 1m")`. All 13 use-case tests green.
 
 #### REPAIR-902
 - **status:** todo
