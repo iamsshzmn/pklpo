@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.config.settings import OKXSettings, reload_settings
+from src.config.settings import OKXSettings, Settings, reload_settings
 
 
 def test_okx_settings_week_anchor_uses_code_placeholder(monkeypatch):
@@ -76,3 +76,19 @@ def test_reload_settings_reads_other_dotenv_values(
     assert settings.okx.week_anchor_ts_ms == 0
     assert settings.okx.api_key.get_secret_value() == "dotenv-key"
     assert settings.okx.base_url == "https://dotenv.test"
+
+
+def test_settings_custom_env_file_reads_okx_values(tmp_path: Path):
+    env_file = tmp_path / "custom.env"
+    env_file.write_text(
+        "OKX_WEEK_ANCHOR_TS_MS=1234567890000\n"
+        "OKX_API_KEY=custom-key\n"
+        "OKX_BASE_URL=https://custom.test\n",
+        encoding="utf-8",
+    )
+
+    settings = Settings(_env_file=env_file, _env_file_encoding="utf-8")
+
+    assert settings.okx.week_anchor_ts_ms == 0
+    assert settings.okx.api_key.get_secret_value() == "custom-key"
+    assert settings.okx.base_url == "https://custom.test"

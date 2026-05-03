@@ -493,12 +493,7 @@ class Settings(BaseSettings):
 
     # Sub-settings
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
-    okx: OKXSettings = Field(
-        default_factory=lambda: OKXSettings(
-            _env_file=".env",
-            _env_file_encoding="utf-8",
-        )
-    )
+    okx: OKXSettings = Field(default_factory=OKXSettings)
     features: FeaturesSettings = Field(default_factory=FeaturesSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)
     retry: RetrySettings = Field(default_factory=RetrySettings)
@@ -511,6 +506,23 @@ class Settings(BaseSettings):
     # Paths
     project_root: Path = Field(default_factory=lambda: Path(__file__).parent.parent.parent)
     data_dir: Path = Field(default=Path("./data"))
+
+    def __init__(
+        self,
+        _env_file: Any = ".env",
+        _env_file_encoding: str | None = "utf-8",
+        **values: Any,
+    ) -> None:
+        super().__init__(
+            _env_file=_env_file,
+            _env_file_encoding=_env_file_encoding,
+            **values,
+        )
+        if "okx" not in values:
+            self.okx = OKXSettings(
+                _env_file=_env_file,
+                _env_file_encoding=_env_file_encoding,
+            )
 
     @property
     def is_production(self) -> bool:
