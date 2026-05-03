@@ -8,7 +8,7 @@ Supports: .env files, environment variables, validation, type checking.
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -55,11 +55,13 @@ class OKXSettings(BaseSettings):
         extra="ignore",
     )
 
+    PHASE0_WEEK_ANCHOR_TS_MS: ClassVar[int] = 0
+
     api_key: SecretStr = Field(default=SecretStr(""))
     api_secret: SecretStr = Field(default=SecretStr(""))
     passphrase: SecretStr = Field(default=SecretStr(""))
     base_url: str = "https://www.okx.com"
-    week_anchor_ts_ms: int | None = None
+    week_anchor_ts_ms: int = PHASE0_WEEK_ANCHOR_TS_MS
 
     # Rate limiting
     max_requests_per_second: int = 10
@@ -75,6 +77,12 @@ class OKXSettings(BaseSettings):
     def has_credentials(self) -> bool:
         """Check whether API keys are set."""
         return bool(self.api_key.get_secret_value())
+
+    @field_validator("week_anchor_ts_ms", mode="before")
+    @classmethod
+    def use_phase0_week_anchor(cls, _value: object) -> int:
+        """Keep the Phase 0 week anchor code-defined until API wiring exists."""
+        return cls.PHASE0_WEEK_ANCHOR_TS_MS
 
 
 class FeaturesSettings(BaseSettings):

@@ -38,9 +38,9 @@ The following Phase 0 decisions are accepted:
 - Store the OKX 1W week anchor in `src/config/settings.py` as
   `OKXSettings.week_anchor_ts_ms`, accessed through `get_settings().okx`.
   It must not be hardcoded in DAGs or module-level constants.
-- Phase 0 adds the settings hook only. The code default is `None`, and a later
-  phase will replace that placeholder with the real OKX anchor fetched from the
-  API.
+- Phase 0 adds the settings hook only. The effective value is a code-defined
+  placeholder (`0`) and is not env-overridable. A later phase will replace that
+  placeholder with the real OKX anchor fetched from the API.
 - Keep `RepairResult` unchanged in this track. If the guarantee/recalc flow
   needs a distinct completion contract, it will use a separate outcome model in
   a later phase.
@@ -59,7 +59,7 @@ Positive:
 
 Tradeoffs:
 
-- The placeholder `week_anchor_ts_ms=None` is intentionally not a usable market
+- The placeholder `week_anchor_ts_ms=0` is intentionally not a usable market
   rule by itself; later phases must supply the real anchor before relying on 1W
   repair behavior.
 - This ADR documents the current table-target intent but does not resolve the
