@@ -180,6 +180,9 @@ async def test_run_swap_repair_wires_gap_repair_use_case_without_market_adapter(
         "api_fill_ratio": 0.0,
         "write_success_ratio": 0.0,
         "outcome": "success",
+        "blocked": False,
+        "blocked_reason": None,
+        "blocked_cause": None,
     }
 
 

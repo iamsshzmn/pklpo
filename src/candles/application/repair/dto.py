@@ -52,6 +52,9 @@ class RepairResult:
     api_fill_ratio: float = 0.0
     write_success_ratio: float = 0.0
     outcome: RepairOutcome = RepairOutcome.SUCCESS
+    blocked: bool = False
+    blocked_reason: str | None = None
+    blocked_cause: str | None = None
 
     def to_summary(
         self,

@@ -423,6 +423,24 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
             [*label_names, "outcome"],
             registry=registry,
         )
+        blocked_gauge = Gauge(
+            "pklpo_swap_repair_blocked",
+            "Whether a validated swap repair result ended in a blocked empty-chunk state (1/0)",
+            label_names,
+            registry=registry,
+        )
+        blocked_reason_total_gauge = Gauge(
+            "pklpo_swap_repair_blocked_reason_total",
+            "Count of blocked repair results by blocked reason",
+            [*label_names, "blocked_reason"],
+            registry=registry,
+        )
+        blocked_cause_total_gauge = Gauge(
+            "pklpo_swap_repair_blocked_cause_total",
+            "Count of blocked repair results by blocked cause",
+            [*label_names, "blocked_cause"],
+            registry=registry,
+        )
 
         for payload in normalized:
             labels = (
@@ -456,6 +474,14 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
             remaining_missing_after_gauge.labels(*labels).set(
                 float(payload.get("remaining_missing_after", 0))
             )
+            blocked = bool(payload.get("blocked", False))
+            blocked_gauge.labels(*labels).set(1.0 if blocked else 0.0)
+            blocked_reason = payload.get("blocked_reason")
+            if blocked_reason is not None:
+                blocked_reason_total_gauge.labels(*labels, str(blocked_reason)).inc()
+            blocked_cause = payload.get("blocked_cause")
+            if blocked_cause is not None:
+                blocked_cause_total_gauge.labels(*labels, str(blocked_cause)).inc()
             outcome_value = payload.get("outcome")
             if outcome_value is not None:
                 outcome_total_gauge.labels(*labels, str(outcome_value)).inc()

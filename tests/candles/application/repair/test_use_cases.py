@@ -10,9 +10,24 @@ from src.candles.application.repair.use_cases import RunGapRepairUseCase
 from src.candles.domain.repair import (
     RepairExecutionMode,
     RepairGuardrails,
+    RepairOutcome,
     RepairStrategy,
     RepairVerificationMethod,
 )
+
+
+@dataclass
+class _FakeTelemetry:
+    events: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+
+    def increment(self, metric: str, value: int | float = 1, **tags: str) -> None:
+        del metric, value, tags
+
+    def observe(self, metric: str, value: int | float, **tags: str) -> None:
+        del metric, value, tags
+
+    def event(self, name: str, **payload: Any) -> None:
+        self.events.append((name, payload))
 
 
 @dataclass
@@ -176,22 +191,91 @@ async def test_gap_repair_apply_is_not_verified_when_gap_remains_unfilled() -> N
 
 
 @pytest.mark.asyncio
-async def test_gap_repair_apply_raises_after_three_no_progress_runs_on_critical_timeframe() -> None:
+async def test_gap_repair_apply_marks_empty_chunk_as_blocked_without_escalation() -> None:
     coverage_query = _FakeCoverageQuery(existing_timestamps=[0, 180_000])
     historical_source = _FakeHistoricalSource(responses=[[], [], []])
     repair_store = _FakeRepairStore(coverage_query=coverage_query)
+    telemetry = _FakeTelemetry()
     use_case = RunGapRepairUseCase(
         coverage_query=coverage_query,
         historical_source=historical_source,
         repair_store=repair_store,
+        telemetry=telemetry,
     )
     command = _command(mode=RepairExecutionMode.APPLY)
 
     first = await use_case.run(command)
     second = await use_case.run(command)
+    third = await use_case.run(command)
 
     assert first.verified is False
     assert second.verified is False
+    assert third.verified is False
+    assert first.outcome is RepairOutcome.EMPTY
+    assert second.outcome is RepairOutcome.EMPTY
+    assert third.outcome is RepairOutcome.EMPTY
+    assert first.blocked is True
+    assert second.blocked is True
+    assert third.blocked is True
+    assert first.blocked_reason == "empty-chunk"
+    assert second.blocked_reason == "empty-chunk"
+    assert third.blocked_reason == "empty-chunk"
+    assert first.blocked_cause == "api_returned_empty"
+    assert second.blocked_cause == "api_returned_empty"
+    assert third.blocked_cause == "api_returned_empty"
+    assert telemetry.events[-1][0] == "candles.repair.completed"
+    assert telemetry.events[-1][1]["blocked_cause"] == "api_returned_empty"
+    assert telemetry.events[-1][1]["fetched_rows"] == 0
 
-    with pytest.raises(ValueError, match="no progress on critical TF 1m: 3 iterations in a row"):
-        await use_case.run(command)
+
+@pytest.mark.asyncio
+async def test_gap_repair_apply_classifies_padding_only_fetch_as_outside_exchange_history() -> None:
+    coverage_query = _FakeCoverageQuery(existing_timestamps=[0, 120_000])
+    historical_source = _FakeHistoricalSource(
+        responses=[
+            [
+                {"ts": 0, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0},
+                {
+                    "ts": 120_000,
+                    "open": 2.0,
+                    "high": 2.0,
+                    "low": 2.0,
+                    "close": 2.0,
+                    "volume": 2.0,
+                },
+            ]
+        ]
+    )
+    repair_store = _FakeRepairStore(coverage_query=coverage_query)
+    telemetry = _FakeTelemetry()
+    use_case = RunGapRepairUseCase(
+        coverage_query=coverage_query,
+        historical_source=historical_source,
+        repair_store=repair_store,
+        telemetry=telemetry,
+    )
+    command = RepairCommand(
+        symbol="BTC-USDT-SWAP",
+        timeframe="1m",
+        start_ts_ms=0,
+        end_ts_ms=180_000,
+        mode=RepairExecutionMode.APPLY,
+        strategy=RepairStrategy.GAP_REPAIR,
+        guardrails=RepairGuardrails(
+            max_gap_tasks_per_run=10,
+            max_requested_bars_per_run=100,
+            max_range_days=10,
+            max_fail_ratio=1.0,
+        ),
+        now_ts_ms=180_000,
+        padding_bars=1,
+    )
+
+    result = await use_case.run(command)
+
+    assert result.outcome is RepairOutcome.EMPTY
+    assert result.blocked is True
+    assert result.blocked_reason == "empty-chunk"
+    assert result.blocked_cause == "outside_exchange_history"
+    assert telemetry.events[-1][1]["blocked_cause"] == "outside_exchange_history"
+    assert telemetry.events[-1][1]["fetched_rows"] == 2

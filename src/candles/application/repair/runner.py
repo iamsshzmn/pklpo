@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Protocol
 
 from src.candles.domain.repair import (
@@ -12,7 +12,11 @@ from src.candles.domain.repair import (
 )
 
 from .dto import RepairPreview
-from .planning import plan_auto_apply_window, resolve_repair_window
+from .planning import (
+    plan_auto_apply_window,
+    plan_tail_first_repair,
+    resolve_repair_window,
+)
 from .summary import (
     RepairSummary,
     build_noop_repair_summary,
@@ -48,6 +52,16 @@ class RepairTimeframeRequest:
     padding_bars: int
     auto_apply_window: bool
     auto_apply_iteration_limit: int = 100
+
+
+def _mark_summary_incomplete(summary: RepairSummary) -> RepairSummary:
+    return replace(
+        summary,
+        remaining_gap_tasks=max(summary.remaining_gap_tasks, 1),
+        remaining_requested_bars=max(summary.remaining_requested_bars, 1),
+        auto_apply_incomplete=True,
+        verified=False,
+    )
 
 
 async def preview_repair_timeframe(
@@ -175,6 +189,7 @@ async def run_repair_timeframe(
     coverage_query: CandleCoverageQueryPort,
     execute_once: RepairWindowExecutor,
     auto_apply_iteration_limit: int = 100,
+    chunk_size_bars: int = 250,
     anchor_ts_ms: int | None = None,
     anchor_strategy: str = "first-coverage",
     anchor_metadata: RepairAnchorMetadataPort | None = None,
@@ -193,31 +208,36 @@ async def run_repair_timeframe(
 
     summaries: list[RepairSummary] = []
     closed_until_ts_ms = now_ts_ms
+    exhausted_iteration_limit = True
 
     if auto_apply_iteration_limit < 1:
         raise ValueError("swap_repair auto-apply iteration limit must be >= 1")
 
     for _ in range(auto_apply_iteration_limit):
-        plan = await plan_auto_apply_window(
+        plan = await plan_tail_first_repair(
             coverage_query=coverage_query,
             symbol=str(validated.get("symbol", "")),
             timeframe=timeframe,
             max_range_days=max_range_days,
             now_ts_ms=now_ts_ms,
+            chunk_size_bars=chunk_size_bars,
             anchor_ts_ms=anchor_ts_ms,
             anchor_strategy=anchor_strategy,
             anchor_metadata=anchor_metadata,
         )
         closed_until_ts_ms = plan.closed_until_ts_ms
-        if plan.start_ts_ms == plan.end_ts_ms:
+        if not plan.gaps:
+            exhausted_iteration_limit = False
             break
 
+        next_chunk = plan.gaps[0].chunks[0]
         summary = await execute_once(
-            start_ts_ms=plan.start_ts_ms,
-            end_ts_ms=plan.end_ts_ms,
+            start_ts_ms=next_chunk.start_ts_ms,
+            end_ts_ms=next_chunk.end_ts_ms,
         )
         summaries.append(summary)
-        if summary.remaining_gap_tasks <= 0:
+        if summary.remaining_gap_tasks > 0 or summary.remaining_requested_bars > 0:
+            exhausted_iteration_limit = False
             break
 
     if not summaries:
@@ -227,9 +247,12 @@ async def run_repair_timeframe(
             closed_until_ts_ms=closed_until_ts_ms,
         )
 
-    return merge_repair_summaries(
+    merged = merge_repair_summaries(
         validated=validated,
         timeframe=timeframe,
         summaries=summaries,
         closed_until_ts_ms=closed_until_ts_ms,
     )
+    if exhausted_iteration_limit:
+        return _mark_summary_incomplete(merged)
+    return merged

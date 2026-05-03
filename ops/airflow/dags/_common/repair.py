@@ -43,6 +43,8 @@ OPTIONAL_SWAP_REPAIR_FLOAT_KEYS = (
     "api_fill_ratio",
     "write_success_ratio",
 )
+OPTIONAL_SWAP_REPAIR_BOOL_KEYS = ("blocked",)
+OPTIONAL_SWAP_REPAIR_STR_KEYS = ("blocked_reason", "blocked_cause")
 
 DEFAULT_SWAP_REPAIR_TIMEFRAMES = ("1m", "1H", "4H", "1D", "1W", "1M")
 DEFAULT_SWAP_REPAIR_WINDOW_HOURS = 6
@@ -419,6 +421,20 @@ def validate_swap_repair_xcom_payload(
                     f"{context_name} {key} must be numeric, got {type(value).__name__}"
                 )
             normalized[key] = float(value)
+    for key in OPTIONAL_SWAP_REPAIR_BOOL_KEYS:
+        if key in normalized and normalized[key] is not None:
+            value = normalized[key]
+            if not isinstance(value, bool):
+                raise ValueError(
+                    f"{context_name} {key} must be a boolean, got {type(value).__name__}"
+                )
+    for key in OPTIONAL_SWAP_REPAIR_STR_KEYS:
+        if key in normalized and normalized[key] is not None:
+            value = normalized[key]
+            if not isinstance(value, str):
+                raise ValueError(
+                    f"{context_name} {key} must be a string, got {type(value).__name__}"
+                )
     return normalized
 
 

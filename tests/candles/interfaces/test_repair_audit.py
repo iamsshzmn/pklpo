@@ -106,18 +106,24 @@ async def test_write_swap_repair_audit_builds_records_per_timeframe(
     assert btc_record["progress"] == 20
     assert btc_record["api_fill_ratio"] == 1.0
     assert btc_record["write_success_ratio"] == 1.0
+    assert btc_record["summary_payload"]["blocked"] is False
+    assert btc_record["summary_payload"]["blocked_reason"] is None
+    assert btc_record["summary_payload"]["blocked_cause"] is None
 
     eth_record = calls[0][1]
-    assert eth_record["outcome"] is None
-    assert eth_record["received_bars"] is None
-    assert eth_record["api_fill_ratio"] is None
+    assert eth_record["outcome"] == "success"
+    assert eth_record["received_bars"] == 0
+    assert eth_record["api_fill_ratio"] == 0.0
+    assert eth_record["summary_payload"]["blocked"] is False
+    assert eth_record["summary_payload"]["blocked_reason"] is None
+    assert eth_record["summary_payload"]["blocked_cause"] is None
 
 
 @pytest.mark.asyncio
 async def test_audit_payload_carries_new_outcome_fields_per_outcome_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Audit records must carry all 7 new outcome fields unchanged per summary.
+    """Audit records must carry outcome and blocked metadata unchanged per summary.
 
     Asserts the mapping from ``summary_payload`` → audit record for the three
     non-failure outcome types defined in ``RepairOutcome`` (success, partial,
@@ -141,6 +147,7 @@ async def test_audit_payload_carries_new_outcome_fields_per_outcome_type(
         "api_fill_ratio",
         "write_success_ratio",
     )
+    blocked_field_names = ("blocked", "blocked_reason", "blocked_cause")
 
     summaries = [
         {
@@ -159,6 +166,9 @@ async def test_audit_payload_carries_new_outcome_fields_per_outcome_type(
             "progress": 5,
             "api_fill_ratio": 1.0,
             "write_success_ratio": 1.0,
+            "blocked": False,
+            "blocked_reason": None,
+            "blocked_cause": None,
         },
         {
             "symbol": "ETH-USDT-SWAP",
@@ -176,6 +186,9 @@ async def test_audit_payload_carries_new_outcome_fields_per_outcome_type(
             "progress": 2,
             "api_fill_ratio": 0.4,
             "write_success_ratio": 1.0,
+            "blocked": False,
+            "blocked_reason": None,
+            "blocked_cause": None,
         },
         {
             "symbol": "SOL-USDT-SWAP",
@@ -193,6 +206,9 @@ async def test_audit_payload_carries_new_outcome_fields_per_outcome_type(
             "progress": 0,
             "api_fill_ratio": 0.0,
             "write_success_ratio": 0.0,
+            "blocked": True,
+            "blocked_reason": "empty-chunk",
+            "blocked_cause": "api_returned_empty",
         },
     ]
 
@@ -224,5 +240,7 @@ async def test_audit_payload_carries_new_outcome_fields_per_outcome_type(
                 f"audit {field_name!r} mismatch for {summary['symbol']}: "
                 f"expected {summary[field_name]!r}, got {record[field_name]!r}"
             )
+        for field_name in blocked_field_names:
+            assert record["summary_payload"][field_name] == summary[field_name]
 
     assert [r["outcome"] for r in records] == ["success", "partial", "empty"]

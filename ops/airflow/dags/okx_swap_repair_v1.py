@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import asyncio
 
-SUPPORTED_TIMEFRAMES = ("1m", "1H", "4H", "1D", "1W", "1M")
+SUPPORTED_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
 DEFAULT_TRIGGER = "repair-all-swaps"
 REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
     DEFAULT_TRIGGER: {
@@ -64,7 +64,7 @@ REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
         "auto_apply_window": True,
         "start_ts_ms": None,
         "end_ts_ms": None,
-        "critical_timeframes": ["1m", "1H"],
+        "critical_timeframes": ["1H"],
         "no_progress_threshold": 3,
     }
 }
@@ -121,7 +121,9 @@ def _build_validated_conf_from_trigger(trigger: str) -> dict[str, Any]:
     preset = REPAIR_TRIGGER_PRESETS.get(trigger)
     if preset is None:
         supported = ", ".join(sorted(REPAIR_TRIGGER_PRESETS))
-        raise ValueError(f"unsupported trigger {trigger!r}; expected one of: {supported}")
+        raise ValueError(
+            f"unsupported trigger {trigger!r}; expected one of: {supported}"
+        )
 
     symbols = _load_curated_swap_symbols()
     if not symbols:
@@ -275,7 +277,9 @@ def ensure_instruments_loaded_task(**context) -> None:
 
     symbols = [str(s).strip() for s in validated.get("symbols", []) if str(s).strip()]
     if not symbols:
-        raise ValueError("ensure_instruments_loaded: validated config contains no symbols")
+        raise ValueError(
+            "ensure_instruments_loaded: validated config contains no symbols"
+        )
 
     logger.info(
         "ensure_instruments_loaded start %s symbols=%d",
@@ -295,7 +299,11 @@ def preflight_instrument_check_task(**context) -> None:
     env = get_dag_env()
     setup_env(env)
 
-    symbols = [str(symbol).strip() for symbol in validated.get("symbols", []) if str(symbol).strip()]
+    symbols = [
+        str(symbol).strip()
+        for symbol in validated.get("symbols", [])
+        if str(symbol).strip()
+    ]
     if not symbols:
         raise ValueError("preflight: validated config must contain at least one symbol")
     logger.info(
@@ -347,7 +355,9 @@ def swap_repair_task(**context) -> list[dict[str, Any]]:
     timeframes = [str(timeframe) for timeframe in validated.get("timeframes", [])]
     symbols = [str(symbol) for symbol in validated.get("symbols", [])]
     if not timeframes:
-        raise ValueError("swap_repair validated config must contain non-empty timeframes")
+        raise ValueError(
+            "swap_repair validated config must contain non-empty timeframes"
+        )
     if not symbols:
         raise ValueError("swap_repair validated config must contain non-empty symbols")
 
@@ -411,9 +421,13 @@ def swap_repair_preview_task(**context) -> list[dict[str, Any]]:
     timeframes = [str(timeframe) for timeframe in validated.get("timeframes", [])]
     symbols = [str(symbol) for symbol in validated.get("symbols", [])]
     if not timeframes:
-        raise ValueError("swap_repair preview validated config must contain non-empty timeframes")
+        raise ValueError(
+            "swap_repair preview validated config must contain non-empty timeframes"
+        )
     if not symbols:
-        raise ValueError("swap_repair preview validated config must contain non-empty symbols")
+        raise ValueError(
+            "swap_repair preview validated config must contain non-empty symbols"
+        )
 
     previews: list[dict[str, Any]] = []
     for symbol in symbols:
@@ -455,7 +469,9 @@ def swap_repair_preview_task(**context) -> list[dict[str, Any]]:
                         if validated.get("anchor_ts_ms") is not None
                         else None
                     ),
-                    auto_apply_anchor_strategy=str(validated["auto_apply_anchor_strategy"]),
+                    auto_apply_anchor_strategy=str(
+                        validated["auto_apply_anchor_strategy"]
+                    ),
                 )
             )
             logger.info(
@@ -494,7 +510,9 @@ def validate_swap_repair_xcom_task(**context) -> list[dict[str, Any]]:
                 allowed_timeframes=SUPPORTED_TIMEFRAMES,
             )
         except ValueError as exc:
-            raise ValueError(f"timeframe={normalized.get('timeframe')!r}: {exc}") from exc
+            raise ValueError(
+                f"timeframe={normalized.get('timeframe')!r}: {exc}"
+            ) from exc
         normalized_payloads.append(normalized)
         logger.info(
             "validate_swap_repair_xcom finish %s mode=%s strategy=%s symbol=%s timeframe=%s gap_tasks=%s requested_bars=%s remaining_gap_tasks=%s rows_written=%s",
@@ -520,12 +538,16 @@ def publish_swap_repair_ops_task(**context) -> dict[str, Any]:
     ti = context["ti"]
     validated = ti.xcom_pull(task_ids="validate_swap_repair_conf", key="return_value")
     preview_payloads = ti.xcom_pull(task_ids="swap_repair_preview", key="return_value")
-    summary_payloads = ti.xcom_pull(task_ids="validate_swap_repair_xcom", key="return_value")
+    summary_payloads = ti.xcom_pull(
+        task_ids="validate_swap_repair_xcom", key="return_value"
+    )
 
     if not isinstance(validated, dict):
         raise ValueError("swap_repair publish step requires validated config dict")
     if preview_payloads is not None and not isinstance(preview_payloads, list):
-        raise ValueError("swap_repair publish step preview payload must be a list when present")
+        raise ValueError(
+            "swap_repair publish step preview payload must be a list when present"
+        )
 
     summary_payloads = normalize_swap_repair_summary_payloads(summary_payloads)
     metrics_pushed = push_swap_repair_metrics(summary_payloads)
@@ -615,4 +637,12 @@ publish_swap_repair_ops = PythonOperator(
     dag=dag,
 )
 
-validate_swap_repair_conf >> ensure_instruments_loaded >> preflight_instrument_check >> swap_repair_preview >> swap_repair >> validate_swap_repair_xcom >> publish_swap_repair_ops
+(
+    validate_swap_repair_conf
+    >> ensure_instruments_loaded
+    >> preflight_instrument_check
+    >> swap_repair_preview
+    >> swap_repair
+    >> validate_swap_repair_xcom
+    >> publish_swap_repair_ops
+)

@@ -48,6 +48,16 @@ def _coerce_bool(value: Any) -> bool:
     return bool(value)
 
 
+def _coerce_optional_str(value: Any, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    raise ValueError(
+        f"repair summary field {field_name!r} must be a string or null, got {value!r}"
+    )
+
+
 def _coerce_unique_strs(values: Sequence[str]) -> tuple[str, ...]:
     seen: set[str] = set()
     ordered: list[str] = []
@@ -122,6 +132,9 @@ class RepairSummary:
     api_fill_ratio: float = 0.0
     write_success_ratio: float = 0.0
     outcome: RepairOutcome = RepairOutcome.SUCCESS
+    blocked: bool = False
+    blocked_reason: str | None = None
+    blocked_cause: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -155,6 +168,9 @@ class RepairSummary:
             "api_fill_ratio": self.api_fill_ratio,
             "write_success_ratio": self.write_success_ratio,
             "outcome": self.outcome.value,
+            "blocked": self.blocked,
+            "blocked_reason": self.blocked_reason,
+            "blocked_cause": self.blocked_cause,
         }
         if self.auto_apply_incomplete:
             payload["auto_apply_incomplete"] = True
@@ -236,6 +252,15 @@ class RepairSummary:
                 field_name="write_success_ratio",
             ),
             outcome=_coerce_outcome(payload.get("outcome")),
+            blocked=_coerce_bool(payload.get("blocked", False)),
+            blocked_reason=_coerce_optional_str(
+                payload.get("blocked_reason"),
+                field_name="blocked_reason",
+            ),
+            blocked_cause=_coerce_optional_str(
+                payload.get("blocked_cause"),
+                field_name="blocked_cause",
+            ),
         )
 
     @classmethod
@@ -273,6 +298,9 @@ class RepairSummary:
             api_fill_ratio=getattr(result, "api_fill_ratio", 0.0),
             write_success_ratio=getattr(result, "write_success_ratio", 0.0),
             outcome=getattr(result, "outcome", RepairOutcome.SUCCESS),
+            blocked=getattr(result, "blocked", False),
+            blocked_reason=getattr(result, "blocked_reason", None),
+            blocked_cause=getattr(result, "blocked_cause", None),
         )
 
 
@@ -310,6 +338,9 @@ def build_noop_repair_summary(
         api_fill_ratio=0.0,
         write_success_ratio=0.0,
         outcome=RepairOutcome.SUCCESS,
+        blocked=False,
+        blocked_reason=None,
+        blocked_cause=None,
     )
 
 
@@ -382,4 +413,7 @@ def merge_repair_summaries(
         api_fill_ratio=total_received / max(total_requested, 1),
         write_success_ratio=total_written / max(total_received, 1),
         outcome=last_summary.outcome,
+        blocked=any(summary.blocked for summary in coerced),
+        blocked_reason=last_summary.blocked_reason,
+        blocked_cause=last_summary.blocked_cause,
     )

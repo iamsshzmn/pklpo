@@ -177,7 +177,19 @@ async def test_full_window_yields_success_outcome() -> None:
         coverage=coverage, api=api, store=store, telemetry=telemetry
     )
 
+    before_missing = await coverage.count_missing_timestamps(
+        symbol="BTC-USDT-SWAP",
+        timeframe="1m",
+        start_ts_ms=0,
+        end_ts_ms=5 * 60_000,
+    )
     result = await use_case.run(_command())
+    after_missing = await coverage.count_missing_timestamps(
+        symbol="BTC-USDT-SWAP",
+        timeframe="1m",
+        start_ts_ms=0,
+        end_ts_ms=5 * 60_000,
+    )
 
     payload = telemetry.completion_payload()
     assert payload["outcome"] == "success"
@@ -186,6 +198,8 @@ async def test_full_window_yields_success_outcome() -> None:
     assert payload["progress"] == 5
     assert payload["api_fill_ratio"] == pytest.approx(1.0)
     assert payload["write_success_ratio"] == pytest.approx(1.0)
+    assert before_missing == 5
+    assert after_missing == 0
     assert result.rows_written == 5
 
 

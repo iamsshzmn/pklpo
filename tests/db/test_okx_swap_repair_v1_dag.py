@@ -135,7 +135,7 @@ def test_validate_swap_repair_conf_builds_internal_preset_from_trigger(
 
     assert result["trigger"] == "repair-all-swaps"
     assert result["symbols"] == ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
-    assert result["timeframes"] == ["1m", "1H", "4H", "1D", "1W", "1M"]
+    assert result["timeframes"] == ["1H", "4H", "1D", "1W", "1M"]
     assert result["mode"] == "apply"
     assert result["repair_strategy"] == "gap-repair"
     assert result["auto_apply_anchor_strategy"] == "listing-date"
@@ -366,14 +366,14 @@ def test_swap_repair_task_forwards_no_progress_policy_from_preset(
                 "auto_apply_anchor_strategy": "listing-date",
                 "anchor_ts_ms": None,
                 "auto_apply_window": True,
-                "critical_timeframes": ["1m", "1H"],
+                "critical_timeframes": ["1H"],
                 "no_progress_threshold": 1,
             }
         )
     )
 
     assert len(calls) == 1
-    assert calls[0]["critical_timeframes"] == ["1m", "1H"]
+    assert calls[0]["critical_timeframes"] == ["1H"]
     assert calls[0]["no_progress_threshold"] == 1
 
 
@@ -673,6 +673,9 @@ def test_xcom_accepts_payload_with_new_fields() -> None:
         progress=3,
         api_fill_ratio=0.6,
         write_success_ratio=1.0,
+        blocked=True,
+        blocked_reason="empty-chunk",
+        blocked_cause="api_returned_empty",
     )
     normalized = validate_swap_repair_xcom_payload(payload)
     assert normalized["outcome"] == "partial"
@@ -680,6 +683,9 @@ def test_xcom_accepts_payload_with_new_fields() -> None:
     assert normalized["progress"] == 3
     assert normalized["api_fill_ratio"] == pytest.approx(0.6)
     assert normalized["write_success_ratio"] == pytest.approx(1.0)
+    assert normalized["blocked"] is True
+    assert normalized["blocked_reason"] == "empty-chunk"
+    assert normalized["blocked_cause"] == "api_returned_empty"
 
 
 def test_xcom_rejects_invalid_outcome_value() -> None:
@@ -703,6 +709,22 @@ def test_xcom_rejects_non_integer_progress() -> None:
 
     payload = _make_swap_repair_xcom_payload(progress="not-an-int")
     with pytest.raises(ValueError, match="'progress'"):
+        validate_swap_repair_xcom_payload(payload)
+
+
+def test_xcom_rejects_non_boolean_blocked() -> None:
+    from ops.airflow.dags._common.repair import validate_swap_repair_xcom_payload
+
+    payload = _make_swap_repair_xcom_payload(blocked="yes")
+    with pytest.raises(ValueError, match="blocked must be a boolean"):
+        validate_swap_repair_xcom_payload(payload)
+
+
+def test_xcom_rejects_non_string_blocked_cause() -> None:
+    from ops.airflow.dags._common.repair import validate_swap_repair_xcom_payload
+
+    payload = _make_swap_repair_xcom_payload(blocked_cause=123)
+    with pytest.raises(ValueError, match="blocked_cause must be a string"):
         validate_swap_repair_xcom_payload(payload)
 
 

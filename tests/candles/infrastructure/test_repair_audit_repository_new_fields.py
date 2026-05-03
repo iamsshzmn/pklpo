@@ -89,6 +89,12 @@ async def test_insert_records_propagates_new_semantic_fields(
         progress=2,
         api_fill_ratio=0.5,
         write_success_ratio=1.0,
+        summary_payload={
+            "symbol": "BTC-USDT-SWAP",
+            "blocked": True,
+            "blocked_reason": "empty-chunk",
+            "blocked_cause": "api_returned_empty",
+        },
     )
     count = await SwapRepairAuditRepository().insert_records([record])
 
@@ -106,6 +112,9 @@ async def test_insert_records_propagates_new_semantic_fields(
     assert bound["progress"] == 2
     assert bound["api_fill_ratio"] == 0.5
     assert bound["write_success_ratio"] == 1.0
+    assert '"blocked": true' in bound["summary_payload"]
+    assert '"blocked_reason": "empty-chunk"' in bound["summary_payload"]
+    assert '"blocked_cause": "api_returned_empty"' in bound["summary_payload"]
 
 
 @pytest.mark.asyncio

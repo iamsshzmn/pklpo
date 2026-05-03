@@ -450,23 +450,24 @@ airflow connections list | grep pklpo_db
 | Ключ | Значение | Назначение |
 |---|---|---|
 | `symbols` | curated список из `src/candles/instruments_list.json` | набор инструментов |
-| `timeframes` | `["1m", "1H", "4H", "1D", "1W", "1M"]` | перечень ТФ |
+| `timeframes` | `["1H", "4H", "1D", "1W", "1M"]` | перечень ТФ |
 | `mode` | `apply` | режим запуска |
 | `repair_strategy` | `gap-repair` | стратегия |
 | `auto_apply_window` | `true` | окно вычисляется автоматически из coverage |
-| `auto_apply_anchor_strategy` | `listing-date` | bootstrap от даты листинга |
+| `auto_apply_anchor_strategy` | `listing-date` | canonical anchor для shipped trigger |
 | `padding_bars` | `0` | отступы вокруг окна |
 | `max_gap_tasks_per_run` | `50` | guardrail по числу gap-задач |
 | `max_requested_bars_per_run` | `10000` | guardrail по объёму bars |
 | `max_range_days` | `7` | guardrail по длине окна |
-| `critical_timeframes` | `["1m", "1H"]` | TF, на которых no-progress эскалируется в FAIL |
+| `critical_timeframes` | `["1H"]` | TF, на которых no-progress эскалируется в FAIL |
 | `no_progress_threshold` | `3` | число подряд no-progress итераций до эскалации |
 | `max_fail_ratio` | `1.0` | **deprecated** — больше не блокирует apply, оставлен для обратной совместимости; удалится в REPAIR-1101 после прод-соака |
 
 **Runtime semantics:**
 - DAG всегда работает в `apply` режиме.
 - Окно всегда вычисляется автоматически из coverage state (`auto_apply_window=True`).
-- Для bootstrap используется `listing-date`, но при существующем coverage run продолжает repair от первого gap.
+- Для shipped trigger anchor остаётся `listing-date`.
+- Текущий shipped runtime ещё не переведён полностью на `tail-first progressive fill`; план миграции и целевой контракт описаны в [docs/okx_swap_repair_v1_plan_vs_actual.md](../../../docs/okx_swap_repair_v1_plan_vs_actual.md).
 - Repair выполняется для каждого `symbol × timeframe` из внутреннего preset-а.
 
 **Outcome model:**
@@ -477,13 +478,16 @@ airflow connections list | grep pklpo_db
 - `fail` — исключение из API/store; проброшено наверх.
 
 **No-progress escalation:**
-Если на ТФ из `critical_timeframes` подряд произошло `no_progress_threshold` итераций с `progress == 0`, use case бросает `ValueError`, а DAG оборачивает его в `AirflowFailException` — retry НЕ производится (см. `TERMINAL_REPAIR_ERROR_PREFIXES`). Аналогично для guardrail violations на apply.
+В текущем shipped runtime, если на ТФ из `critical_timeframes` подряд произошло `no_progress_threshold` итераций с `progress == 0`, use case бросает `ValueError`, а DAG оборачивает его в `AirflowFailException` — retry НЕ производится (см. `TERMINAL_REPAIR_ERROR_PREFIXES`). План tail-first redesign меняет это поведение для blocked historical ranges, но не для реальных системных ошибок.
 
-Детали runtime-контракта и per-outcome поля аудита описаны в [docs/okx_swap_repair_v1_plan_vs_actual.md](../../../docs/okx_swap_repair_v1_plan_vs_actual.md).
+Детали transition-контракта и целевой tail-first семантики описаны в [docs/okx_swap_repair_v1_plan_vs_actual.md](../../../docs/okx_swap_repair_v1_plan_vs_actual.md).
 
 **Partial auto-apply:**
+- Целевое поведение redesign: `tail-first progressive fill`, где repair начинает с самых свежих unresolved gap и двигается в глубину истории чанками фиксированного размера.
 - Если `max_requested_bars_per_run` недостаточно для закрытия всех пробелов за один запуск, таск завершается с `auto_apply_incomplete=true` (task state = success).
-- Достаточно повторить trigger: каждый следующий запуск продвигает окно вперёд.
+- `max_range_days` выбирает planner window; `max_requested_bars_per_run` и `max_gap_tasks_per_run` остаются downstream guardrails внутри уже выбранного окна.
+- Для blocked historical chunk целевая семантика — successful partial apply с диагностикой, а не новый failure class.
+- До завершения rollout повторный trigger всё ещё нужно интерпретировать через текущий shipped runtime и audit payloads.
 - Подробнее: [docs/operator-guide/partial-auto-apply.md](../../docs/operator-guide/partial-auto-apply.md)
 
 **Мониторинг:**
@@ -493,7 +497,7 @@ airflow connections list | grep pklpo_db
 
 **Настройки:**
 - `max_active_runs=1` — только один активный запуск
-- `execution_timeout=10 минут` per-run guardrail (соответствует `max_runtime_per_run=10m`)
+- `execution_timeout=2 часа`
 
 ---
 

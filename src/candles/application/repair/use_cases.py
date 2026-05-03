@@ -15,6 +15,7 @@ from src.candles.domain.repair import (
     clamp_window_to_closed_bars,
     classify_repair_outcome,
     detect_gap_tasks,
+    is_blocked_repair_outcome,
     sanitize_repair_candle,
     summarize_repair_verification,
     validate_repair_candles,
@@ -34,6 +35,16 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _classify_blocked_cause(*, blocked: bool, fetched_rows: int, received_rows: int) -> str | None:
+    if not blocked:
+        return None
+    if fetched_rows == 0:
+        return "api_returned_empty"
+    if received_rows == 0:
+        return "outside_exchange_history"
+    return None
 
 
 class _NullTelemetry:
@@ -102,6 +113,7 @@ class _BaseRepairUseCase:
         rows_written = 0
         fetch_calls = 0
         total_received = 0
+        total_fetched = 0
         remaining_missing_before = await self._coverage_query.count_missing_timestamps(
             symbol=plan.symbol,
             timeframe=plan.timeframe,
@@ -118,6 +130,7 @@ class _BaseRepairUseCase:
                 end_ts_ms=min(plan.window.end_ts_ms, task.end_ts_ms + padding_ms),
             )
             fetch_calls += 1
+            total_fetched += len(candles)
             valid_rows = validate_repair_candles(
                 candles=candles,
                 task_window=RepairWindow(task.start_ts_ms, task.end_ts_ms),
@@ -156,6 +169,17 @@ class _BaseRepairUseCase:
             received=total_received,
             exception=False,
         )
+        blocked = is_blocked_repair_outcome(
+            requested=plan.requested_bars,
+            received=total_received,
+            exception=False,
+        )
+        blocked_reason = "empty-chunk" if blocked else None
+        blocked_cause = _classify_blocked_cause(
+            blocked=blocked,
+            fetched_rows=total_fetched,
+            received_rows=total_received,
+        )
         api_fill_ratio = total_received / max(plan.requested_bars, 1)
         write_success_ratio = rows_written / max(total_received, 1)
 
@@ -163,7 +187,7 @@ class _BaseRepairUseCase:
             symbol=plan.symbol,
             timeframe=plan.timeframe,
         )
-        tracker.record(progress)
+        tracker.record(progress, blocked=blocked)
         if tracker.should_escalate():
             raise ValueError(
                 f"no progress on critical TF {plan.timeframe}: "
@@ -190,6 +214,10 @@ class _BaseRepairUseCase:
             api_fill_ratio=api_fill_ratio,
             write_success_ratio=write_success_ratio,
             outcome=outcome.value,
+            blocked=blocked,
+            blocked_reason=blocked_reason,
+            blocked_cause=blocked_cause,
+            fetched_rows=total_fetched,
         )
         logger.info(
             "repair.outcome",
@@ -212,6 +240,10 @@ class _BaseRepairUseCase:
                 "repair_progress": progress,
                 "repair_api_fill_ratio": api_fill_ratio,
                 "repair_write_success_ratio": write_success_ratio,
+                "repair_blocked": blocked,
+                "repair_blocked_reason": blocked_reason,
+                "repair_blocked_cause": blocked_cause,
+                "repair_fetched_rows": total_fetched,
             },
         )
         return RepairResult(
@@ -225,6 +257,16 @@ class _BaseRepairUseCase:
             remaining_requested_bars=verification.remaining_requested_bars,
             verification_method=verification.method,
             watermark_updated=False,
+            received_bars=total_received,
+            remaining_missing_before=remaining_missing_before,
+            remaining_missing_after=remaining_missing_after,
+            progress=progress,
+            api_fill_ratio=api_fill_ratio,
+            write_success_ratio=write_success_ratio,
+            outcome=outcome,
+            blocked=blocked,
+            blocked_reason=blocked_reason,
+            blocked_cause=blocked_cause,
         )
 
     def _get_no_progress_tracker(

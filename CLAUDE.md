@@ -27,10 +27,21 @@ Copy `.env.example` → `.env` and fill secrets before running.
 ## Key Commands
 
 ```bash
-# CLI
+# CLI (all commands)
 python -m src.cli.main --help
 python -m src.cli.main swap-sync --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
+python -m src.cli.main swap-repair --symbols BTC-USDT-SWAP --timeframes 1H 4H
 python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
+python -m src.cli.main pipeline           # полный пайплайн обработки
+python -m src.cli.main build-bars         # dollar bars из OHLCV
+python -m src.cli.main load-instruments   # загрузить инструменты из OKX API
+python -m src.cli.main update-list        # обновить список инструментов для синхронизации
+python -m src.cli.main cleanup            # управление очисткой данных
+python -m src.cli.main market-selection   # фильтрация и ранжирование рынков
+python -m src.cli.main label              # triple-barrier labeling (AFML Ch.3)
+python -m src.cli.main train              # MetaLabeler (AFML Ch.10)
+python -m src.cli.main metrics            # вывод и экспорт quant-метрик бэктеста
+python -m src.cli.main indicators-partitions  # обслуживание monthly partitions
 
 # Validation (prefer smallest surface)
 make lint          # ruff check + format check
@@ -46,19 +57,32 @@ make test-all      # all tests including integration
 
 ```
 src/
-├── candles/          # OHLCV sync from OKX (domain/application/infrastructure/ports)
-├── features/         # Indicator calculation pipeline
-├── cli/              # Thin CLI adapters (Typer/Click)
-├── config/           # Settings, env loading
-├── core/             # Shared domain primitives
-├── db/               # Migrations, partition management
-├── ml/               # ML scoring engine
-├── backtest/         # Backtesting framework
-├── market_selection/ # Market filtering/ranking
-└── utils/            # Shared utilities
-ops/airflow/dags/     # Airflow DAG definitions
-tests/                # Repo-level tests by subsystem
-scripts/              # Dev/ops automation
+├── candles/              # OHLCV sync from OKX (domain/application/infrastructure/ports)
+│   └── application/repair/  # Gap detection and historical backfill (WIP)
+├── features/             # Indicator calculation pipeline
+├── features_combinations/ # Registry and models for feature combinations
+├── scoring_engine/       # Computes score_raw ∈ [0;1] from indicators, saves to score_results
+├── trade_recommender/    # Trade recommendations: entry/sl/tp/position sizing
+├── mtf/                  # Multi-timeframe pipeline: context/triggers/consensus
+│   ├── context/          # Market regime detection
+│   ├── triggers/         # Signal generation with anti-noise filters
+│   └── consensus/        # Weighted aggregation with veto logic
+├── risk/                 # Risk guards: daily/weekly limits, circuit breaker, SLA
+├── signals/              # Signal models, decision maker, promotion workflow
+├── positions/            # Position calculation (single + MTF)
+├── metrics/              # Quant metrics collection and export
+├── settings/             # User-level settings manager (runtime preferences)
+├── cli/                  # Thin CLI adapters (Typer/Click)
+├── config/               # App config: Pydantic Settings, env loading
+├── core/                 # Shared domain primitives
+├── db/                   # Migrations, partition management
+├── ml/                   # ML scoring engine
+├── backtest/             # Backtesting framework
+├── market_selection/     # Market filtering/ranking
+└── utils/                # Shared utilities
+ops/airflow/dags/         # Airflow DAG definitions
+tests/                    # Repo-level tests by subsystem
+scripts/                  # Dev/ops automation
 ```
 
 **Dependency rule**: domain → application → infrastructure. Domain MUST NOT import infrastructure or framework code.
@@ -71,20 +95,45 @@ scripts/              # Dev/ops automation
 - `src/*/infrastructure/` — DB, HTTP, filesystem adapters
 - `src/*/ports.py` — protocol/interface definitions
 
+## Airflow DAGs
+
+| DAG ID | Schedule | Purpose |
+|--------|----------|---------|
+| `okx_swap_ohlcv_sync_v2` | `*/5 * * * *` | Live OHLCV ingest for SWAP instruments; modes: `fast` (1m/5m), `slow` (15m–1M), `ext` (with funding_rate/OI), `bootstrap` |
+| `okx_swap_repair_v1` | manual | Bounded historical backfill and gap repair for OKX SWAP candles (WIP) |
+| `features_calc` | scheduled | Full indicator calculation via `src.cli.main features` |
+| `features_calc_short` | scheduled | Incremental calculation of 24 short features only |
+| `market_selection` | scheduled | Market filtering based on data quality, pair metrics, global regime |
+| `indicators_partition_maintenance` | scheduled | Maintains ready monthly partitions for `indicators_p` |
+
+Full DAG docs: `ops/airflow/dags/README.md`
+
 ## Configuration
 
-- All settings via `.env` + `src/config/settings.py`
-- Do NOT scatter `os.getenv()` calls — add new vars to settings module
-- `.env.example` is the canonical reference for available config
+- **App config**: `src/config/settings.py` — Pydantic Settings, single entry point for all env-backed settings
+- **User settings**: `src/settings/` — runtime user preferences manager (not env-backed)
+- Do NOT scatter `os.getenv()` calls — add new vars to `src/config/settings.py`
+- `.env.example` is the canonical reference for available env vars
 
 ## Testing
 
-- `tests/smoke/` — import checks, CLI loads
-- `tests/unit/` — isolated logic tests
-- `tests/integration/` — needs DB or external services
-- `tests/ml/`, `tests/backtest/` — domain-specific suites
+```
+tests/
+├── candles/        # candles subsystem (unit + repair + observability)
+├── features/       # feature calculation
+├── integration/    # needs DB or external services
+├── db/             # DAG and migration tests
+├── cli/            # CLI command tests
+├── ml/             # ML scoring
+├── backtest/       # backtesting
+├── market_meta/    # market metadata
+├── market_selection/
+├── smoke/          # import checks, CLI loads
+└── unit/           # isolated logic tests
+```
+
 - Markers: `slow`, `integration`, `unit`, `smoke`, `performance`, `lookahead`
-- Coverage target: 85% (enforced in pyproject.toml, relaxed in CI for partial runs)
+- Coverage target: 85% (enforced in `pyproject.toml`, relaxed in CI for partial runs)
 
 ## Conventions
 

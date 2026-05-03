@@ -127,6 +127,10 @@ def test_repair_summary_from_result_marks_partial_auto_apply() -> None:
 
     assert summary.auto_apply_incomplete is True
     assert summary.to_dict()["auto_apply_incomplete"] is True
+    assert summary.blocked is False
+    assert summary.to_dict()["blocked"] is False
+    assert summary.to_dict()["blocked_reason"] is None
+    assert summary.to_dict()["blocked_cause"] is None
 
 
 def test_summary_round_trip_includes_new_fields() -> None:
@@ -152,6 +156,9 @@ def test_summary_round_trip_includes_new_fields() -> None:
         api_fill_ratio=1.0,
         write_success_ratio=2 / 3,
         outcome=RepairOutcome.PARTIAL,
+        blocked=True,
+        blocked_reason="empty-chunk",
+        blocked_cause="api_returned_empty",
     )
 
     payload = original.to_dict()
@@ -162,6 +169,9 @@ def test_summary_round_trip_includes_new_fields() -> None:
     assert payload["api_fill_ratio"] == 1.0
     assert payload["write_success_ratio"] == pytest.approx(2 / 3)
     assert payload["outcome"] == "partial"
+    assert payload["blocked"] is True
+    assert payload["blocked_reason"] == "empty-chunk"
+    assert payload["blocked_cause"] == "api_returned_empty"
 
     restored = RepairSummary.from_mapping(payload)
     assert restored.received_bars == 3
@@ -171,6 +181,9 @@ def test_summary_round_trip_includes_new_fields() -> None:
     assert restored.api_fill_ratio == 1.0
     assert restored.write_success_ratio == pytest.approx(2 / 3)
     assert restored.outcome is RepairOutcome.PARTIAL
+    assert restored.blocked is True
+    assert restored.blocked_reason == "empty-chunk"
+    assert restored.blocked_cause == "api_returned_empty"
 
 
 def test_merge_two_partial_summaries() -> None:
@@ -196,6 +209,7 @@ def test_merge_two_partial_summaries() -> None:
         api_fill_ratio=0.5,
         write_success_ratio=1.0,
         outcome=RepairOutcome.PARTIAL,
+        blocked=False,
     )
     second = RepairSummary(
         mode=RepairExecutionMode.APPLY,
@@ -219,6 +233,9 @@ def test_merge_two_partial_summaries() -> None:
         api_fill_ratio=0.5,
         write_success_ratio=1.0,
         outcome=RepairOutcome.PARTIAL,
+        blocked=True,
+        blocked_reason="empty-chunk",
+        blocked_cause="outside_exchange_history",
     )
 
     merged = merge_repair_summaries(
@@ -237,6 +254,9 @@ def test_merge_two_partial_summaries() -> None:
     assert merged.rows_written == 2
     assert merged.api_fill_ratio == pytest.approx(2 / 4)
     assert merged.write_success_ratio == pytest.approx(2 / 2)
+    assert merged.blocked is True
+    assert merged.blocked_reason == "empty-chunk"
+    assert merged.blocked_cause == "outside_exchange_history"
 
 
 def test_noop_summary_outcome_is_success() -> None:
@@ -257,4 +277,7 @@ def test_noop_summary_outcome_is_success() -> None:
     assert summary.progress == 0
     assert summary.api_fill_ratio == 0.0
     assert summary.write_success_ratio == 0.0
+    assert summary.blocked is False
+    assert summary.blocked_reason is None
+    assert summary.blocked_cause is None
     assert summary.verified is True

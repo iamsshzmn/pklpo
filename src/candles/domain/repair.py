@@ -52,6 +52,15 @@ def classify_repair_outcome(
     return RepairOutcome.SUCCESS
 
 
+def is_blocked_repair_outcome(
+    *,
+    requested: int,
+    received: int,
+    exception: bool,
+) -> bool:
+    return not exception and requested > 0 and received == 0
+
+
 @dataclass(frozen=True)
 class NoProgressPolicy:
     critical_timeframes: frozenset[str] = frozenset({"1m", "1H"})

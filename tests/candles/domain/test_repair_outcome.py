@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from src.candles.domain.repair import RepairOutcome, classify_repair_outcome
+from src.candles.domain.repair import (
+    RepairOutcome,
+    classify_repair_outcome,
+    is_blocked_repair_outcome,
+)
 
 
 @pytest.mark.parametrize(
@@ -33,6 +37,32 @@ def test_classify_repair_outcome(
 ) -> None:
     assert (
         classify_repair_outcome(
+            requested=requested,
+            received=received,
+            exception=exception,
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("requested", "received", "exception", "expected"),
+    [
+        (10, 0, False, True),
+        (1, 0, False, True),
+        (0, 0, False, False),
+        (10, 1, False, False),
+        (10, 0, True, False),
+    ],
+)
+def test_is_blocked_repair_outcome(
+    requested: int,
+    received: int,
+    exception: bool,
+    expected: bool,
+) -> None:
+    assert (
+        is_blocked_repair_outcome(
             requested=requested,
             received=received,
             exception=exception,

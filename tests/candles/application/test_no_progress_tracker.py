@@ -13,6 +13,7 @@ def test_no_progress_tracker_resets_after_positive_progress() -> None:
         "timeframe": "1m",
         "critical": True,
         "consecutive_no_progress": 2,
+        "consecutive_blocked": 0,
         "threshold": 3,
     }
 
@@ -23,6 +24,7 @@ def test_no_progress_tracker_resets_after_positive_progress() -> None:
         "timeframe": "1m",
         "critical": True,
         "consecutive_no_progress": 0,
+        "consecutive_blocked": 0,
         "threshold": 3,
     }
 
@@ -52,6 +54,7 @@ def test_no_progress_tracker_does_not_escalate_for_non_critical_timeframe() -> N
         "timeframe": "1D",
         "critical": False,
         "consecutive_no_progress": 4,
+        "consecutive_blocked": 0,
         "threshold": 3,
     }
 
@@ -69,5 +72,23 @@ def test_no_progress_tracker_snapshot_shape() -> None:
         "timeframe": "1m",
         "critical": True,
         "consecutive_no_progress": 0,
+        "consecutive_blocked": 0,
         "threshold": 5,
+    }
+
+
+def test_no_progress_tracker_tracks_blocked_without_escalation() -> None:
+    tracker = NoProgressTracker(policy=NoProgressPolicy(), timeframe="1m")
+
+    tracker.record(progress=0, blocked=True)
+    tracker.record(progress=0, blocked=True)
+    tracker.record(progress=0, blocked=True)
+
+    assert tracker.should_escalate() is False
+    assert tracker.snapshot() == {
+        "timeframe": "1m",
+        "critical": True,
+        "consecutive_no_progress": 0,
+        "consecutive_blocked": 3,
+        "threshold": 3,
     }

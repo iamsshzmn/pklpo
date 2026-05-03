@@ -44,6 +44,9 @@ def test_push_swap_repair_metrics_emits_new_semantic_gauges(monkeypatch) -> None
                 "remaining_missing_before": 3,
                 "remaining_missing_after": 0,
                 "outcome": "partial",
+                "blocked": True,
+                "blocked_reason": "empty-chunk",
+                "blocked_cause": "api_returned_empty",
             }
         ]
     )
@@ -58,10 +61,15 @@ def test_push_swap_repair_metrics_emits_new_semantic_gauges(monkeypatch) -> None
         "pklpo_swap_repair_remaining_missing_before",
         "pklpo_swap_repair_remaining_missing_after",
         "pklpo_swap_repair_outcome_total",
+        "pklpo_swap_repair_blocked",
+        "pklpo_swap_repair_blocked_reason_total",
+        "pklpo_swap_repair_blocked_cause_total",
     ):
         assert metric_name in text, f"missing {metric_name} in pushed metrics"
 
     assert 'outcome="partial"' in text
+    assert 'blocked_reason="empty-chunk"' in text
+    assert 'blocked_cause="api_returned_empty"' in text
     assert 'pklpo_swap_repair_api_fill_ratio{' in text
 
 
