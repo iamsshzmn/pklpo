@@ -59,13 +59,13 @@ class OKXSettings(BaseSettings):
         extra="ignore",
     )
 
-    PHASE0_WEEK_ANCHOR_TS_MS: ClassVar[int] = 0
+    DEFAULT_WEEK_ANCHOR_TS_MS: ClassVar[int] = 0
 
     api_key: SecretStr = Field(default=SecretStr(""))
     api_secret: SecretStr = Field(default=SecretStr(""))
     passphrase: SecretStr = Field(default=SecretStr(""))
     base_url: str = "https://www.okx.com"
-    week_anchor_ts_ms: int | None = PHASE0_WEEK_ANCHOR_TS_MS
+    week_anchor_ts_ms: int | None = DEFAULT_WEEK_ANCHOR_TS_MS
 
     # Rate limiting
     max_requests_per_second: int = 10
@@ -91,10 +91,11 @@ class OKXSettings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Keep the temporary week anchor code-defined until Phase 8."""
         return (
             init_settings,
-            _without_week_anchor(env_settings),
-            _without_week_anchor(dotenv_settings),
+            _without_week_anchor_source(env_settings),
+            _without_week_anchor_source(dotenv_settings),
             file_secret_settings,
         )
 
@@ -369,10 +370,12 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _without_week_anchor(
+def _without_week_anchor_source(
     source: PydanticBaseSettingsSource,
 ) -> PydanticBaseSettingsSource:
     class _FilteredSource(PydanticBaseSettingsSource):
+        """Proxy a settings source while suppressing week_anchor_ts_ms."""
+
         def __call__(self) -> dict[str, Any]:
             data = dict(source())
             data.pop("week_anchor_ts_ms", None)
