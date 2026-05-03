@@ -39,8 +39,9 @@ The following Phase 0 decisions are accepted:
   `OKXSettings.week_anchor_ts_ms`, accessed through `get_settings().okx`.
   It must not be hardcoded in DAGs or module-level constants.
 - Phase 0 adds the settings hook only. The effective value is a code-defined
-  placeholder (`0`) and is not env-overridable. A later phase will replace that
-  placeholder with the real OKX anchor fetched from the API.
+  placeholder (`0`) and env or `.env` sources do not supply it in Phase 0. A
+  later phase will replace that placeholder with the real OKX anchor fetched
+  from the API.
 - Keep `RepairResult` unchanged in this track. If the guarantee/recalc flow
   needs a distinct completion contract, it will use a separate outcome model in
   a later phase.

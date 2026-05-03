@@ -8,10 +8,14 @@ Supports: .env files, environment variables, validation, type checking.
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 
 class DatabaseSettings(BaseSettings):
@@ -61,7 +65,7 @@ class OKXSettings(BaseSettings):
     api_secret: SecretStr = Field(default=SecretStr(""))
     passphrase: SecretStr = Field(default=SecretStr(""))
     base_url: str = "https://www.okx.com"
-    week_anchor_ts_ms: int = PHASE0_WEEK_ANCHOR_TS_MS
+    week_anchor_ts_ms: int | None = PHASE0_WEEK_ANCHOR_TS_MS
 
     # Rate limiting
     max_requests_per_second: int = 10
@@ -78,11 +82,21 @@ class OKXSettings(BaseSettings):
         """Check whether API keys are set."""
         return bool(self.api_key.get_secret_value())
 
-    @field_validator("week_anchor_ts_ms", mode="before")
     @classmethod
-    def use_phase0_week_anchor(cls, _value: object) -> int:
-        """Keep the Phase 0 week anchor code-defined until API wiring exists."""
-        return cls.PHASE0_WEEK_ANCHOR_TS_MS
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            _without_week_anchor(env_settings),
+            _without_week_anchor(dotenv_settings),
+            file_secret_settings,
+        )
 
 
 class FeaturesSettings(BaseSettings):
@@ -353,6 +367,25 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _without_week_anchor(
+    source: PydanticBaseSettingsSource,
+) -> PydanticBaseSettingsSource:
+    class _FilteredSource(PydanticBaseSettingsSource):
+        def __call__(self) -> dict[str, Any]:
+            data = dict(source())
+            data.pop("week_anchor_ts_ms", None)
+            return data
+
+        def get_field_value(
+            self,
+            field: Any,
+            field_name: str,
+        ) -> tuple[Any, str, bool]:
+            return source.get_field_value(field, field_name)
+
+    return _FilteredSource(source.settings_cls)
 
 
 class ObservabilitySettings(BaseModel):
