@@ -91,7 +91,7 @@ class OKXSettings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Keep the temporary week anchor code-defined until Phase 8."""
+        """Keep the temporary week anchor code-defined per ADR-2026-05-03."""
         return (
             init_settings,
             _without_week_anchor_source(env_settings),
