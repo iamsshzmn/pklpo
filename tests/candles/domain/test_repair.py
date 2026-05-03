@@ -15,6 +15,7 @@ from src.candles.domain.repair import (
     RepairStrategy,
     RepairWindow,
     clamp_window_to_closed_bars,
+    clamp_window_to_closed_bars_business,
     detect_gap_tasks,
     merge_gaps,
     summarize_repair_verification,
@@ -72,6 +73,27 @@ def test_clamp_window_to_closed_bars_excludes_current_open_bar() -> None:
     assert normalized == RepairWindow(
         start_ts_ms=int(datetime(2026, 4, 11, 12, 0, tzinfo=UTC).timestamp() * 1000),
         end_ts_ms=int(datetime(2026, 4, 11, 12, 3, tzinfo=UTC).timestamp() * 1000),
+    )
+
+
+def test_clamp_window_to_closed_bars_business_uses_week_anchor_consistently() -> None:
+    anchor_ts_ms = int(datetime(2026, 1, 7, tzinfo=UTC).timestamp() * 1000)
+    now_ts_ms = int(datetime(2026, 1, 23, 12, tzinfo=UTC).timestamp() * 1000)
+    window = RepairWindow(
+        start_ts_ms=int(datetime(2026, 1, 9, tzinfo=UTC).timestamp() * 1000),
+        end_ts_ms=int(datetime(2026, 1, 27, tzinfo=UTC).timestamp() * 1000),
+    )
+
+    normalized = clamp_window_to_closed_bars_business(
+        window=window,
+        timeframe="1W",
+        now_ts_ms=now_ts_ms,
+        week_anchor_ts_ms=anchor_ts_ms,
+    )
+
+    assert normalized == RepairWindow(
+        start_ts_ms=int(datetime(2026, 1, 7, tzinfo=UTC).timestamp() * 1000),
+        end_ts_ms=int(datetime(2026, 1, 21, tzinfo=UTC).timestamp() * 1000),
     )
 
 
@@ -224,10 +246,16 @@ def test_last_n_closed_bars_outcome_is_separate_from_repair_result_shape() -> No
         ({"open": 13, "high": 12, "low": 9, "close": 10, "volume": 5}, False),
         ({"open": 10, "high": 12, "low": 9, "close": 8, "volume": 5}, False),
         ({"open": 10, "high": 12, "low": 9, "close": 13, "volume": 5}, False),
+        ({"open": "10", "high": 12, "low": 9, "close": 11, "volume": 5}, False),
+        ({"open": object(), "high": 12, "low": 9, "close": 11, "volume": 5}, False),
+        ({"open": 10, "high": float("nan"), "low": 9, "close": 11, "volume": 5}, False),
+        ({"open": 10, "high": 12, "low": 9, "close": float("inf"), "volume": 5}, False),
+        ({"open": 10, "high": 12, "low": 9, "close": 11, "volume": -1}, False),
+        ({}, False),
     ],
 )
 def test_validate_ohlcv_row_matches_corrupted_detection(
-    row: dict[str, int | None],
+    row: dict[str, object],
     expected: bool,
 ) -> None:
     assert validate_ohlcv_row(row) is expected

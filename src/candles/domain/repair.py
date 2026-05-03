@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
+from numbers import Real
 from typing import TYPE_CHECKING, Any, Literal
 
-from .repair_timeframes import expected_next_open, floor_to_timeframe
+from .repair_timeframes import (
+    expected_next_open,
+    floor_to_timeframe,
+    floor_to_timeframe_business,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -214,6 +220,23 @@ def clamp_window_to_closed_bars(
     return RepairWindow(start_ts_ms=start_ts_ms, end_ts_ms=end_ts_ms)
 
 
+def clamp_window_to_closed_bars_business(
+    *,
+    window: RepairWindow,
+    timeframe: str,
+    now_ts_ms: int,
+    week_anchor_ts_ms: int,
+) -> RepairWindow:
+    start_ts_ms = floor_to_timeframe_business(window.start_ts_ms, timeframe, week_anchor_ts_ms)
+    end_ts_ms = min(
+        floor_to_timeframe_business(window.end_ts_ms, timeframe, week_anchor_ts_ms),
+        floor_to_timeframe_business(now_ts_ms, timeframe, week_anchor_ts_ms),
+    )
+    if end_ts_ms < start_ts_ms:
+        end_ts_ms = start_ts_ms
+    return RepairWindow(start_ts_ms=start_ts_ms, end_ts_ms=end_ts_ms)
+
+
 def detect_gap_tasks(
     *,
     timestamps: list[int],
@@ -306,15 +329,30 @@ def sanitize_repair_candle(
 
 
 def validate_ohlcv_row(row: Mapping[str, Any]) -> bool:
-    values = (row.get("open"), row.get("high"), row.get("low"), row.get("close"), row.get("volume"))
-    if any(value is None for value in values):
+    values = _coerce_ohlcv_values(row)
+    if values is None:
         return False
-    open_price, high_price, low_price, close_price, _volume = values
+    open_price, high_price, low_price, close_price, volume = values
     if any(value <= 0 for value in (open_price, high_price, low_price, close_price)):
+        return False
+    if volume < 0:
         return False
     if high_price < low_price:
         return False
     return low_price <= open_price <= high_price and low_price <= close_price <= high_price
+
+
+def _coerce_ohlcv_values(row: object) -> tuple[float, float, float, float, float] | None:
+    if not hasattr(row, "get"):
+        return None
+    values = tuple(row.get(name) for name in ("open", "high", "low", "close", "volume"))
+    if any(not _is_finite_number(value) for value in values):
+        return None
+    return tuple(float(value) for value in values)
+
+
+def _is_finite_number(value: object) -> bool:
+    return isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def merge_gaps(ts_list: list[int], interval_ms: int) -> list[tuple[int, int]]:
