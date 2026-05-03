@@ -56,3 +56,23 @@ def test_reload_settings_ignores_week_anchor_env_override(monkeypatch):
     settings = reload_settings()
 
     assert settings.okx.week_anchor_ts_ms == 0
+
+
+def test_reload_settings_reads_other_dotenv_values(
+    monkeypatch,
+    tmp_path: Path,
+):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "OKX_WEEK_ANCHOR_TS_MS=1234567890000\n"
+        "OKX_API_KEY=dotenv-key\n"
+        "OKX_BASE_URL=https://dotenv.test\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    settings = reload_settings()
+
+    assert settings.okx.week_anchor_ts_ms == 0
+    assert settings.okx.api_key.get_secret_value() == "dotenv-key"
+    assert settings.okx.base_url == "https://dotenv.test"

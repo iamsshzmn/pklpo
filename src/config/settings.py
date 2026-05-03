@@ -493,7 +493,12 @@ class Settings(BaseSettings):
 
     # Sub-settings
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
-    okx: OKXSettings = Field(default_factory=OKXSettings)
+    okx: OKXSettings = Field(
+        default_factory=lambda: OKXSettings(
+            _env_file=".env",
+            _env_file_encoding="utf-8",
+        )
+    )
     features: FeaturesSettings = Field(default_factory=FeaturesSettings)
     risk: RiskSettings = Field(default_factory=RiskSettings)
     retry: RetrySettings = Field(default_factory=RetrySettings)
