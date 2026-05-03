@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from itertools import pairwise
 
 import pytest
@@ -251,6 +252,26 @@ def test_last_n_closed_bars_outcome_is_separate_from_repair_result_shape() -> No
         ({"open": 10, "high": float("nan"), "low": 9, "close": 11, "volume": 5}, False),
         ({"open": 10, "high": 12, "low": 9, "close": float("inf"), "volume": 5}, False),
         ({"open": 10, "high": 12, "low": 9, "close": 11, "volume": -1}, False),
+        (
+            {
+                "open": Decimal("10"),
+                "high": Decimal("12"),
+                "low": Decimal("9"),
+                "close": Decimal("11"),
+                "volume": Decimal("5"),
+            },
+            True,
+        ),
+        (
+            {
+                "open": 10**1000,
+                "high": 12,
+                "low": 9,
+                "close": 11,
+                "volume": 5,
+            },
+            False,
+        ),
         ({}, False),
     ],
 )
@@ -264,5 +285,13 @@ def test_validate_ohlcv_row_matches_corrupted_detection(
 def test_validate_ohlcv_row_rejects_row_like_object_with_non_callable_get() -> None:
     class MalformedRow:
         get = 123
+
+    assert validate_ohlcv_row(MalformedRow()) is False
+
+
+def test_validate_ohlcv_row_rejects_row_like_object_with_bad_get_signature() -> None:
+    class MalformedRow:
+        def get(self) -> None:
+            return None
 
     assert validate_ohlcv_row(MalformedRow()) is False

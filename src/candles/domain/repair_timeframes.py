@@ -112,11 +112,4 @@ def window_padding(timeframe: str, bars: int) -> int:
         return TF_TO_MS[timeframe] * bars
     if timeframe != "1M":
         raise ValueError(f"Unsupported timeframe: {timeframe}")
-
-    current = 0
-    cursor = floor_to_timeframe(int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000), "1M")
-    for _ in range(bars):
-        nxt = expected_next_open(cursor, "1M")
-        current += nxt - cursor
-        cursor = nxt
-    return current
+    return 31 * TF_TO_MS["1D"] * bars

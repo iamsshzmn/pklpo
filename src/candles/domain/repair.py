@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from decimal import Decimal
 from enum import StrEnum
 from numbers import Real
 from typing import TYPE_CHECKING, Any, Literal
@@ -346,14 +347,24 @@ def _coerce_ohlcv_values(row: object) -> tuple[float, float, float, float, float
     getter = getattr(row, "get", None)
     if not callable(getter):
         return None
-    values = tuple(getter(name) for name in ("open", "high", "low", "close", "volume"))
+    try:
+        values = tuple(
+            getter(name) for name in ("open", "high", "low", "close", "volume")
+        )
+    except Exception:
+        return None
     if any(not _is_finite_number(value) for value in values):
         return None
     return tuple(float(value) for value in values)
 
 
 def _is_finite_number(value: object) -> bool:
-    return isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(value)
+    if isinstance(value, bool) or not isinstance(value, (Real, Decimal)):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, ValueError):
+        return False
 
 
 def merge_gaps(ts_list: list[int], interval_ms: int) -> list[tuple[int, int]]:

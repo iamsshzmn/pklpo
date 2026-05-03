@@ -157,6 +157,10 @@ def test_merge_adjacent_timestamps_merges_weekly_ranges_with_anchor() -> None:
     ]
 
 
+def test_window_padding_for_months_uses_safe_upper_bound() -> None:
+    assert window_padding("1M", 2) == 62 * 86_400_000
+
+
 @pytest.mark.parametrize("bars", [0, -1])
 def test_build_last_n_closed_window_rejects_non_positive_bars(bars: int) -> None:
     with pytest.raises(ValueError, match="bars must be >= 1"):
