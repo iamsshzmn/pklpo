@@ -343,9 +343,10 @@ def validate_ohlcv_row(row: Mapping[str, Any]) -> bool:
 
 
 def _coerce_ohlcv_values(row: object) -> tuple[float, float, float, float, float] | None:
-    if not hasattr(row, "get"):
+    getter = getattr(row, "get", None)
+    if not callable(getter):
         return None
-    values = tuple(row.get(name) for name in ("open", "high", "low", "close", "volume"))
+    values = tuple(getter(name) for name in ("open", "high", "low", "close", "volume"))
     if any(not _is_finite_number(value) for value in values):
         return None
     return tuple(float(value) for value in values)

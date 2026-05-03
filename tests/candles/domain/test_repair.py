@@ -259,3 +259,10 @@ def test_validate_ohlcv_row_matches_corrupted_detection(
     expected: bool,
 ) -> None:
     assert validate_ohlcv_row(row) is expected
+
+
+def test_validate_ohlcv_row_rejects_row_like_object_with_non_callable_get() -> None:
+    class MalformedRow:
+        get = 123
+
+    assert validate_ohlcv_row(MalformedRow()) is False
