@@ -59,6 +59,7 @@ class OKXSettings(BaseSettings):
     api_secret: SecretStr = Field(default=SecretStr(""))
     passphrase: SecretStr = Field(default=SecretStr(""))
     base_url: str = "https://www.okx.com"
+    week_anchor_ts_ms: int | None = None
 
     # Rate limiting
     max_requests_per_second: int = 10
