@@ -3,9 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from itertools import pairwise
 
+import pytest
 from hypothesis import given, strategies as st
 
 from src.candles.domain.repair import (
+    GapRange,
+    LastNClosedBarsOutcome,
+    LastNClosedBarsPlan,
     RepairGuardrails,
     RepairPlan,
     RepairStrategy,
@@ -14,6 +18,7 @@ from src.candles.domain.repair import (
     detect_gap_tasks,
     merge_gaps,
     summarize_repair_verification,
+    validate_ohlcv_row,
     validate_repair_candles,
 )
 
@@ -161,3 +166,68 @@ def test_guardrails_report_multiple_violations() -> None:
         "max_requested_bars_per_run",
         "max_range_days",
     ]
+
+
+def test_last_n_closed_bars_plan_is_frozen_and_keeps_domain_shape() -> None:
+    plan = LastNClosedBarsPlan(
+        symbol="BTC-USDT-SWAP",
+        tf="1m",
+        window_start=0,
+        closed_until=180_000,
+        expected_count=3,
+        missing_ts=[60_000],
+        corrupted_ts=[120_000],
+        repair_ranges=[GapRange(start_ts_ms=60_000, end_ts_ms=180_000)],
+        status="partial",
+    )
+
+    assert plan.symbol == "BTC-USDT-SWAP"
+    assert plan.tf == "1m"
+    assert plan.expected_count == 3
+    assert plan.repair_ranges == [GapRange(start_ts_ms=60_000, end_ts_ms=180_000)]
+
+
+def test_last_n_closed_bars_outcome_is_separate_from_repair_result_shape() -> None:
+    outcome = LastNClosedBarsOutcome(
+        status="ok",
+        unresolved_timestamps=[60_000],
+        affected_recalc_range=(0, 180_000),
+        corrupted_count=1,
+        repaired_count=2,
+        run_id="run-1",
+        algo_version="v1",
+        params_hash="abc123",
+    )
+
+    assert outcome.status == "ok"
+    assert outcome.unresolved_timestamps == [60_000]
+    assert outcome.affected_recalc_range == (0, 180_000)
+    assert outcome.corrupted_count == 1
+    assert outcome.repaired_count == 2
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        ({"open": 10, "high": 12, "low": 9, "close": 11, "volume": 5}, True),
+        ({"open": None, "high": 12, "low": 9, "close": 11, "volume": 5}, False),
+        ({"open": 10, "high": None, "low": 9, "close": 11, "volume": 5}, False),
+        ({"open": 10, "high": 12, "low": None, "close": 11, "volume": 5}, False),
+        ({"open": 10, "high": 12, "low": 9, "close": None, "volume": 5}, False),
+        ({"open": 10, "high": 12, "low": 9, "close": 11, "volume": None}, False),
+        ({"open": 0, "high": 12, "low": 9, "close": 11, "volume": 5}, False),
+        ({"open": 10, "high": 12, "low": 0, "close": 11, "volume": 5}, False),
+        ({"open": 10, "high": 0, "low": 9, "close": 11, "volume": 5}, False),
+        ({"open": 10, "high": 12, "low": 9, "close": 0, "volume": 5}, False),
+        ({"open": 10, "high": 8, "low": 9, "close": 10, "volume": 5}, False),
+        ({"open": 8, "high": 12, "low": 9, "close": 10, "volume": 5}, False),
+        ({"open": 13, "high": 12, "low": 9, "close": 10, "volume": 5}, False),
+        ({"open": 10, "high": 12, "low": 9, "close": 8, "volume": 5}, False),
+        ({"open": 10, "high": 12, "low": 9, "close": 13, "volume": 5}, False),
+    ],
+)
+def test_validate_ohlcv_row_matches_corrupted_detection(
+    row: dict[str, int | None],
+    expected: bool,
+) -> None:
+    assert validate_ohlcv_row(row) is expected

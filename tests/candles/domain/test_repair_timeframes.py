@@ -5,15 +5,24 @@ from datetime import UTC, datetime
 import pytest
 from hypothesis import given, strategies as st
 
+from src.candles.domain.repair import GapRange
 from src.candles.domain.repair_timeframes import (
+    build_last_n_closed_window,
     expected_next_open,
     floor_to_timeframe,
+    floor_to_timeframe_business,
     is_fixed_step_timeframe,
+    list_expected_timestamps,
+    merge_adjacent_timestamps,
     window_padding,
 )
 from src.candles.domain.timeframes import TF_TO_MS
 
 FIXED_STEP_TIMEFRAMES = [timeframe for timeframe in TF_TO_MS if is_fixed_step_timeframe(timeframe)]
+
+
+def _ts(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> int:
+    return int(datetime(year, month, day, hour, minute, tzinfo=UTC).timestamp() * 1000)
 
 
 @pytest.mark.parametrize("timeframe", FIXED_STEP_TIMEFRAMES)
@@ -58,3 +67,97 @@ def test_window_padding_monthly_uses_calendar_steps() -> None:
     mar = datetime(2026, 3, 1, tzinfo=UTC)
 
     assert window_padding("1M", 2) == int((feb - jan + (mar - feb)).total_seconds() * 1000)
+
+
+def test_build_last_n_closed_window_excludes_current_open_bar_for_fixed_step() -> None:
+    now_ts_ms = _ts(2026, 4, 11, 12, 3)
+
+    window_start, closed_until = build_last_n_closed_window(
+        now_ts_ms,
+        "1m",
+        bars=3,
+        week_anchor_ts_ms=0,
+    )
+
+    assert window_start == _ts(2026, 4, 11, 12, 0)
+    assert closed_until == _ts(2026, 4, 11, 12, 3)
+
+
+def test_build_last_n_closed_window_uses_anchor_for_weekly_flooring() -> None:
+    anchor_ts_ms = _ts(2026, 1, 7)
+    now_ts_ms = _ts(2026, 1, 23, 12)
+
+    window_start, closed_until = build_last_n_closed_window(
+        now_ts_ms,
+        "1W",
+        bars=2,
+        week_anchor_ts_ms=anchor_ts_ms,
+    )
+
+    assert window_start == _ts(2026, 1, 7)
+    assert closed_until == _ts(2026, 1, 21)
+
+
+def test_floor_to_timeframe_business_delegates_non_weekly_timeframes() -> None:
+    assert floor_to_timeframe_business(_ts(2026, 4, 11, 12, 3), "1m", 0) == _ts(2026, 4, 11, 12, 3)
+
+
+def test_list_expected_timestamps_returns_fixed_step_opens() -> None:
+    expected = list_expected_timestamps(
+        _ts(2026, 4, 11, 12, 0),
+        _ts(2026, 4, 11, 12, 3),
+        "1m",
+    )
+
+    assert expected == [
+        _ts(2026, 4, 11, 12, 0),
+        _ts(2026, 4, 11, 12, 1),
+        _ts(2026, 4, 11, 12, 2),
+    ]
+
+
+def test_list_expected_timestamps_steps_by_calendar_for_months() -> None:
+    expected = list_expected_timestamps(
+        _ts(2026, 1, 1),
+        _ts(2026, 4, 1),
+        "1M",
+    )
+
+    assert expected == [
+        _ts(2026, 1, 1),
+        _ts(2026, 2, 1),
+        _ts(2026, 3, 1),
+    ]
+
+
+def test_merge_adjacent_timestamps_merges_expected_neighbors_for_months() -> None:
+    merged = merge_adjacent_timestamps(
+        [_ts(2026, 1, 1), _ts(2026, 2, 1), _ts(2026, 4, 1)],
+        "1M",
+        week_anchor_ts_ms=0,
+    )
+
+    assert merged == [
+        GapRange(start_ts_ms=_ts(2026, 1, 1), end_ts_ms=_ts(2026, 3, 1)),
+        GapRange(start_ts_ms=_ts(2026, 4, 1), end_ts_ms=_ts(2026, 5, 1)),
+    ]
+
+
+def test_merge_adjacent_timestamps_merges_weekly_ranges_with_anchor() -> None:
+    anchor_ts_ms = _ts(2026, 1, 7)
+    merged = merge_adjacent_timestamps(
+        [_ts(2026, 1, 7), _ts(2026, 1, 14), _ts(2026, 1, 28)],
+        "1W",
+        week_anchor_ts_ms=anchor_ts_ms,
+    )
+
+    assert merged == [
+        GapRange(start_ts_ms=_ts(2026, 1, 7), end_ts_ms=_ts(2026, 1, 21)),
+        GapRange(start_ts_ms=_ts(2026, 1, 28), end_ts_ms=_ts(2026, 2, 4)),
+    ]
+
+
+@pytest.mark.parametrize("bars", [0, -1])
+def test_build_last_n_closed_window_rejects_non_positive_bars(bars: int) -> None:
+    with pytest.raises(ValueError, match="bars must be >= 1"):
+        build_last_n_closed_window(_ts(2026, 4, 11, 12, 3), "1m", bars=bars, week_anchor_ts_ms=0)

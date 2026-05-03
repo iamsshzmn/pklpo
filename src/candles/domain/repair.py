@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from .repair_timeframes import expected_next_open, floor_to_timeframe
 
@@ -94,6 +94,12 @@ class GuardrailViolation:
 
 
 @dataclass(frozen=True)
+class GapRange:
+    start_ts_ms: int
+    end_ts_ms: int
+
+
+@dataclass(frozen=True)
 class RepairPlan:
     strategy: RepairStrategy
     symbol: str
@@ -120,10 +126,37 @@ class BackfillPlan(RepairPlan):
 
 
 @dataclass(frozen=True)
+class LastNClosedBarsPlan:
+    symbol: str
+    tf: str
+    window_start: int
+    closed_until: int
+    expected_count: int
+    missing_ts: list[int]
+    corrupted_ts: list[int]
+    repair_ranges: list[GapRange]
+    status: Literal["ok", "partial", "blocked", "deferred", "not_matured"]
+
+
+@dataclass(frozen=True)
 class RepairVerificationSummary:
     method: RepairVerificationMethod
     remaining_gap_tasks: int
     remaining_requested_bars: int
+
+
+@dataclass(frozen=True)
+class LastNClosedBarsOutcome:
+    """Separate from application RepairResult; field overlap is well below 60%."""
+
+    status: Literal["ok", "partial", "blocked", "deferred", "not_matured"]
+    unresolved_timestamps: list[int]
+    affected_recalc_range: tuple[int, int] | None
+    corrupted_count: int
+    repaired_count: int
+    run_id: str
+    algo_version: str
+    params_hash: str
 
 
 @dataclass(frozen=True)
@@ -270,6 +303,18 @@ def sanitize_repair_candle(
         "vol_usd": candle.get("volUsd"),
         "fetched_at": fetched_at,
     }
+
+
+def validate_ohlcv_row(row: Mapping[str, Any]) -> bool:
+    values = (row.get("open"), row.get("high"), row.get("low"), row.get("close"), row.get("volume"))
+    if any(value is None for value in values):
+        return False
+    open_price, high_price, low_price, close_price, _volume = values
+    if any(value <= 0 for value in (open_price, high_price, low_price, close_price)):
+        return False
+    if high_price < low_price:
+        return False
+    return low_price <= open_price <= high_price and low_price <= close_price <= high_price
 
 
 def merge_gaps(ts_list: list[int], interval_ms: int) -> list[tuple[int, int]]:
