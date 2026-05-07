@@ -53,7 +53,9 @@ def _load_repair_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType
 
     airflow_operators_python = types.ModuleType("airflow.operators.python")
     airflow_operators_python.PythonOperator = _DummyOperator
-    monkeypatch.setitem(sys.modules, "airflow.operators.python", airflow_operators_python)
+    monkeypatch.setitem(
+        sys.modules, "airflow.operators.python", airflow_operators_python
+    )
 
     candles_bootstrap = types.ModuleType("src.candles.bootstrap")
     candles_bootstrap.create_candles_airflow_callbacks = lambda: SimpleNamespace(
@@ -113,7 +115,7 @@ def test_repair_dag_params_contract_snapshot(
         "trigger": {
             "default": "repair-all-swaps",
             "type": "string",
-            "enum": ["repair-all-swaps"],
+            "enum": ["last-200-guard", "repair-all-swaps"],
             "description": "Manual trigger preset. Runtime repair settings live in code.",
         }
     }
@@ -142,6 +144,34 @@ def test_validate_swap_repair_conf_builds_internal_preset_from_trigger(
     assert result["auto_apply_window"] is True
     assert result["start_ts_ms"] is None
     assert result["end_ts_ms"] is None
+
+
+def test_validate_swap_repair_conf_builds_last_200_guard_preset(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        repair_dag_module,
+        "_load_curated_swap_symbols",
+        lambda: ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+    )
+
+    result = repair_dag_module.validate_swap_repair_conf_task(
+        dag_run=SimpleNamespace(conf={"trigger": "last-200-guard"})
+    )
+
+    assert result["trigger"] == "last-200-guard"
+    assert result["symbols"] == ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
+    assert result["timeframes"] == ["1m", "1H", "4H", "1D", "1W", "1M"]
+    assert result["bars"] == 200
+    assert result["mode"] == "apply"
+    assert result["repair_strategy"] == "last_n_closed_bars"
+    assert result["publish_on_statuses"] == [
+        "partial",
+        "blocked",
+        "deferred",
+        "not_matured",
+    ]
 
 
 def test_validate_swap_repair_conf_rejects_unknown_trigger(
@@ -194,9 +224,13 @@ def test_swap_repair_preview_task_runs_for_each_symbol_and_timeframe(
 
             return asyncio.run(coro)
 
-    monkeypatch.setattr(repair_dag_module.repair_interface, "plan_swap_repair", _fake_plan_swap_repair)
+    monkeypatch.setattr(
+        repair_dag_module.repair_interface, "plan_swap_repair", _fake_plan_swap_repair
+    )
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
 
     result = repair_dag_module.swap_repair_preview_task(
@@ -270,7 +304,9 @@ def test_swap_repair_task_runs_for_each_symbol_and_timeframe(
         _fake_run_swap_repair_auto_apply,
     )
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
 
     result = repair_dag_module.swap_repair_task(
@@ -345,7 +381,9 @@ def test_swap_repair_task_forwards_no_progress_policy_from_preset(
         _fake_run_swap_repair_auto_apply,
     )
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
 
     repair_dag_module.swap_repair_task(
@@ -375,6 +413,81 @@ def test_swap_repair_task_forwards_no_progress_policy_from_preset(
     assert len(calls) == 1
     assert calls[0]["critical_timeframes"] == ["1H"]
     assert calls[0]["no_progress_threshold"] == 1
+
+
+def test_swap_repair_task_uses_last_n_guard_interface_for_guard_trigger(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class _Loop:
+        @staticmethod
+        def run_until_complete(coro: Any) -> dict[str, Any]:
+            import asyncio
+
+            return asyncio.run(coro)
+
+    async def _fake_guarantee_last_n_closed_bars(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {
+            "status": "ok",
+            "symbol": kwargs["symbol"],
+            "timeframe": kwargs["timeframe"],
+            "affected_recalc_range": (10, 100),
+            "unresolved_timestamps": [],
+            "corrupted_count": 0,
+            "repaired_count": 1,
+        }
+
+    monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
+    monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
+    monkeypatch.setattr(
+        repair_dag_module.repair_interface,
+        "guarantee_last_n_closed_bars",
+        _fake_guarantee_last_n_closed_bars,
+    )
+
+    result = repair_dag_module.swap_repair_task(
+        ti=_TaskInstance(
+            {
+                "trigger": "last-200-guard",
+                "symbols": ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+                "timeframes": ["1H"],
+                "bars": 200,
+                "mode": "apply",
+                "repair_strategy": "last_n_closed_bars",
+            }
+        )
+    )
+
+    assert calls == [
+        {"symbol": "BTC-USDT-SWAP", "timeframe": "1H", "bars": 200},
+        {"symbol": "ETH-USDT-SWAP", "timeframe": "1H", "bars": 200},
+    ]
+    assert result == [
+        {
+            "status": "ok",
+            "symbol": "BTC-USDT-SWAP",
+            "timeframe": "1H",
+            "affected_recalc_range": (10, 100),
+            "unresolved_timestamps": [],
+            "corrupted_count": 0,
+            "repaired_count": 1,
+        },
+        {
+            "status": "ok",
+            "symbol": "ETH-USDT-SWAP",
+            "timeframe": "1H",
+            "affected_recalc_range": (10, 100),
+            "unresolved_timestamps": [],
+            "corrupted_count": 0,
+            "repaired_count": 1,
+        },
+    ]
 
 
 def test_run_swap_repair_once_forwards_no_progress_policy_from_preset(
@@ -443,14 +556,18 @@ def test_publish_swap_repair_ops_task_pushes_metrics_and_writes_audit(
         return 4
 
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
     monkeypatch.setattr(
         repair_dag_module,
         "push_swap_repair_metrics",
         lambda payloads: metrics_calls.append(payloads) or True,
     )
-    monkeypatch.setattr(repair_dag_module, "write_swap_repair_audit", _fake_write_swap_repair_audit)
+    monkeypatch.setattr(
+        repair_dag_module, "write_swap_repair_audit", _fake_write_swap_repair_audit
+    )
 
     result = repair_dag_module.publish_swap_repair_ops_task(
         ti=_TaskInstance(
@@ -473,10 +590,26 @@ def test_publish_swap_repair_ops_task_pushes_metrics_and_writes_audit(
                     "auto_apply_window": True,
                 },
                 "swap_repair_preview": [
-                    {"symbol": "BTC-USDT-SWAP", "timeframe": "1m", "expected_iteration_count": 1},
-                    {"symbol": "BTC-USDT-SWAP", "timeframe": "1H", "expected_iteration_count": 1},
-                    {"symbol": "ETH-USDT-SWAP", "timeframe": "1m", "expected_iteration_count": 1},
-                    {"symbol": "ETH-USDT-SWAP", "timeframe": "1H", "expected_iteration_count": 1},
+                    {
+                        "symbol": "BTC-USDT-SWAP",
+                        "timeframe": "1m",
+                        "expected_iteration_count": 1,
+                    },
+                    {
+                        "symbol": "BTC-USDT-SWAP",
+                        "timeframe": "1H",
+                        "expected_iteration_count": 1,
+                    },
+                    {
+                        "symbol": "ETH-USDT-SWAP",
+                        "timeframe": "1m",
+                        "expected_iteration_count": 1,
+                    },
+                    {
+                        "symbol": "ETH-USDT-SWAP",
+                        "timeframe": "1H",
+                        "expected_iteration_count": 1,
+                    },
                 ],
                 "validate_swap_repair_xcom": [
                     {
@@ -530,6 +663,225 @@ def test_publish_swap_repair_ops_task_pushes_metrics_and_writes_audit(
     assert result == {"metrics_pushed": True, "audit_rows_written": 4}
 
 
+def test_publish_swap_repair_ops_task_pushes_guard_metrics_and_guard_audit(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    metrics_calls: list[Any] = []
+    guard_audit_calls: list[dict[str, Any]] = []
+
+    class _Loop:
+        @staticmethod
+        def run_until_complete(coro: Any) -> Any:
+            return asyncio.run(coro)
+
+    async def _fake_guard_audit(**kwargs: Any) -> int:
+        guard_audit_calls.append(kwargs)
+        return 1
+
+    monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
+    monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
+    monkeypatch.setattr(
+        repair_dag_module,
+        "push_swap_repair_metrics",
+        lambda payloads: metrics_calls.append(payloads) or True,
+    )
+    monkeypatch.setattr(
+        repair_dag_module,
+        "write_guard_repair_audit",
+        _fake_guard_audit,
+    )
+
+    result = repair_dag_module.publish_swap_repair_ops_task(
+        ti=_TaskInstance(
+            {
+                "validate_swap_repair_conf": {
+                    "trigger": "last-200-guard",
+                    "repair_strategy": "last_n_closed_bars",
+                },
+                "validate_swap_repair_xcom": [
+                    {
+                        "symbol": "BTC-USDT-SWAP",
+                        "timeframe": "1H",
+                        "strategy": "last_n_closed_bars",
+                        "status": "ok",
+                        "affected_recalc_range": (10, 100),
+                        "unresolved_timestamps": [],
+                        "corrupted_count": 1,
+                        "repaired_count": 2,
+                    }
+                ],
+            }
+        )
+    )
+
+    assert len(metrics_calls) == 1
+    assert metrics_calls[0][0]["strategy"] == "last_n_closed_bars"
+    assert len(guard_audit_calls) == 1
+    assert guard_audit_calls[0]["dag_id"] == "okx_swap_repair_v1"
+    assert result == {"metrics_pushed": True, "audit_rows_written": 1}
+
+
+def test_enqueue_indicator_recalc_task_calls_interface_for_guard_recalc_range(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class _Loop:
+        @staticmethod
+        def run_until_complete(coro: Any) -> Any:
+            import asyncio
+
+            return asyncio.run(coro)
+
+    async def _fake_enqueue_indicator_recalc(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {
+            "status": "queued",
+            "symbol": kwargs["symbol"],
+            "timeframe": kwargs["timeframe"],
+            "start_ts_ms": kwargs["start_ts_ms"],
+            "end_ts_ms": kwargs["end_ts_ms"],
+            "rows_written": 17,
+        }
+
+    monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
+    monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
+    monkeypatch.setattr(
+        repair_dag_module.repair_interface,
+        "enqueue_indicator_recalc",
+        _fake_enqueue_indicator_recalc,
+    )
+
+    result = repair_dag_module.enqueue_indicator_recalc_task(
+        ti=_TaskInstance(
+            {
+                "validate_swap_repair_conf": {
+                    "trigger": "last-200-guard",
+                    "recalc_specs": [],
+                },
+                "swap_repair": [
+                    {
+                        "status": "ok",
+                        "symbol": "BTC-USDT-SWAP",
+                        "timeframe": "1H",
+                        "affected_recalc_range": (10, 100),
+                    },
+                    {
+                        "status": "blocked",
+                        "symbol": "ETH-USDT-SWAP",
+                        "timeframe": "1H",
+                        "affected_recalc_range": (20, 200),
+                    },
+                    {
+                        "status": "ok",
+                        "symbol": "XRP-USDT-SWAP",
+                        "timeframe": "1H",
+                        "affected_recalc_range": None,
+                    },
+                ],
+            }
+        )
+    )
+
+    assert calls == [
+        {
+            "symbol": "BTC-USDT-SWAP",
+            "timeframe": "1H",
+            "start_ts_ms": 10,
+            "end_ts_ms": 100,
+            "specs": [],
+        }
+    ]
+    assert result == [
+        {
+            "status": "queued",
+            "symbol": "BTC-USDT-SWAP",
+            "timeframe": "1H",
+            "start_ts_ms": 10,
+            "end_ts_ms": 100,
+            "rows_written": 17,
+        }
+    ]
+
+
+def test_publish_report_task_builds_concise_guard_summary(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
+    monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
+
+    result = repair_dag_module.publish_report_task(
+        ti=_TaskInstance(
+            {
+                "validate_swap_repair_conf": {
+                    "trigger": "last-200-guard",
+                    "publish_on_statuses": ["partial", "blocked"],
+                },
+                "swap_repair": [
+                    {
+                        "status": "ok",
+                        "symbol": "BTC-USDT-SWAP",
+                        "timeframe": "1H",
+                        "affected_recalc_range": (10, 100),
+                        "repaired_count": 3,
+                        "corrupted_count": 1,
+                        "unresolved_timestamps": [],
+                    },
+                    {
+                        "status": "blocked",
+                        "symbol": "ETH-USDT-SWAP",
+                        "timeframe": "1H",
+                        "affected_recalc_range": None,
+                        "repaired_count": 0,
+                        "corrupted_count": 2,
+                        "unresolved_timestamps": [20, 30],
+                    },
+                ],
+                "enqueue_indicator_recalc": [
+                    {
+                        "status": "queued",
+                        "symbol": "BTC-USDT-SWAP",
+                        "timeframe": "1H",
+                        "rows_written": 17,
+                    }
+                ],
+            }
+        ),
+        dag_run=SimpleNamespace(run_id="manual__2026-05-07T09:00:00+00:00"),
+        logical_date=__import__("datetime").datetime(2026, 5, 7, 9, 0),
+    )
+
+    assert result == {
+        "trigger": "last-200-guard",
+        "run_id": "manual__2026-05-07T09:00:00+00:00",
+        "status_counts": {"ok": 1, "blocked": 1},
+        "non_ok": [
+            {
+                "symbol": "ETH-USDT-SWAP",
+                "timeframe": "1H",
+                "status": "blocked",
+                "unresolved_timestamps": [20, 30],
+                "corrupted_count": 2,
+                "repaired_count": 0,
+            }
+        ],
+        "recalc_enqueued": 1,
+    }
+
+
 def test_preflight_instrument_check_task_validates_every_curated_symbol(
     repair_dag_module: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
@@ -549,7 +901,9 @@ def test_preflight_instrument_check_task_validates_every_curated_symbol(
             return asyncio.run(coro)
 
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
     monkeypatch.setattr(repair_dag_module, "InstrumentSqlRepository", _FakeRepo)
 
@@ -581,7 +935,9 @@ def test_preflight_instrument_check_task_raises_for_unknown_symbol(
             return asyncio.run(coro)
 
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
     monkeypatch.setattr(repair_dag_module, "InstrumentSqlRepository", _FakeRepo)
 
@@ -614,7 +970,9 @@ def test_ensure_instruments_loaded_task_calls_ensure_symbols_registered(
 
     monkeypatch.setattr(repair_dag_module, "ensure_symbols_registered", _fake_ensure)
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
     monkeypatch.setattr(repair_dag_module, "InstrumentSqlRepository", lambda: object())
 
@@ -628,7 +986,11 @@ def test_ensure_instruments_loaded_task_calls_ensure_symbols_registered(
     )
 
     assert len(ensure_calls) == 1
-    assert ensure_calls[0]["symbols"] == ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
+    assert ensure_calls[0]["symbols"] == [
+        "BTC-USDT-SWAP",
+        "ETH-USDT-SWAP",
+        "SOL-USDT-SWAP",
+    ]
 
 
 def _make_swap_repair_xcom_payload(**overrides: Any) -> dict[str, Any]:
@@ -750,11 +1112,15 @@ def test_swap_repair_task_translates_guardrail_valueerror_to_airflow_fail(
         _raise_guardrail,
     )
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
 
     airflow_exceptions = sys.modules.get("airflow.exceptions")
-    assert airflow_exceptions is not None, "airflow.exceptions not loaded via DAG module"
+    assert (
+        airflow_exceptions is not None
+    ), "airflow.exceptions not loaded via DAG module"
     AirflowFailException = airflow_exceptions.AirflowFailException
 
     with pytest.raises(AirflowFailException, match="apply blocked by guardrails"):
@@ -803,7 +1169,9 @@ def test_swap_repair_task_translates_no_progress_valueerror_to_airflow_fail(
         _raise_no_progress,
     )
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
 
     airflow_exceptions = sys.modules.get("airflow.exceptions")
@@ -854,7 +1222,9 @@ def test_swap_repair_task_does_not_translate_other_exceptions(
         _raise_transport,
     )
     monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
-    monkeypatch.setattr(repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"})
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
 
     with pytest.raises(TimeoutError, match="upstream OKX API timeout"):
@@ -879,3 +1249,80 @@ def test_swap_repair_task_does_not_translate_other_exceptions(
                 }
             )
         )
+
+
+def test_publish_swap_repair_ops_calls_guard_audit_for_last_n_strategy(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """publish_swap_repair_ops must call write_guard_repair_audit (not skip) for guard trigger."""
+    import asyncio
+
+    guard_payloads = [
+        {
+            "symbol": "BTC-USDT-SWAP",
+            "timeframe": "1H",
+            "status": "ok",
+            "strategy": "last_n_closed_bars",
+            "mode": "apply",
+            "repaired_count": 2,
+            "corrupted_count": 0,
+            "unresolved_timestamps": [],
+            "affected_recalc_range": (1_700_000_000_000, 1_700_010_000_000),
+            "run_id": "r1",
+            "algo_version": "1",
+            "params_hash": "h1",
+        }
+    ]
+    validated = {
+        "trigger": "last-200-guard",
+        "repair_strategy": "last_n_closed_bars",
+        "bars": 200,
+        "timeframes": ["1H"],
+        "symbols": ["BTC-USDT-SWAP"],
+        "mode": "apply",
+        "publish_on_statuses": ["partial"],
+        "recalc_specs": [],
+        "critical_timeframes": ["1H"],
+    }
+
+    class _Loop:
+        @staticmethod
+        def run_until_complete(coro: Any) -> Any:
+            return asyncio.run(coro)
+
+    audit_calls: list[dict[str, Any]] = []
+
+    async def _fake_guard_audit(**kwargs: Any) -> int:
+        audit_calls.append(kwargs)
+        return len(kwargs["guard_payloads"])
+
+    monkeypatch.setattr(repair_dag_module, "_get_loop", lambda: _Loop())
+    monkeypatch.setattr(
+        repair_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+    )
+    monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
+    monkeypatch.setattr(
+        repair_dag_module,
+        "push_swap_repair_metrics",
+        lambda payloads: True,
+    )
+    monkeypatch.setattr(
+        repair_dag_module, "write_guard_repair_audit", _fake_guard_audit
+    )
+
+    result = repair_dag_module.publish_swap_repair_ops_task(
+        ti=_TaskInstance(
+            {
+                "validate_swap_repair_conf": validated,
+                "validate_swap_repair_xcom": guard_payloads,
+                "swap_repair": guard_payloads,
+            }
+        ),
+        dag_run=SimpleNamespace(run_id="run_123"),
+        logical_date=None,
+    )
+
+    assert result["audit_rows_written"] == 1
+    assert len(audit_calls) == 1
+    assert audit_calls[0]["dag_id"] == "okx_swap_repair_v1"

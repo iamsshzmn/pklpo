@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-from _common import (
+from _common import (  # type: ignore[import-not-found]
     coerce_float as _coerce_float,
     coerce_int as _coerce_int,
     get_dag_env as _get_common_dag_env,
@@ -36,7 +36,10 @@ from src.candles.instruments_service import (
     resolve_repo_instruments_file,
 )
 from src.candles.interfaces import repair as repair_interface
-from src.candles.interfaces.repair_audit import write_swap_repair_audit
+from src.candles.interfaces.repair_audit import (
+    write_guard_repair_audit,
+    write_swap_repair_audit,
+)
 from src.candles.observability.prometheus import push_swap_repair_metrics
 from src.market_meta.application.validate_instrument import validate_instrument_exists
 from src.market_meta.domain.exceptions import InstrumentNotFoundError
@@ -48,6 +51,8 @@ if TYPE_CHECKING:
     import asyncio
 
 SUPPORTED_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
+LAST_200_GUARD_TIMEFRAMES = ("1m", "1H", "4H", "1D", "1W", "1M")
+LAST_200_GUARD_TRIGGER = "last-200-guard"
 DEFAULT_TRIGGER = "repair-all-swaps"
 REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
     DEFAULT_TRIGGER: {
@@ -66,7 +71,16 @@ REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
         "end_ts_ms": None,
         "critical_timeframes": ["1H"],
         "no_progress_threshold": 3,
-    }
+    },
+    LAST_200_GUARD_TRIGGER: {
+        "timeframes": list(LAST_200_GUARD_TIMEFRAMES),
+        "mode": RepairExecutionMode.APPLY.value,
+        "repair_strategy": "last_n_closed_bars",
+        "bars": 200,
+        "publish_on_statuses": ["partial", "blocked", "deferred", "not_matured"],
+        "recalc_specs": [],
+        "critical_timeframes": ["1m", "1H"],
+    },
 }
 
 try:
@@ -102,11 +116,13 @@ def _build_log_context(context: dict[str, Any]) -> str:
 
 
 def _get_loop() -> asyncio.AbstractEventLoop:
-    return get_or_create_event_loop()
+    return cast("asyncio.AbstractEventLoop", get_or_create_event_loop())
 
 
 def get_dag_env() -> dict[str, str]:
-    return _get_common_dag_env(job_name_default="swap_repair_v1")
+    return cast(
+        "dict[str, str]", _get_common_dag_env(job_name_default="swap_repair_v1")
+    )
 
 
 def setup_env(env: dict[str, str]) -> None:
@@ -176,6 +192,77 @@ def _extract_no_progress_policy(
         )
     )
     return critical, threshold
+
+
+def _is_last_n_guard(validated: dict[str, Any]) -> bool:
+    return (
+        str(validated.get("repair_strategy")) == "last_n_closed_bars"
+        or str(validated.get("trigger")) == LAST_200_GUARD_TRIGGER
+    )
+
+
+def _normalize_guard_payload(payload: Any) -> dict[str, Any]:
+    normalized = cast("dict[str, Any]", _payload_to_dict(payload))
+    symbol = str(normalized.get("symbol", "")).strip()
+    timeframe = str(normalized.get("timeframe", "")).strip()
+    status = str(normalized.get("status", "")).strip()
+    if not symbol:
+        raise ValueError("guard payload requires non-empty symbol")
+    if not timeframe:
+        raise ValueError("guard payload requires non-empty timeframe")
+    if not status:
+        raise ValueError("guard payload requires non-empty status")
+    recalc_range = normalized.get("affected_recalc_range")
+    if recalc_range is not None:
+        if not isinstance(recalc_range, (list, tuple)) or len(recalc_range) != 2:
+            raise ValueError("affected_recalc_range must be a 2-item tuple/list")
+        recalc_range = (
+            _coerce_int(recalc_range[0], field_name="affected_recalc_range[0]"),
+            _coerce_int(recalc_range[1], field_name="affected_recalc_range[1]"),
+        )
+    normalized["symbol"] = symbol
+    normalized["timeframe"] = timeframe
+    normalized["status"] = status
+    normalized["strategy"] = "last_n_closed_bars"
+    normalized["affected_recalc_range"] = recalc_range
+    normalized["unresolved_timestamps"] = list(
+        normalized.get("unresolved_timestamps", [])
+    )
+    normalized["corrupted_count"] = int(normalized.get("corrupted_count", 0))
+    normalized["repaired_count"] = int(normalized.get("repaired_count", 0))
+    return normalized
+
+
+def _get_verified_results(context: dict[str, Any]) -> list[dict[str, Any]]:
+    ti = context["ti"]
+    payload = ti.xcom_pull(task_ids="validate_swap_repair_xcom", key="return_value")
+    if isinstance(payload, dict) and "validate_swap_repair_xcom" in payload:
+        payload = payload["validate_swap_repair_xcom"]
+    elif isinstance(payload, dict) and "swap_repair" in payload:
+        payload = None
+    if payload is None:
+        payload = ti.xcom_pull(task_ids="swap_repair", key="return_value")
+    if isinstance(payload, dict) and "swap_repair" in payload:
+        payload = payload["swap_repair"]
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [_payload_to_dict(item) for item in payload]
+    return [_payload_to_dict(payload)]
+
+
+def _run_last_n_guard_for_timeframe(
+    *,
+    validated: dict[str, Any],
+    timeframe: str,
+) -> dict[str, Any]:
+    return _get_loop().run_until_complete(
+        repair_interface.guarantee_last_n_closed_bars(
+            symbol=str(validated["symbol"]),
+            timeframe=str(timeframe),
+            bars=_coerce_int(validated["bars"], field_name="validated.bars"),
+        )
+    )
 
 
 def _run_swap_repair_once(
@@ -367,7 +454,12 @@ def swap_repair_task(**context) -> list[dict[str, Any]]:
         per_symbol_validated["symbol"] = symbol
         for timeframe in timeframes:
             try:
-                if bool(validated.get("auto_apply_window", False)):
+                if _is_last_n_guard(per_symbol_validated):
+                    summary = _run_last_n_guard_for_timeframe(
+                        validated=per_symbol_validated,
+                        timeframe=str(timeframe),
+                    )
+                elif bool(validated.get("auto_apply_window", False)):
                     summary = _run_auto_apply_for_timeframe(
                         validated=per_symbol_validated,
                         timeframe=str(timeframe),
@@ -429,7 +521,14 @@ def swap_repair_preview_task(**context) -> list[dict[str, Any]]:
             "swap_repair preview validated config must contain non-empty symbols"
         )
 
+    if _is_last_n_guard(validated):
+        logger.info(
+            "swap_repair_preview skip %s trigger=%s", log_ctx, validated["trigger"]
+        )
+        return []
+
     previews: list[dict[str, Any]] = []
+
     for symbol in symbols:
         for timeframe in timeframes:
             preview = _get_loop().run_until_complete(
@@ -488,6 +587,7 @@ def swap_repair_preview_task(**context) -> list[dict[str, Any]]:
 
 
 def validate_swap_repair_xcom_task(**context) -> list[dict[str, Any]]:
+    validated = _get_validated_conf(context)
     ti = context["ti"]
     payload = ti.xcom_pull(task_ids="swap_repair", key="return_value")
     log_ctx = _build_log_context(context)
@@ -497,6 +597,21 @@ def validate_swap_repair_xcom_task(**context) -> list[dict[str, Any]]:
         raise ValueError("swap_repair XCom must contain at least one timeframe result")
 
     normalized_payloads: list[dict[str, Any]] = []
+    if _is_last_n_guard(validated):
+        for item in payloads:
+            normalized = _normalize_guard_payload(item)
+            normalized_payloads.append(normalized)
+            logger.info(
+                "validate_swap_repair_xcom finish %s strategy=%s symbol=%s timeframe=%s status=%s repaired_count=%s",
+                log_ctx,
+                normalized["strategy"],
+                normalized["symbol"],
+                normalized["timeframe"],
+                normalized["status"],
+                normalized["repaired_count"],
+            )
+        return normalized_payloads
+
     for item in payloads:
         try:
             normalized = _payload_to_dict(item)
@@ -526,7 +641,83 @@ def validate_swap_repair_xcom_task(**context) -> list[dict[str, Any]]:
             normalized["remaining_gap_tasks"],
             normalized["rows_written"],
         )
-    return normalize_swap_repair_summary_payloads(normalized_payloads)
+    return cast(
+        "list[dict[str, Any]]",
+        normalize_swap_repair_summary_payloads(normalized_payloads),
+    )
+
+
+def enqueue_indicator_recalc_task(**context) -> list[dict[str, Any]]:
+    log_ctx = _build_log_context(context)
+    logger.info("enqueue_indicator_recalc start %s", log_ctx)
+    env = get_dag_env()
+    setup_env(env)
+
+    validated = _get_validated_conf(context)
+    queued: list[dict[str, Any]] = []
+    if not _is_last_n_guard(validated):
+        logger.info("enqueue_indicator_recalc skip %s reason=classic-strategy", log_ctx)
+        return queued
+
+    for payload in _get_verified_results(context):
+        if str(payload.get("status")) != "ok":
+            continue
+        recalc_range = payload.get("affected_recalc_range")
+        if recalc_range is None:
+            continue
+        start_ts_ms, end_ts_ms = recalc_range
+        queued.append(
+            _get_loop().run_until_complete(
+                repair_interface.enqueue_indicator_recalc(
+                    symbol=str(payload["symbol"]),
+                    timeframe=str(payload["timeframe"]),
+                    start_ts_ms=_coerce_int(start_ts_ms, field_name="start_ts_ms"),
+                    end_ts_ms=_coerce_int(end_ts_ms, field_name="end_ts_ms"),
+                    specs=list(validated.get("recalc_specs", [])),
+                )
+            )
+        )
+    logger.info("enqueue_indicator_recalc finish %s queued=%d", log_ctx, len(queued))
+    return queued
+
+
+def publish_report_task(**context) -> dict[str, Any]:
+    log_ctx = _build_log_context(context)
+    logger.info("publish_report start %s", log_ctx)
+    validated = _get_validated_conf(context)
+    statuses = {str(status) for status in validated.get("publish_on_statuses", [])}
+    payloads = _get_verified_results(context)
+    recalc_payload = context["ti"].xcom_pull(
+        task_ids="enqueue_indicator_recalc",
+        key="return_value",
+    )
+    recalc_items = recalc_payload if isinstance(recalc_payload, list) else []
+    status_counts: dict[str, int] = {}
+    non_ok: list[dict[str, Any]] = []
+    for payload in payloads:
+        status = str(payload.get("status", "unknown"))
+        status_counts[status] = status_counts.get(status, 0) + 1
+        if status not in statuses:
+            continue
+        non_ok.append(
+            {
+                "symbol": str(payload.get("symbol", "")),
+                "timeframe": str(payload.get("timeframe", "")),
+                "status": status,
+                "unresolved_timestamps": list(payload.get("unresolved_timestamps", [])),
+                "corrupted_count": int(payload.get("corrupted_count", 0)),
+                "repaired_count": int(payload.get("repaired_count", 0)),
+            }
+        )
+    result = {
+        "trigger": str(validated.get("trigger", DEFAULT_TRIGGER)),
+        "run_id": getattr(context.get("dag_run"), "run_id", None),
+        "status_counts": status_counts,
+        "non_ok": non_ok,
+        "recalc_enqueued": len(recalc_items),
+    }
+    logger.info("publish_report finish %s result=%s", log_ctx, result)
+    return result
 
 
 def publish_swap_repair_ops_task(**context) -> dict[str, Any]:
@@ -544,6 +735,26 @@ def publish_swap_repair_ops_task(**context) -> dict[str, Any]:
 
     if not isinstance(validated, dict):
         raise ValueError("swap_repair publish step requires validated config dict")
+    if _is_last_n_guard(validated):
+        guard_results = _get_verified_results(context)
+        if not guard_results:
+            logger.warning(
+                "publish_swap_repair_ops guard branch: no verified results found %s", log_ctx
+            )
+        metrics_pushed = push_swap_repair_metrics(guard_results)
+        dag_run = context.get("dag_run")
+        audit_rows = _get_loop().run_until_complete(
+            write_guard_repair_audit(
+                validated_conf=validated,
+                guard_payloads=guard_results,
+                dag_id=str(getattr(dag, "dag_id", "okx_swap_repair_v1")),
+                dag_run_id=getattr(dag_run, "run_id", None),
+                logical_date=context.get("logical_date"),
+            )
+        )
+        result = {"metrics_pushed": metrics_pushed, "audit_rows_written": audit_rows}
+        logger.info("publish_swap_repair_ops finish %s result=%s", log_ctx, result)
+        return result
     if preview_payloads is not None and not isinstance(preview_payloads, list):
         raise ValueError(
             "swap_repair publish step preview payload must be a list when present"
@@ -631,6 +842,18 @@ validate_swap_repair_xcom = PythonOperator(
     dag=dag,
 )
 
+enqueue_indicator_recalc = PythonOperator(
+    task_id="enqueue_indicator_recalc",
+    python_callable=enqueue_indicator_recalc_task,
+    dag=dag,
+)
+
+publish_report = PythonOperator(
+    task_id="publish_report",
+    python_callable=publish_report_task,
+    dag=dag,
+)
+
 publish_swap_repair_ops = PythonOperator(
     task_id="publish_swap_repair_ops",
     python_callable=publish_swap_repair_ops_task,
@@ -644,5 +867,7 @@ publish_swap_repair_ops = PythonOperator(
     >> swap_repair_preview
     >> swap_repair
     >> validate_swap_repair_xcom
+    >> enqueue_indicator_recalc
+    >> publish_report
     >> publish_swap_repair_ops
 )
