@@ -43,7 +43,7 @@ async def test_write_swap_repair_audit_builds_records_per_timeframe(
                 "gap_tasks": 1,
                 "requested_bars": 10,
                 "expected_iteration_count": 1,
-            }
+            },
         ],
         summary_payloads=[
             {
@@ -82,7 +82,7 @@ async def test_write_swap_repair_audit_builds_records_per_timeframe(
                 "rows_written": 10,
                 "fetch_calls": 1,
                 "verified": True,
-            }
+            },
         ],
         dag_id="okx_swap_repair_v1",
         dag_run_id="manual__2026-04-16T10:00:00+00:00",
@@ -233,9 +233,7 @@ async def test_audit_payload_carries_new_outcome_fields_per_outcome_type(
 
     for record, summary in zip(records, summaries, strict=True):
         for field_name in new_field_names:
-            assert field_name in record, (
-                f"audit record missing field {field_name!r}"
-            )
+            assert field_name in record, f"audit record missing field {field_name!r}"
             assert record[field_name] == summary[field_name], (
                 f"audit {field_name!r} mismatch for {summary['symbol']}: "
                 f"expected {summary[field_name]!r}, got {record[field_name]!r}"
@@ -244,3 +242,83 @@ async def test_audit_payload_carries_new_outcome_fields_per_outcome_type(
             assert record["summary_payload"][field_name] == summary[field_name]
 
     assert [r["outcome"] for r in records] == ["success", "partial", "empty"]
+
+
+@pytest.mark.asyncio
+async def test_write_guard_repair_audit_writes_one_record_per_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guard_payloads = [
+        {
+            "symbol": "BTC-USDT-SWAP",
+            "timeframe": "1H",
+            "status": "ok",
+            "strategy": "last_n_closed_bars",
+            "mode": "apply",
+            "repaired_count": 3,
+            "corrupted_count": 1,
+            "unresolved_timestamps": [],
+            "affected_recalc_range": (1_700_000_000_000, 1_700_010_000_000),
+            "run_id": "run-abc",
+            "algo_version": "1",
+            "params_hash": "abc123",
+        },
+        {
+            "symbol": "ETH-USDT-SWAP",
+            "timeframe": "4H",
+            "status": "partial",
+            "strategy": "last_n_closed_bars",
+            "mode": "apply",
+            "repaired_count": 0,
+            "corrupted_count": 0,
+            "unresolved_timestamps": [1_700_000_000_000, 1_700_014_400_000],
+            "affected_recalc_range": None,
+            "run_id": "run-abc",
+            "algo_version": "1",
+            "params_hash": "abc123",
+        },
+    ]
+    validated_conf = {
+        "trigger": "last-200-guard",
+        "repair_strategy": "last_n_closed_bars",
+        "bars": 200,
+    }
+    captured: list[dict[str, Any]] = []
+
+    class _FakeRepo:
+        async def insert_records(self, records: list[dict[str, Any]]) -> int:
+            captured.extend(records)
+            return len(records)
+
+    monkeypatch.setattr(repair_audit, "SwapRepairAuditRepository", _FakeRepo)
+
+    rows = await repair_audit.write_guard_repair_audit(
+        validated_conf=validated_conf,
+        guard_payloads=guard_payloads,
+        dag_id="okx_swap_repair_v1",
+        dag_run_id="run_20260507",
+        logical_date=datetime(2026, 5, 7, tzinfo=UTC),
+    )
+
+    assert rows == 2
+    assert len(captured) == 2
+
+    ok_rec = captured[0]
+    assert ok_rec["symbol"] == "BTC-USDT-SWAP"
+    assert ok_rec["timeframe"] == "1H"
+    assert ok_rec["strategy"] == "last_n_closed_bars"
+    assert ok_rec["verified"] is True
+    assert ok_rec["rows_written"] == 3
+    assert ok_rec["remaining_gap_tasks"] == 0
+    assert ok_rec["remaining_missing_after"] == 0
+    assert ok_rec["outcome"] == "ok"
+    assert ok_rec["window_start_ts_ms"] == 1_700_000_000_000
+    assert ok_rec["window_end_ts_ms"] == 1_700_010_000_000
+
+    partial_rec = captured[1]
+    assert partial_rec["symbol"] == "ETH-USDT-SWAP"
+    assert partial_rec["verified"] is False
+    assert partial_rec["remaining_gap_tasks"] == 2
+    assert partial_rec["remaining_missing_after"] == 2
+    assert partial_rec["window_start_ts_ms"] == 0
+    assert partial_rec["window_end_ts_ms"] == 0
