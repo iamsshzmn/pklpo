@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import math
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from src.candles.application.repair import (
+    GuaranteeLastClosedBarsUseCase,
     RepairCommand,
     RepairPreview,
     RepairSummary,
@@ -26,6 +28,16 @@ from src.candles.interfaces.swap_sync import (
     _MarketDataPortAdapter,
     _TracingTelemetryAdapter,
 )
+from src.config import get_settings
+from src.core.run_context import RunContext
+from src.features.api import (
+    FEATURE_SPECS,
+    compute_features,
+    create_feature_application_bootstrap,
+)
+from src.features.application import RecalcFeaturesInRange
+from src.features.application.save import save_batch
+from src.utils.session_utils import get_db_session
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable
@@ -81,6 +93,16 @@ class _NoopHistoricalRangeSource:
         return []
 
 
+def _default_recalc_specs(specs: list[str] | None) -> list[str]:
+    return specs if specs else list(FEATURE_SPECS)
+
+
+def _build_calendar() -> OKXCandleCalendar:
+    settings = get_settings()
+    week_anchor = int(settings.okx.week_anchor_ts_ms or 1777824000000)
+    return OKXCandleCalendar(week_anchor_ts_ms=week_anchor)
+
+
 def _build_guardrails(
     *,
     max_gap_tasks_per_run: int,
@@ -127,6 +149,7 @@ def _build_repair_use_case(
     telemetry: _TracingTelemetryAdapter,
     strategy: RepairStrategy,
     source: Any,
+    calendar: OKXCandleCalendar,
     no_progress_policy: NoProgressPolicy | None = None,
 ) -> RunGapRepairUseCase | RunHistoricalBackfillUseCase:
     use_case_cls = (
@@ -138,6 +161,7 @@ def _build_repair_use_case(
         coverage_query=repository,
         historical_source=source,
         repair_store=repository,
+        calendar=calendar,
         telemetry=telemetry,
         no_progress_policy=no_progress_policy,
     )
@@ -164,6 +188,7 @@ async def _open_repair_runtime(
     mode: RepairExecutionMode,
     strategy: RepairStrategy,
     config: dict[str, Any] | None,
+    calendar: OKXCandleCalendar,
     no_progress_policy: NoProgressPolicy | None = None,
 ) -> AsyncIterator[_RepairRuntime]:
     repository = RepairCandlesRepository()
@@ -181,6 +206,7 @@ async def _open_repair_runtime(
                     telemetry=telemetry,
                     strategy=strategy,
                     source=source,
+                    calendar=calendar,
                     no_progress_policy=no_progress_policy,
                 ),
             )
@@ -194,6 +220,7 @@ async def _open_repair_runtime(
             telemetry=telemetry,
             strategy=strategy,
             source=_NoopHistoricalRangeSource(),
+            calendar=calendar,
             no_progress_policy=no_progress_policy,
         ),
     )
@@ -224,12 +251,28 @@ def _build_execute_once(
     guardrails: RepairGuardrails,
     now_ts_ms: int,
     padding_bars: int,
+    calendar: OKXCandleCalendar,
+    auto_apply_window: bool = False,
 ) -> Callable[..., Awaitable[RepairSummary]]:
     async def _execute_once(
         *,
         start_ts_ms: int,
         end_ts_ms: int,
     ) -> RepairSummary:
+        effective_guardrails = guardrails
+        if auto_apply_window:
+            aligned_start_ts_ms = calendar.floor_open(start_ts_ms, timeframe)
+            aligned_end_ts_ms = calendar.floor_open(end_ts_ms, timeframe)
+            window_days = max(
+                1,
+                math.ceil((aligned_end_ts_ms - aligned_start_ts_ms) / 86_400_000),
+            )
+            effective_guardrails = RepairGuardrails(
+                max_gap_tasks_per_run=guardrails.max_gap_tasks_per_run,
+                max_requested_bars_per_run=guardrails.max_requested_bars_per_run,
+                max_range_days=max(guardrails.max_range_days, window_days),
+                max_fail_ratio=guardrails.max_fail_ratio,
+            )
         command = _build_repair_command(
             symbol=symbol,
             timeframe=timeframe,
@@ -237,7 +280,7 @@ def _build_execute_once(
             end_ts_ms=end_ts_ms,
             mode=mode,
             strategy=strategy,
-            guardrails=guardrails,
+            guardrails=effective_guardrails,
             now_ts_ms=now_ts_ms,
             padding_bars=padding_bars,
         )
@@ -268,6 +311,7 @@ async def _run_swap_repair_once_summary(
     no_progress_threshold: int | None = None,
 ) -> RepairSummary:
     now_ts_ms = int(datetime.now(UTC).timestamp() * 1000)
+    calendar = _build_calendar()
     guardrails = _build_guardrails(
         max_gap_tasks_per_run=max_gap_tasks_per_run,
         max_requested_bars_per_run=max_requested_bars_per_run,
@@ -282,6 +326,7 @@ async def _run_swap_repair_once_summary(
         mode=mode,
         strategy=strategy,
         config=config,
+        calendar=calendar,
         no_progress_policy=no_progress_policy,
     ) as runtime:
         execute_once = _build_execute_once(
@@ -293,6 +338,8 @@ async def _run_swap_repair_once_summary(
             guardrails=guardrails,
             now_ts_ms=now_ts_ms,
             padding_bars=padding_bars,
+            calendar=calendar,
+            auto_apply_window=False,
         )
         return await execute_once(
             start_ts_ms=start_ts_ms,
@@ -358,6 +405,7 @@ async def plan_swap_repair(
 
     repository = RepairCandlesRepository()
     now_ts_ms = int(datetime.now(UTC).timestamp() * 1000)
+    calendar = _build_calendar()
     preview: RepairPreview = await preview_repair_timeframe(
         symbol=symbol,
         timeframe=timeframe,
@@ -376,6 +424,7 @@ async def plan_swap_repair(
             max_range_days=max_range_days,
             max_fail_ratio=0.0,
         ),
+        calendar=calendar,
         anchor_ts_ms=anchor_ts_ms,
         anchor_strategy=auto_apply_anchor_strategy,
         anchor_metadata=repository,
@@ -408,6 +457,7 @@ async def run_swap_repair_timeframe(
     if auto_apply_window and mode is not RepairExecutionMode.APPLY:
         raise ValueError("swap_repair auto-apply requires apply mode")
     now_ts_ms = int(datetime.now(UTC).timestamp() * 1000)
+    calendar = _build_calendar()
     guardrails = _build_guardrails(
         max_gap_tasks_per_run=max_gap_tasks_per_run,
         max_requested_bars_per_run=max_requested_bars_per_run,
@@ -429,6 +479,7 @@ async def run_swap_repair_timeframe(
         mode=mode,
         strategy=strategy,
         config=config,
+        calendar=calendar,
         no_progress_policy=no_progress_policy,
     ) as runtime:
         summary = await run_repair_timeframe(
@@ -450,7 +501,10 @@ async def run_swap_repair_timeframe(
                 guardrails=guardrails,
                 now_ts_ms=now_ts_ms,
                 padding_bars=padding_bars,
+                calendar=calendar,
+                auto_apply_window=auto_apply_window,
             ),
+            calendar=calendar,
             auto_apply_iteration_limit=auto_apply_iteration_limit,
             anchor_ts_ms=anchor_ts_ms,
             anchor_strategy=auto_apply_anchor_strategy,
@@ -497,3 +551,120 @@ async def run_swap_repair_auto_apply(
         critical_timeframes=critical_timeframes,
         no_progress_threshold=no_progress_threshold,
     )
+
+
+async def guarantee_last_n_closed_bars(
+    *,
+    symbol: str,
+    timeframe: str,
+    bars: int,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    repository = RepairCandlesRepository()
+    settings = get_settings()
+    run_context = RunContext.create(
+        {
+            "use_case": "last_n_closed_bars",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "bars": bars,
+        }
+    )
+    now_ts_ms = int(datetime.now(UTC).timestamp() * 1000)
+    calendar = _build_calendar()
+    market_adapter = build_market_data_adapter(config or {})
+    async with _MarketDataPortAdapter(market_adapter) as market_data:
+        use_case = GuaranteeLastClosedBarsUseCase(
+            coverage_query=repository,
+            historical_source=_HistoricalRangeSourceAdapter(market_data),
+            repair_store=repository,
+            run_context=run_context,
+            bars=bars,
+            week_anchor_ts_ms=int(settings.okx.week_anchor_ts_ms or 0),
+            calendar=calendar,
+        )
+        outcome = await use_case.run(symbol, timeframe, now_ts_ms)
+    return {
+        "status": outcome.status,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "mode": RepairExecutionMode.APPLY.value,
+        "strategy": "last_n_closed_bars",
+        "bars": bars,
+        "affected_recalc_range": outcome.affected_recalc_range,
+        "unresolved_timestamps": outcome.unresolved_timestamps,
+        "corrupted_count": outcome.corrupted_count,
+        "repaired_count": outcome.repaired_count,
+        "run_id": outcome.run_id,
+        "algo_version": outcome.algo_version,
+        "params_hash": outcome.params_hash,
+    }
+
+
+async def enqueue_indicator_recalc(
+    *,
+    symbol: str,
+    timeframe: str,
+    start_ts_ms: int,
+    end_ts_ms: int,
+    specs: list[str] | None = None,
+) -> dict[str, Any]:
+    bootstrap = create_feature_application_bootstrap()
+    run_context = RunContext.create(
+        {
+            "use_case": "recalc_features_in_range",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "start_ts_ms": start_ts_ms,
+            "end_ts_ms": end_ts_ms,
+            "specs": specs or [],
+        }
+    )
+    async with get_db_session() as session:
+        deps = bootstrap.save_dependencies_factory(session)
+
+        async def _fetch_ohlcv_df(**kwargs: Any) -> Any:
+            return await bootstrap.storage_gateway.fetch_ohlcv_df(session, **kwargs)
+
+        async def _save_features_df(df: Any, item_symbol: str, tf: str) -> int:
+            result = await save_batch(
+                session,
+                df,
+                item_symbol,
+                tf,
+                repository=deps.repository,
+                observer=deps.observer,
+                commit=False,
+            )
+            return int(result["rows_saved"])
+
+        use_case = RecalcFeaturesInRange(
+            fetch_ohlcv_df=_fetch_ohlcv_df,
+            save_features_df=_save_features_df,
+            compute_features_fn=lambda df, selected: compute_features(
+                df,
+                specs=selected,
+                symbol=symbol,
+                timeframe=timeframe,
+            ),
+            specs=_default_recalc_specs(specs),
+            warmup_bars=get_settings().features.max_lookback,
+        )
+        outcome = await use_case.run(
+            symbol=symbol,
+            tf=timeframe,
+            start_ts_ms=start_ts_ms,
+            end_ts_ms=end_ts_ms,
+            run_context=run_context,
+        )
+    return {
+        "status": "queued",
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "start_ts_ms": start_ts_ms,
+        "end_ts_ms": end_ts_ms,
+        "rows_written": outcome.rows_written,
+        "run_id": outcome.run_id,
+        "algo_version": outcome.algo_version,
+        "params_hash": outcome.params_hash,
+    }
