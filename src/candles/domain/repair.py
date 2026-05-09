@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from datetime import datetime
 
+    from .okx_calendar import OKXCandleCalendar
+
 
 class RepairExecutionMode(StrEnum):
     DETECT_ONLY = "detect-only"

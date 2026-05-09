@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 from src.candles.domain.repair import RepairWindow, detect_gap_tasks
 
 if TYPE_CHECKING:
+    from src.candles.domain.okx_calendar import OKXCandleCalendar
+
     from .ports import CandleCoverageQueryPort, RepairAnchorMetadataPort
 
 _DAY_MS = 86_400_000

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from .timeframes import TF_TO_MS
 
 if TYPE_CHECKING:
+    from .okx_calendar import OKXCandleCalendar
     from .repair import GapRange
 
 

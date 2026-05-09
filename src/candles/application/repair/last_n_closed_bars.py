@@ -18,6 +18,7 @@ from src.candles.domain.repair_timeframes import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from src.candles.domain.okx_calendar import OKXCandleCalendar
     from src.core.run_context import RunContext
 
     from .ports import (

@@ -28,6 +28,8 @@ from .progress import NoProgressTracker
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from src.candles.domain.okx_calendar import OKXCandleCalendar
+
     from .ports import (
         CandleCoverageQueryPort,
         HistoricalCandleSourcePort,
