@@ -78,6 +78,7 @@ async def preview_repair_timeframe(
     auto_apply_window: bool,
     coverage_query: CandleCoverageQueryPort,
     guardrails: RepairGuardrails,
+    calendar: OKXCandleCalendar,
     anchor_ts_ms: int | None = None,
     anchor_strategy: str = "first-coverage",
     anchor_metadata: RepairAnchorMetadataPort | None = None,
@@ -90,6 +91,7 @@ async def preview_repair_timeframe(
             timeframe=timeframe,
             max_range_days=max_range_days,
             now_ts_ms=now_ts_ms,
+            calendar=calendar,
             anchor_ts_ms=anchor_ts_ms,
             anchor_strategy=anchor_strategy,
             anchor_metadata=anchor_metadata,
@@ -123,6 +125,7 @@ async def preview_repair_timeframe(
         timestamps=timestamps,
         timeframe=timeframe,
         window=preview_window,
+        calendar=calendar,
     )
     plan_cls = BackfillPlan if strategy.value == "backfill" else RepairPlan
     plan = plan_cls(
@@ -132,9 +135,7 @@ async def preview_repair_timeframe(
         window=preview_window,
         tasks=tasks,
     )
-    guardrail_violations = tuple(
-        violation.code for violation in guardrails.check(plan)
-    )
+    guardrail_violations = tuple(violation.code for violation in guardrails.check(plan))
     if guardrail_violations:
         _guardrail_risk = "high"
     elif guardrails.max_requested_bars_per_run > 0:
@@ -188,6 +189,7 @@ async def run_repair_timeframe(
     auto_apply_window: bool,
     coverage_query: CandleCoverageQueryPort,
     execute_once: RepairWindowExecutor,
+    calendar: OKXCandleCalendar,
     auto_apply_iteration_limit: int = 100,
     chunk_size_bars: int = 250,
     anchor_ts_ms: int | None = None,
@@ -221,6 +223,7 @@ async def run_repair_timeframe(
             max_range_days=max_range_days,
             now_ts_ms=now_ts_ms,
             chunk_size_bars=chunk_size_bars,
+            calendar=calendar,
             anchor_ts_ms=anchor_ts_ms,
             anchor_strategy=anchor_strategy,
             anchor_metadata=anchor_metadata,
@@ -236,6 +239,11 @@ async def run_repair_timeframe(
             end_ts_ms=next_chunk.end_ts_ms,
         )
         summaries.append(summary)
+        if summary.gap_tasks == 0 and summary.requested_bars == 0:
+            # Planning found a gap but execute produced an empty plan — no
+            # forward progress is possible; treat as done.
+            exhausted_iteration_limit = False
+            break
         if summary.remaining_gap_tasks > 0 or summary.remaining_requested_bars > 0:
             exhausted_iteration_limit = False
             break

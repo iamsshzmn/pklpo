@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.candles.domain.repair import RepairWindow, detect_gap_tasks
-from src.candles.domain.repair_timeframes import expected_next_open, floor_to_timeframe
 
 if TYPE_CHECKING:
     from .ports import CandleCoverageQueryPort, RepairAnchorMetadataPort
@@ -58,11 +57,13 @@ class TailFirstRepairPlan:
     gaps: tuple[RepairGap, ...]
 
 
-def _ceil_to_timeframe(timestamp_ms: int, timeframe: str) -> int:
-    floored_ts_ms = floor_to_timeframe(timestamp_ms, timeframe)
+def _ceil_to_timeframe(
+    timestamp_ms: int, timeframe: str, *, calendar: OKXCandleCalendar
+) -> int:
+    floored_ts_ms = calendar.floor_open(timestamp_ms, timeframe)
     if floored_ts_ms == timestamp_ms:
         return floored_ts_ms
-    return expected_next_open(floored_ts_ms, timeframe)
+    return calendar.next_open(floored_ts_ms, timeframe)
 
 
 async def _resolve_anchor_start_ts_ms(
@@ -73,12 +74,17 @@ async def _resolve_anchor_start_ts_ms(
     anchor_ts_ms: int | None,
     anchor_strategy: str,
     anchor_metadata: RepairAnchorMetadataPort | None,
+    calendar: OKXCandleCalendar,
 ) -> int | None:
     resolved_anchor_ts_ms = anchor_ts_ms
     if resolved_anchor_ts_ms is None and anchor_strategy == "listing-date":
         if anchor_metadata is None:
-            raise ValueError("swap_repair auto-apply listing-date anchor requires anchor metadata")
-        listing_anchor_metadata = await anchor_metadata.get_listing_anchor_metadata(symbol=symbol)
+            raise ValueError(
+                "swap_repair auto-apply listing-date anchor requires anchor metadata"
+            )
+        listing_anchor_metadata = await anchor_metadata.get_listing_anchor_metadata(
+            symbol=symbol
+        )
         if (
             listing_anchor_metadata is None
             or listing_anchor_metadata.metadata_refreshed_at_ms is None
@@ -95,9 +101,13 @@ async def _resolve_anchor_start_ts_ms(
     if resolved_anchor_ts_ms is None:
         return None
 
-    anchor_start_ts_ms = _ceil_to_timeframe(resolved_anchor_ts_ms, timeframe)
+    anchor_start_ts_ms = _ceil_to_timeframe(
+        resolved_anchor_ts_ms, timeframe, calendar=calendar
+    )
     if anchor_start_ts_ms > closed_until_ts_ms:
-        raise ValueError("swap_repair auto-apply anchor must be at or before the closed window")
+        raise ValueError(
+            "swap_repair auto-apply anchor must be at or before the closed window"
+        )
     return anchor_start_ts_ms
 
 
@@ -117,6 +127,7 @@ def _split_gap_into_desc_chunks(
     end_ts_ms: int,
     timeframe: str,
     chunk_size_bars: int,
+    calendar: OKXCandleCalendar,
 ) -> tuple[RepairChunk, ...]:
     if chunk_size_bars < 1:
         raise ValueError("swap_repair tail-first chunk_size_bars must be >= 1")
@@ -125,7 +136,7 @@ def _split_gap_into_desc_chunks(
     cursor = start_ts_ms
     while cursor < end_ts_ms:
         bar_starts.append(cursor)
-        cursor = expected_next_open(cursor, timeframe)
+        cursor = calendar.next_open(cursor, timeframe)
 
     chunks: list[RepairChunk] = []
     total_bars = len(bar_starts)
@@ -133,9 +144,7 @@ def _split_gap_into_desc_chunks(
         chunk_start_index = max(0, chunk_end_index - chunk_size_bars)
         chunk_bar_starts = bar_starts[chunk_start_index:chunk_end_index]
         chunk_end_ts_ms = (
-            end_ts_ms
-            if chunk_end_index == total_bars
-            else bar_starts[chunk_end_index]
+            end_ts_ms if chunk_end_index == total_bars else bar_starts[chunk_end_index]
         )
         chunks.append(
             RepairChunk(
@@ -157,9 +166,13 @@ def resolve_repair_window(
     has_start = start_ts_ms is not None
     has_end = end_ts_ms is not None
     if has_start != has_end:
-        raise ValueError("swap_repair requires both start and end when either is provided")
+        raise ValueError(
+            "swap_repair requires both start and end when either is provided"
+        )
 
     if has_start and has_end:
+        assert start_ts_ms is not None
+        assert end_ts_ms is not None
         resolved_start_ts_ms = int(start_ts_ms)
         resolved_end_ts_ms = min(int(end_ts_ms), now_ts_ms)
     else:
@@ -181,11 +194,12 @@ async def plan_auto_apply_window(
     timeframe: str,
     max_range_days: int,
     now_ts_ms: int,
+    calendar: OKXCandleCalendar,
     anchor_ts_ms: int | None = None,
     anchor_strategy: str = "first-coverage",
     anchor_metadata: RepairAnchorMetadataPort | None = None,
 ) -> AutoApplyWindowPlan:
-    closed_until_ts_ms = floor_to_timeframe(now_ts_ms, timeframe)
+    closed_until_ts_ms = calendar.floor_open(now_ts_ms, timeframe)
     anchor_start_ts_ms = await _resolve_anchor_start_ts_ms(
         symbol=symbol,
         timeframe=timeframe,
@@ -193,6 +207,7 @@ async def plan_auto_apply_window(
         anchor_ts_ms=anchor_ts_ms,
         anchor_strategy=anchor_strategy,
         anchor_metadata=anchor_metadata,
+        calendar=calendar,
     )
     min_ts_ms, _ = await coverage_query.get_coverage_bounds(
         symbol=symbol,
@@ -250,11 +265,12 @@ async def plan_tail_first_repair(
     max_range_days: int,
     now_ts_ms: int,
     chunk_size_bars: int,
+    calendar: OKXCandleCalendar,
     anchor_ts_ms: int | None = None,
     anchor_strategy: str = "first-coverage",
     anchor_metadata: RepairAnchorMetadataPort | None = None,
 ) -> TailFirstRepairPlan:
-    closed_until_ts_ms = floor_to_timeframe(now_ts_ms, timeframe)
+    closed_until_ts_ms = calendar.floor_open(now_ts_ms, timeframe)
     anchor_start_ts_ms = await _resolve_anchor_start_ts_ms(
         symbol=symbol,
         timeframe=timeframe,
@@ -262,6 +278,7 @@ async def plan_tail_first_repair(
         anchor_ts_ms=anchor_ts_ms,
         anchor_strategy=anchor_strategy,
         anchor_metadata=anchor_metadata,
+        calendar=calendar,
     )
     min_ts_ms, _ = await coverage_query.get_coverage_bounds(
         symbol=symbol,
@@ -283,11 +300,19 @@ async def plan_tail_first_repair(
             else min(anchor_start_ts_ms, min_ts_ms)
         )
     )
-    start_ts_ms = _trailing_window_start_ts_ms(
+    if planning_floor_ts_ms is None:
+        raise ValueError(
+            "swap_repair auto-apply requires existing coverage, anchor_ts_ms, or listing-date metadata"
+        )
+    raw_start_ts_ms = _trailing_window_start_ts_ms(
         floor_ts_ms=planning_floor_ts_ms,
         closed_until_ts_ms=closed_until_ts_ms,
         max_range_days=max_range_days,
     )
+    # Snap to bar boundary so detect_gap_tasks doesn't produce phantom gaps
+    # for variable-step timeframes (e.g. 1M) where the trailing window may
+    # land mid-period.
+    start_ts_ms = calendar.floor_open(raw_start_ts_ms, timeframe)
     planning_window = RepairWindow(
         start_ts_ms=start_ts_ms,
         end_ts_ms=closed_until_ts_ms,
@@ -302,6 +327,7 @@ async def plan_tail_first_repair(
         timestamps=timestamps,
         timeframe=timeframe,
         window=planning_window,
+        calendar=calendar,
     )
     gaps = tuple(
         RepairGap(
@@ -313,6 +339,7 @@ async def plan_tail_first_repair(
                 end_ts_ms=gap.end_ts_ms,
                 timeframe=timeframe,
                 chunk_size_bars=chunk_size_bars,
+                calendar=calendar,
             ),
         )
         for gap in reversed(detected_gaps)
