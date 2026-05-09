@@ -36,7 +36,9 @@ def floor_to_timeframe(timestamp_ms: int, timeframe: str) -> int:
     return int(datetime(dt.year, dt.month, 1, tzinfo=UTC).timestamp() * 1000)
 
 
-def floor_to_timeframe_business(timestamp_ms: int, timeframe: str, week_anchor_ts_ms: int) -> int:
+def floor_to_timeframe_business(
+    timestamp_ms: int, timeframe: str, week_anchor_ts_ms: int
+) -> int:
     if timeframe != "1W":
         return floor_to_timeframe(timestamp_ms, timeframe)
     step = TF_TO_MS["1W"]
@@ -59,22 +61,30 @@ def build_last_n_closed_window(
     timeframe: str,
     bars: int,
     week_anchor_ts_ms: int,
+    *,
+    calendar: OKXCandleCalendar,
 ) -> tuple[int, int]:
     if bars < 1:
         raise ValueError("bars must be >= 1")
-    closed_until_ts_ms = floor_to_timeframe_business(now_ts_ms, timeframe, week_anchor_ts_ms)
+    closed_until_ts_ms = calendar.floor_open(now_ts_ms, timeframe)
     window_start_ts_ms = closed_until_ts_ms
     for _ in range(bars):
         window_start_ts_ms = _previous_open(window_start_ts_ms, timeframe)
     return window_start_ts_ms, closed_until_ts_ms
 
 
-def list_expected_timestamps(window_start: int, window_end: int, timeframe: str) -> list[int]:
+def list_expected_timestamps(
+    window_start: int,
+    window_end: int,
+    timeframe: str,
+    *,
+    calendar: OKXCandleCalendar,
+) -> list[int]:
     timestamps: list[int] = []
     cursor = window_start
     while cursor < window_end:
         timestamps.append(cursor)
-        cursor = expected_next_open(cursor, timeframe)
+        cursor = calendar.next_open(cursor, timeframe)
     return timestamps
 
 
@@ -82,26 +92,38 @@ def merge_adjacent_timestamps(
     missing: list[int],
     timeframe: str,
     week_anchor_ts_ms: int,
+    *,
+    calendar: OKXCandleCalendar,
 ) -> list[GapRange]:
     from .repair import GapRange
 
     if not missing:
         return []
     sorted_missing = sorted(
-        {
-            floor_to_timeframe_business(ts, timeframe, week_anchor_ts_ms)
-            for ts in missing
-        }
+        {calendar.floor_open(ts, timeframe) for ts in missing}
     )
     ranges: list[GapRange] = []
     start_ts_ms = sorted_missing[0]
     prev_ts_ms = sorted_missing[0]
     for timestamp_ms in sorted_missing[1:]:
-        if floor_to_timeframe_business(expected_next_open(prev_ts_ms, timeframe), timeframe, week_anchor_ts_ms) != timestamp_ms:
-            ranges.append(GapRange(start_ts_ms=start_ts_ms, end_ts_ms=expected_next_open(prev_ts_ms, timeframe)))
+        if (
+            calendar.floor_open(calendar.next_open(prev_ts_ms, timeframe), timeframe)
+            != timestamp_ms
+        ):
+            ranges.append(
+                GapRange(
+                    start_ts_ms=start_ts_ms,
+                    end_ts_ms=calendar.next_open(prev_ts_ms, timeframe),
+                )
+            )
             start_ts_ms = timestamp_ms
         prev_ts_ms = timestamp_ms
-    ranges.append(GapRange(start_ts_ms=start_ts_ms, end_ts_ms=expected_next_open(prev_ts_ms, timeframe)))
+    ranges.append(
+        GapRange(
+            start_ts_ms=start_ts_ms,
+            end_ts_ms=calendar.next_open(prev_ts_ms, timeframe),
+        )
+    )
     return ranges
 
 
