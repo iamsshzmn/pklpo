@@ -7,14 +7,10 @@ from enum import StrEnum
 from numbers import Real
 from typing import TYPE_CHECKING, Any, Literal
 
-from .repair_timeframes import (
-    expected_next_open,
-    floor_to_timeframe,
-    floor_to_timeframe_business,
-)
+from .repair_timeframes import floor_to_timeframe_business
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from datetime import datetime
 
 
@@ -213,9 +209,13 @@ def clamp_window_to_closed_bars(
     window: RepairWindow,
     timeframe: str,
     now_ts_ms: int,
+    calendar: OKXCandleCalendar,
 ) -> RepairWindow:
-    start_ts_ms = floor_to_timeframe(window.start_ts_ms, timeframe)
-    end_ts_ms = min(floor_to_timeframe(window.end_ts_ms, timeframe), floor_to_timeframe(now_ts_ms, timeframe))
+    start_ts_ms = calendar.floor_open(window.start_ts_ms, timeframe)
+    end_ts_ms = min(
+        calendar.floor_open(window.end_ts_ms, timeframe),
+        calendar.floor_open(now_ts_ms, timeframe),
+    )
     if end_ts_ms < start_ts_ms:
         end_ts_ms = start_ts_ms
     return RepairWindow(start_ts_ms=start_ts_ms, end_ts_ms=end_ts_ms)
@@ -228,7 +228,9 @@ def clamp_window_to_closed_bars_business(
     now_ts_ms: int,
     week_anchor_ts_ms: int,
 ) -> RepairWindow:
-    start_ts_ms = floor_to_timeframe_business(window.start_ts_ms, timeframe, week_anchor_ts_ms)
+    start_ts_ms = floor_to_timeframe_business(
+        window.start_ts_ms, timeframe, week_anchor_ts_ms
+    )
     end_ts_ms = min(
         floor_to_timeframe_business(window.end_ts_ms, timeframe, week_anchor_ts_ms),
         floor_to_timeframe_business(now_ts_ms, timeframe, week_anchor_ts_ms),
@@ -243,6 +245,7 @@ def detect_gap_tasks(
     timestamps: list[int],
     timeframe: str,
     window: RepairWindow,
+    calendar: OKXCandleCalendar,
 ) -> list[GapTask]:
     if window.is_empty:
         return []
@@ -268,7 +271,7 @@ def detect_gap_tasks(
             )
             task_start = None
             missing_bars = 0
-        cursor = expected_next_open(cursor, timeframe)
+        cursor = calendar.next_open(cursor, timeframe)
 
     if task_start is not None:
         tasks.append(
@@ -281,7 +284,9 @@ def detect_gap_tasks(
     return tasks
 
 
-def count_expected_bars(*, window: RepairWindow, timeframe: str) -> int:
+def count_expected_bars(
+    *, window: RepairWindow, timeframe: str, calendar: OKXCandleCalendar
+) -> int:
     if window.is_empty:
         return 0
 
@@ -289,7 +294,7 @@ def count_expected_bars(*, window: RepairWindow, timeframe: str) -> int:
     cursor = window.start_ts_ms
     while cursor < window.end_ts_ms:
         count += 1
-        cursor = expected_next_open(cursor, timeframe)
+        cursor = calendar.next_open(cursor, timeframe)
     return count
 
 
@@ -298,11 +303,13 @@ def summarize_repair_verification(
     timestamps: list[int],
     timeframe: str,
     window: RepairWindow,
+    calendar: OKXCandleCalendar,
 ) -> RepairVerificationSummary:
     remaining_gap_tasks = detect_gap_tasks(
         timestamps=timestamps,
         timeframe=timeframe,
         window=window,
+        calendar=calendar,
     )
     return RepairVerificationSummary(
         method=RepairVerificationMethod.GAP_DETECTION,
@@ -340,10 +347,14 @@ def validate_ohlcv_row(row: Mapping[str, Any]) -> bool:
         return False
     if high_price < low_price:
         return False
-    return low_price <= open_price <= high_price and low_price <= close_price <= high_price
+    return (
+        low_price <= open_price <= high_price and low_price <= close_price <= high_price
+    )
 
 
-def _coerce_ohlcv_values(row: object) -> tuple[float, float, float, float, float] | None:
+def _coerce_ohlcv_values(
+    row: object,
+) -> tuple[float, float, float, float, float] | None:
     getter = getattr(row, "get", None)
     if not callable(getter):
         return None
@@ -355,7 +366,13 @@ def _coerce_ohlcv_values(row: object) -> tuple[float, float, float, float, float
         return None
     if any(not _is_finite_number(value) for value in values):
         return None
-    return tuple(float(value) for value in values)
+    return (
+        float(values[0]),
+        float(values[1]),
+        float(values[2]),
+        float(values[3]),
+        float(values[4]),
+    )
 
 
 def _is_finite_number(value: object) -> bool:
@@ -386,7 +403,7 @@ def merge_gaps(ts_list: list[int], interval_ms: int) -> list[tuple[int, int]]:
 
 def validate_repair_candles(
     *,
-    candles: list[Mapping[str, Any]],
+    candles: Sequence[Mapping[str, Any]],
     task_window: RepairWindow,
     closed_until_ts_ms: int,
 ) -> list[Mapping[str, Any]]:
