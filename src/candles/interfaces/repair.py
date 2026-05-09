@@ -16,6 +16,7 @@ from src.candles.application.repair import (
     preview_repair_timeframe,
     run_repair_timeframe,
 )
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     NoProgressPolicy,
     RepairExecutionMode,

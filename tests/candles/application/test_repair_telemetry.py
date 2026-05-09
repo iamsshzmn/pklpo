@@ -7,11 +7,14 @@ import pytest
 
 from src.candles.application.repair.dto import RepairCommand
 from src.candles.application.repair.use_cases import RunGapRepairUseCase
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     RepairExecutionMode,
     RepairGuardrails,
     RepairStrategy,
 )
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 @dataclass
@@ -96,13 +99,28 @@ async def test_repair_completed_telemetry_includes_semantic_fields() -> None:
         historical_source=HistoricalSourceStub(
             responses=[
                 [
-                    {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
-                    {"ts": 3 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
+                    {
+                        "ts": 2 * 60_000,
+                        "open": 1,
+                        "high": 2,
+                        "low": 0,
+                        "close": 1,
+                        "volume": 10,
+                    },
+                    {
+                        "ts": 3 * 60_000,
+                        "open": 1,
+                        "high": 2,
+                        "low": 0,
+                        "close": 1,
+                        "volume": 11,
+                    },
                 ]
             ]
         ),
         repair_store=RepairStoreStub(coverage=coverage),
         telemetry=telemetry,
+        calendar=UTC_CAL,
     )
 
     await use_case.run(_command())

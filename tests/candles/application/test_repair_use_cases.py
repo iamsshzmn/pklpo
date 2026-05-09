@@ -10,12 +10,15 @@ from src.candles.application.repair.use_cases import (
     RunGapRepairUseCase,
     RunHistoricalBackfillUseCase,
 )
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     RepairExecutionMode,
     RepairGuardrails,
     RepairStrategy,
     RepairVerificationMethod,
 )
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 @dataclass
@@ -127,10 +130,13 @@ async def test_gap_repair_detect_only_builds_plan_without_fetch_or_write() -> No
         coverage_query=coverage,
         historical_source=HistoricalSourceStub(),
         repair_store=RepairStoreStub(),
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(
-        _command(mode=RepairExecutionMode.DETECT_ONLY, strategy=RepairStrategy.GAP_REPAIR)
+        _command(
+            mode=RepairExecutionMode.DETECT_ONLY, strategy=RepairStrategy.GAP_REPAIR
+        )
     )
 
     assert result.fetch_calls == 0
@@ -154,6 +160,7 @@ async def test_backfill_dry_run_plans_whole_closed_window() -> None:
         coverage_query=CoverageQueryStub(),
         historical_source=HistoricalSourceStub(),
         repair_store=RepairStoreStub(),
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(
@@ -178,10 +185,38 @@ async def test_backfill_apply_fetches_full_window_and_writes_valid_rows() -> Non
         responses=[
             [
                 {"ts": 0, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
-                {"ts": 60_000, "open": 2, "high": 3, "low": 1, "close": 2, "volume": 11},
-                {"ts": 2 * 60_000, "open": 3, "high": 4, "low": 2, "close": 3, "volume": 12},
-                {"ts": 3 * 60_000, "open": 4, "high": 5, "low": 3, "close": 4, "volume": 13},
-                {"ts": 4 * 60_000, "open": 5, "high": 6, "low": 4, "close": 5, "volume": 14},
+                {
+                    "ts": 60_000,
+                    "open": 2,
+                    "high": 3,
+                    "low": 1,
+                    "close": 2,
+                    "volume": 11,
+                },
+                {
+                    "ts": 2 * 60_000,
+                    "open": 3,
+                    "high": 4,
+                    "low": 2,
+                    "close": 3,
+                    "volume": 12,
+                },
+                {
+                    "ts": 3 * 60_000,
+                    "open": 4,
+                    "high": 5,
+                    "low": 3,
+                    "close": 4,
+                    "volume": 13,
+                },
+                {
+                    "ts": 4 * 60_000,
+                    "open": 5,
+                    "high": 6,
+                    "low": 4,
+                    "close": 5,
+                    "volume": 14,
+                },
             ]
         ]
     )
@@ -191,6 +226,7 @@ async def test_backfill_apply_fetches_full_window_and_writes_valid_rows() -> Non
         coverage_query=coverage,
         historical_source=historical,
         repair_store=store,
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(
@@ -230,9 +266,30 @@ async def test_apply_gap_repair_filters_open_bar_and_emits_telemetry() -> None:
     historical = HistoricalSourceStub(
         responses=[
             [
-                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
-                {"ts": 3 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
-                {"ts": 4 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 12},
+                {
+                    "ts": 2 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 10,
+                },
+                {
+                    "ts": 3 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 11,
+                },
+                {
+                    "ts": 4 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 12,
+                },
             ]
         ]
     )
@@ -244,6 +301,7 @@ async def test_apply_gap_repair_filters_open_bar_and_emits_telemetry() -> None:
         historical_source=historical,
         repair_store=store,
         telemetry=telemetry,
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(
@@ -258,7 +316,10 @@ async def test_apply_gap_repair_filters_open_bar_and_emits_telemetry() -> None:
     assert result.verification_method is RepairVerificationMethod.GAP_DETECTION
     assert result.watermark_updated is False
     assert len(store.calls) == 1
-    assert [row["timestamp"] for row in store.calls[0]["candles"]] == [2 * 60_000, 3 * 60_000]
+    assert [row["timestamp"] for row in store.calls[0]["candles"]] == [
+        2 * 60_000,
+        3 * 60_000,
+    ]
     assert coverage.count_calls == []
     assert telemetry.events[0][0] == "candles.repair.completed"
 
@@ -270,10 +331,38 @@ async def test_apply_backfill_writes_full_window_and_verifies_coverage() -> None
         responses=[
             [
                 {"ts": 0, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
-                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
-                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 12},
-                {"ts": 3 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 13},
-                {"ts": 4 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 14},
+                {
+                    "ts": 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 11,
+                },
+                {
+                    "ts": 2 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 12,
+                },
+                {
+                    "ts": 3 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 13,
+                },
+                {
+                    "ts": 4 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 14,
+                },
             ]
         ]
     )
@@ -283,6 +372,7 @@ async def test_apply_backfill_writes_full_window_and_verifies_coverage() -> None
         coverage_query=coverage,
         historical_source=historical,
         repair_store=store,
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(
@@ -324,7 +414,9 @@ async def test_apply_rejects_guardrail_violation_before_write() -> None:
         coverage_query=CoverageQueryStub(timestamps=[]),
         historical_source=historical,
         repair_store=store,
+        calendar=UTC_CAL,
     )
+
 
     with pytest.raises(ValueError, match="apply blocked by guardrails"):
         await use_case.run(command)
@@ -342,7 +434,14 @@ async def test_apply_marks_result_unverified_when_window_still_has_gaps() -> Non
     historical = HistoricalSourceStub(
         responses=[
             [
-                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
+                {
+                    "ts": 2 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 10,
+                },
             ]
         ]
     )
@@ -352,6 +451,7 @@ async def test_apply_marks_result_unverified_when_window_still_has_gaps() -> Non
         coverage_query=coverage,
         historical_source=historical,
         repair_store=store,
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(
@@ -367,21 +467,22 @@ async def test_apply_marks_result_unverified_when_window_still_has_gaps() -> Non
 
 
 @pytest.mark.asyncio
-async def test_no_progress_escalation_raises_on_critical_tf() -> None:
-    """After REPAIR-401 the old max_fail_ratio hard-fail is gone.
-
-    The only remaining hard-stop on apply mode is repeated no-progress on a
-    critical timeframe. A single partial fill that still makes progress must
-    not raise; only after N consecutive no-progress iterations does the tracker
-    escalate.
-    """
+async def test_blocked_iterations_do_not_escalate_on_critical_tf() -> None:
+    """Blocked iterations are tracked separately and must not hard-fail apply."""
 
     coverage = CoverageQueryStub(timestamps=[])
     historical = HistoricalSourceStub(
         responses=[
             [
                 {"ts": 0, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
-                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
+                {
+                    "ts": 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 11,
+                },
             ],
             [],
             [],
@@ -394,6 +495,7 @@ async def test_no_progress_escalation_raises_on_critical_tf() -> None:
         coverage_query=coverage,
         historical_source=historical,
         repair_store=store,
+        calendar=UTC_CAL,
     )
     command = _command(
         mode=RepairExecutionMode.APPLY,
@@ -403,10 +505,15 @@ async def test_no_progress_escalation_raises_on_critical_tf() -> None:
     first = await use_case.run(command)
     assert first.rows_written == 2
 
-    await use_case.run(command)
-    await use_case.run(command)
-    with pytest.raises(ValueError, match="no progress on critical TF 1m"):
-        await use_case.run(command)
+    second = await use_case.run(command)
+    third = await use_case.run(command)
+    fourth = await use_case.run(command)
+
+    for result in (second, third, fourth):
+        assert result.outcome is not None
+        assert result.outcome.value == "empty"
+        assert result.blocked is True
+        assert result.blocked_cause == "api_returned_empty"
 
 
 @pytest.mark.asyncio
@@ -415,8 +522,22 @@ async def test_partial_api_fill_does_not_raise() -> None:
     historical = HistoricalSourceStub(
         responses=[
             [
-                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
-                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
+                {
+                    "ts": 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 10,
+                },
+                {
+                    "ts": 2 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 11,
+                },
             ]
         ]
     )
@@ -428,6 +549,7 @@ async def test_partial_api_fill_does_not_raise() -> None:
         historical_source=historical,
         repair_store=store,
         telemetry=telemetry,
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(
@@ -457,6 +579,7 @@ async def test_empty_response_without_exception_does_not_raise() -> None:
         historical_source=historical,
         repair_store=store,
         telemetry=telemetry,
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(
@@ -475,7 +598,7 @@ async def test_empty_response_without_exception_does_not_raise() -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_progress_escalation_on_1m_after_N_iterations() -> None:
+async def test_no_progress_escalation_on_1m_after_n_iterations() -> None:
     coverage = CoverageQueryStub(timestamps=[])
     historical = HistoricalSourceStub(responses=[[], [], []])
     store = RepairStoreStub(rows_written_per_call=[0, 0, 0])
@@ -484,6 +607,7 @@ async def test_no_progress_escalation_on_1m_after_N_iterations() -> None:
         coverage_query=coverage,
         historical_source=historical,
         repair_store=store,
+        calendar=UTC_CAL,
     )
 
     command = _command(
@@ -491,10 +615,15 @@ async def test_no_progress_escalation_on_1m_after_N_iterations() -> None:
         strategy=RepairStrategy.GAP_REPAIR,
     )
 
-    await use_case.run(command)
-    await use_case.run(command)
-    with pytest.raises(ValueError, match="no progress on critical TF 1m"):
-        await use_case.run(command)
+    first = await use_case.run(command)
+    second = await use_case.run(command)
+    third = await use_case.run(command)
+
+    for result in (first, second, third):
+        assert result.outcome is not None
+        assert result.outcome.value == "empty"
+        assert result.blocked is True
+        assert result.blocked_cause == "api_returned_empty"
 
 
 @pytest.mark.asyncio
@@ -504,10 +633,38 @@ async def test_success_outcome_fields_present_in_result() -> None:
         responses=[
             [
                 {"ts": 0, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
-                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
-                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 12},
-                {"ts": 3 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 13},
-                {"ts": 4 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 14},
+                {
+                    "ts": 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 11,
+                },
+                {
+                    "ts": 2 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 12,
+                },
+                {
+                    "ts": 3 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 13,
+                },
+                {
+                    "ts": 4 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 14,
+                },
             ]
         ]
     )
@@ -519,6 +676,7 @@ async def test_success_outcome_fields_present_in_result() -> None:
         historical_source=historical,
         repair_store=store,
         telemetry=telemetry,
+        calendar=UTC_CAL,
     )
 
     await use_case.run(
@@ -556,10 +714,38 @@ async def test_repair_outcome_structured_log_has_repair_prefixed_fields(
         responses=[
             [
                 {"ts": 0, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 10},
-                {"ts": 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 11},
-                {"ts": 2 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 12},
-                {"ts": 3 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 13},
-                {"ts": 4 * 60_000, "open": 1, "high": 2, "low": 0, "close": 1, "volume": 14},
+                {
+                    "ts": 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 11,
+                },
+                {
+                    "ts": 2 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 12,
+                },
+                {
+                    "ts": 3 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 13,
+                },
+                {
+                    "ts": 4 * 60_000,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 14,
+                },
             ]
         ]
     )
@@ -569,6 +755,7 @@ async def test_repair_outcome_structured_log_has_repair_prefixed_fields(
         coverage_query=coverage,
         historical_source=historical,
         repair_store=store,
+        calendar=UTC_CAL,
     )
 
     caplog.set_level(_logging.INFO, logger="src.candles.application.repair.use_cases")

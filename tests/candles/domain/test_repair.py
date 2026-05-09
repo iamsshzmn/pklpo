@@ -7,6 +7,7 @@ from itertools import pairwise
 import pytest
 from hypothesis import given, strategies as st
 
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     GapRange,
     LastNClosedBarsOutcome,
@@ -24,12 +25,14 @@ from src.candles.domain.repair import (
     validate_repair_candles,
 )
 
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
+
 
 def test_detect_gap_tasks_groups_adjacent_missing_bars() -> None:
     window = RepairWindow(start_ts_ms=0, end_ts_ms=6 * 60_000)
     timestamps = [0, 60_000, 4 * 60_000]
 
-    tasks = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window)
+    tasks = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window, calendar=UTC_CAL)
 
     assert tasks == [
         type(tasks[0])(start_ts_ms=2 * 60_000, end_ts_ms=4 * 60_000, missing_bars=2),
@@ -46,10 +49,13 @@ def test_detect_gap_tasks_property_based_for_sorted_non_overlapping_ranges(
     window = RepairWindow(start_ts_ms=0, end_ts_ms=bars * step)
     timestamps = sorted(index * step for index in existing_indexes)
 
-    tasks = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window)
+    tasks = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window, calendar=UTC_CAL)
 
     assert tasks == sorted(tasks, key=lambda task: task.start_ts_ms)
-    assert all(window.start_ts_ms <= task.start_ts_ms < task.end_ts_ms <= window.end_ts_ms for task in tasks)
+    assert all(
+        window.start_ts_ms <= task.start_ts_ms < task.end_ts_ms <= window.end_ts_ms
+        for task in tasks
+    )
     assert all(left.end_ts_ms <= right.start_ts_ms for left, right in pairwise(tasks))
 
     missing_indexes: set[int] = set()
@@ -65,11 +71,15 @@ def test_detect_gap_tasks_property_based_for_sorted_non_overlapping_ranges(
 def test_clamp_window_to_closed_bars_excludes_current_open_bar() -> None:
     now_ts_ms = int(datetime(2026, 4, 11, 12, 3, 30, tzinfo=UTC).timestamp() * 1000)
     window = RepairWindow(
-        start_ts_ms=int(datetime(2026, 4, 11, 12, 0, 15, tzinfo=UTC).timestamp() * 1000),
+        start_ts_ms=int(
+            datetime(2026, 4, 11, 12, 0, 15, tzinfo=UTC).timestamp() * 1000
+        ),
         end_ts_ms=int(datetime(2026, 4, 11, 12, 5, 15, tzinfo=UTC).timestamp() * 1000),
     )
 
-    normalized = clamp_window_to_closed_bars(window=window, timeframe="1m", now_ts_ms=now_ts_ms)
+    normalized = clamp_window_to_closed_bars(
+        window=window, timeframe="1m", now_ts_ms=now_ts_ms, calendar=UTC_CAL
+    )
 
     assert normalized == RepairWindow(
         start_ts_ms=int(datetime(2026, 4, 11, 12, 0, tzinfo=UTC).timestamp() * 1000),
@@ -125,6 +135,7 @@ def test_summarize_repair_verification_reports_remaining_gap_tasks() -> None:
         timestamps=timestamps,
         timeframe="1m",
         window=window,
+        calendar=UTC_CAL,
     )
 
     assert verification.remaining_gap_tasks == 2

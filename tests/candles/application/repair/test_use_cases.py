@@ -7,6 +7,7 @@ import pytest
 
 from src.candles.application.repair.dto import RepairCommand
 from src.candles.application.repair.use_cases import RunGapRepairUseCase
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     RepairExecutionMode,
     RepairGuardrails,
@@ -14,6 +15,8 @@ from src.candles.domain.repair import (
     RepairStrategy,
     RepairVerificationMethod,
 )
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 @dataclass
@@ -46,9 +49,7 @@ class _FakeCoverageQuery:
     ) -> list[int]:
         del symbol, timeframe
         return sorted(
-            ts
-            for ts in self.existing_timestamps
-            if start_ts_ms <= ts < end_ts_ms
+            ts for ts in self.existing_timestamps if start_ts_ms <= ts < end_ts_ms
         )
 
     async def count_candles(
@@ -150,6 +151,7 @@ async def test_gap_repair_detect_only_builds_plan_without_fetch_or_write() -> No
         coverage_query=coverage_query,
         historical_source=historical_source,
         repair_store=repair_store,
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(_command(mode=RepairExecutionMode.DETECT_ONLY))
@@ -176,6 +178,7 @@ async def test_gap_repair_apply_is_not_verified_when_gap_remains_unfilled() -> N
         coverage_query=coverage_query,
         historical_source=historical_source,
         repair_store=repair_store,
+        calendar=UTC_CAL,
     )
 
     result = await use_case.run(_command(mode=RepairExecutionMode.APPLY))
@@ -191,7 +194,9 @@ async def test_gap_repair_apply_is_not_verified_when_gap_remains_unfilled() -> N
 
 
 @pytest.mark.asyncio
-async def test_gap_repair_apply_marks_empty_chunk_as_blocked_without_escalation() -> None:
+async def test_gap_repair_apply_marks_empty_chunk_as_blocked_without_escalation() -> (
+    None
+):
     coverage_query = _FakeCoverageQuery(existing_timestamps=[0, 180_000])
     historical_source = _FakeHistoricalSource(responses=[[], [], []])
     repair_store = _FakeRepairStore(coverage_query=coverage_query)
@@ -201,6 +206,7 @@ async def test_gap_repair_apply_marks_empty_chunk_as_blocked_without_escalation(
         historical_source=historical_source,
         repair_store=repair_store,
         telemetry=telemetry,
+        calendar=UTC_CAL,
     )
     command = _command(mode=RepairExecutionMode.APPLY)
 
@@ -229,12 +235,21 @@ async def test_gap_repair_apply_marks_empty_chunk_as_blocked_without_escalation(
 
 
 @pytest.mark.asyncio
-async def test_gap_repair_apply_classifies_padding_only_fetch_as_outside_exchange_history() -> None:
+async def test_gap_repair_apply_classifies_padding_only_fetch_as_outside_exchange_history() -> (
+    None
+):
     coverage_query = _FakeCoverageQuery(existing_timestamps=[0, 120_000])
     historical_source = _FakeHistoricalSource(
         responses=[
             [
-                {"ts": 0, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0},
+                {
+                    "ts": 0,
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1.0,
+                },
                 {
                     "ts": 120_000,
                     "open": 2.0,
@@ -253,6 +268,7 @@ async def test_gap_repair_apply_classifies_padding_only_fetch_as_outside_exchang
         historical_source=historical_source,
         repair_store=repair_store,
         telemetry=telemetry,
+        calendar=UTC_CAL,
     )
     command = RepairCommand(
         symbol="BTC-USDT-SWAP",

@@ -5,11 +5,14 @@ from dataclasses import dataclass, field
 import pytest
 
 from src.candles.application.repair.runner import preview_repair_timeframe
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     RepairExecutionMode,
     RepairGuardrails,
     RepairStrategy,
 )
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 @dataclass
@@ -102,6 +105,7 @@ async def test_preview_repair_timeframe_reports_single_window_plan() -> None:
         auto_apply_window=False,
         coverage_query=coverage_query,
         guardrails=_guardrails(),
+        calendar=UTC_CAL,
     )
 
     assert preview.window.start_ts_ms == 0
@@ -139,6 +143,7 @@ async def test_preview_repair_timeframe_estimates_auto_apply_iterations() -> Non
         guardrails=_guardrails(max_range_days=1),
         anchor_strategy="listing-date",
         anchor_metadata=anchor_metadata,
+        calendar=UTC_CAL,
     )
 
     assert preview.auto_apply_window is True
