@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 from .repair_timeframes import (
     expected_next_open as _utc_next_open,
