@@ -26,6 +26,8 @@ from .dto import RepairCommand, RepairResult
 from .progress import NoProgressTracker
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from .ports import (
         CandleCoverageQueryPort,
         HistoricalCandleSourcePort,
@@ -37,7 +39,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _classify_blocked_cause(*, blocked: bool, fetched_rows: int, received_rows: int) -> str | None:
+def _classify_blocked_cause(
+    *, blocked: bool, fetched_rows: int, received_rows: int
+) -> str | None:
     if not blocked:
         return None
     if fetched_rows == 0:
@@ -65,12 +69,14 @@ class _BaseRepairUseCase:
         coverage_query: CandleCoverageQueryPort,
         historical_source: HistoricalCandleSourcePort,
         repair_store: RepairCandleStorePort,
+        calendar: OKXCandleCalendar,
         telemetry: TelemetryPort | None = None,
         no_progress_policy: NoProgressPolicy | None = None,
     ) -> None:
         self._coverage_query = coverage_query
         self._historical_source = historical_source
         self._repair_store = repair_store
+        self._calendar = calendar
         self._telemetry = telemetry or _NullTelemetry()
         self._no_progress_policy = no_progress_policy or NoProgressPolicy()
         self._no_progress_trackers: dict[tuple[str, str], NoProgressTracker] = {}
@@ -161,6 +167,7 @@ class _BaseRepairUseCase:
             timestamps=verified_timestamps,
             timeframe=plan.timeframe,
             window=plan.window,
+            calendar=self._calendar,
         )
         verified = verification.remaining_gap_tasks == 0
         progress = remaining_missing_before - remaining_missing_after
@@ -286,15 +293,21 @@ class _BaseRepairUseCase:
     async def _build_plan(self, command: RepairCommand) -> RepairPlan:
         raise NotImplementedError
 
-    def _sanitize_candles(self, candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _sanitize_candles(
+        self,
+        candles: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
         fetched_at = datetime.now(UTC)
-        return [sanitize_repair_candle(candle, fetched_at=fetched_at) for candle in candles]
+        return [
+            sanitize_repair_candle(candle, fetched_at=fetched_at) for candle in candles
+        ]
 
     def _normalized_window(self, command: RepairCommand) -> RepairWindow:
         return clamp_window_to_closed_bars(
             window=RepairWindow(command.start_ts_ms, command.end_ts_ms),
             timeframe=command.timeframe,
             now_ts_ms=command.now_ts_ms,
+            calendar=self._calendar,
         )
 
 
@@ -312,14 +325,21 @@ class RunGapRepairUseCase(_BaseRepairUseCase):
             symbol=command.symbol,
             timeframe=command.timeframe,
             window=window,
-            tasks=detect_gap_tasks(timestamps=timestamps, timeframe=command.timeframe, window=window),
+            tasks=detect_gap_tasks(
+                timestamps=timestamps,
+                timeframe=command.timeframe,
+                window=window,
+                calendar=self._calendar,
+            ),
         )
 
 
 class RunHistoricalBackfillUseCase(_BaseRepairUseCase):
     async def _build_plan(self, command: RepairCommand) -> RepairPlan:
         window = self._normalized_window(command)
-        tasks = detect_gap_tasks(timestamps=[], timeframe=command.timeframe, window=window)
+        tasks = detect_gap_tasks(
+            timestamps=[], timeframe=command.timeframe, window=window, calendar=self._calendar
+        )
         return BackfillPlan(
             strategy=RepairStrategy.BACKFILL,
             symbol=command.symbol,
