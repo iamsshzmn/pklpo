@@ -50,4 +50,3 @@ from .timeframes import TF_TO_MS, TF_TO_SEC
 from .validators import MarketValidator, PositionValidator, ValidationResult
 
 __all__ = [name for name in globals() if not name.startswith("_")]
-

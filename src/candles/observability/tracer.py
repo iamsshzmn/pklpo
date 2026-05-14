@@ -15,7 +15,10 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
-_trace_context: ContextVar[dict[str, str]] = ContextVar("trace_context", default={})
+_trace_context: ContextVar[dict[str, str] | None] = ContextVar(
+    "trace_context",
+    default=None,
+)
 
 
 def get_correlation_id() -> str:
@@ -23,7 +26,7 @@ def get_correlation_id() -> str:
 
 
 def get_trace_context() -> dict[str, str]:
-    return _trace_context.get()
+    return _trace_context.get() or {}
 
 
 @contextmanager
@@ -43,11 +46,13 @@ def trace_sync_run(
     """
     cid = correlation_id or uuid.uuid4().hex[:12]
     token_id = _correlation_id.set(cid)
-    token_ctx = _trace_context.set({
-        "correlation_id": cid,
-        "mode": mode,
-        "symbols_count": str(symbols_count),
-    })
+    token_ctx = _trace_context.set(
+        {
+            "correlation_id": cid,
+            "mode": mode,
+            "symbols_count": str(symbols_count),
+        }
+    )
     logger.info(
         "sync_run.start correlation_id=%s mode=%s symbols=%d",
         cid,
@@ -66,7 +71,7 @@ class CorrelationLogFilter(logging.Filter):
     """Logging filter that injects correlation_id into every log record."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.correlation_id = _correlation_id.get()  # type: ignore[attr-defined]
+        record.correlation_id = _correlation_id.get()
         return True
 
 

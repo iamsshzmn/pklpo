@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from tempfile import gettempdir
+from typing import TYPE_CHECKING, Any, cast
 
 from src.candles.application.sync_use_cases import (
     build_sync_config,
@@ -39,11 +40,13 @@ class AirflowSyncRequest:
 
 
 async def run_catalog_refresh_job(request: AirflowSyncRequest) -> dict[str, Any]:
-    cache_dir = Path(os.environ.get("INSTRUMENTS_CACHE_DIR", "/tmp/pklpo"))  # noqa: S108
+    cache_dir = Path(
+        os.environ.get("INSTRUMENTS_CACHE_DIR", str(Path(gettempdir()) / "pklpo"))
+    )
     if not should_refresh_instruments(dict(request.conf), cache_dir):
         return {"refreshed": False, "reason": "cache_fresh"}
 
-    return await run_catalog_refresh_via_application()
+    return cast("dict[str, Any]", await run_catalog_refresh_via_application())
 
 
 async def run_refresh_okx_meta(request: AirflowSyncRequest) -> dict[str, Any]:

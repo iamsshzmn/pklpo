@@ -67,7 +67,9 @@ class MarketDataAggregator:
 
         # Определяем bar_timestamp колонку
         if "bar_timestamp" not in data.columns:
-            if data.index.name == "bar_timestamp" or isinstance(data.index, pd.DatetimeIndex):
+            if data.index.name == "bar_timestamp" or isinstance(
+                data.index, pd.DatetimeIndex
+            ):
                 data = data.reset_index()
                 if "bar_timestamp" not in data.columns and "index" in data.columns:
                     data = data.rename(columns={"index": "bar_timestamp"})
@@ -102,7 +104,9 @@ class MarketDataAggregator:
             if bar_idx > 0:
                 prev_bar_ts = target_bars[bar_idx - 1]
                 # Берем данные между предыдущим и текущим баром (включая текущий)
-                mask = (data["bar_timestamp"] > prev_bar_ts) & (data["bar_timestamp"] <= target_bar_ts)
+                mask = (data["bar_timestamp"] > prev_bar_ts) & (
+                    data["bar_timestamp"] <= target_bar_ts
+                )
             else:
                 # Первый бар - берем все до него включительно
                 mask = data["bar_timestamp"] <= target_bar_ts
@@ -117,7 +121,11 @@ class MarketDataAggregator:
                 "symbol": symbol,
                 "bar_timestamp": target_bar_ts,
                 "timeframe": target_timeframe,
-                "source": bar_data["source"].iloc[0] if "source" in bar_data.columns else "okx",
+                "source": (
+                    bar_data["source"].iloc[0]
+                    if "source" in bar_data.columns
+                    else "okx"
+                ),
             }
 
             # OI: последнее значение в интервале
@@ -134,11 +142,15 @@ class MarketDataAggregator:
                     if "next_funding_time" in bar_data.columns:
                         next_funding = bar_data["next_funding_time"].dropna()
                         if not next_funding.empty:
-                            aggregated_record["next_funding_time"] = next_funding.iloc[-1]
+                            aggregated_record["next_funding_time"] = next_funding.iloc[
+                                -1
+                            ]
                     if "funding_interval_hours" in bar_data.columns:
                         interval = bar_data["funding_interval_hours"].dropna()
                         if not interval.empty:
-                            aggregated_record["funding_interval_hours"] = int(interval.iloc[-1])
+                            aggregated_record["funding_interval_hours"] = int(
+                                interval.iloc[-1]
+                            )
 
             # L2: последнее значение в интервале
             if "bid_imbalance" in bar_data.columns:

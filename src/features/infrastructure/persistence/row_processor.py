@@ -64,9 +64,16 @@ def build_batch_data(
 
             ts_sec = timestamp_ms // 1000
             # asyncpg expects naive UTC datetime for TIMESTAMPTZ columns
-            calculated_at = datetime.datetime.fromtimestamp(ts_sec, datetime.UTC).replace(tzinfo=None)
+            calculated_at = datetime.datetime.fromtimestamp(
+                ts_sec, datetime.UTC
+            ).replace(tzinfo=None)
 
-            indicator_data = {"symbol": symbol, "timeframe": timeframe, "timestamp": timestamp_ms, "calculated_at": calculated_at}
+            indicator_data = {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "timestamp": timestamp_ms,
+                "calculated_at": calculated_at,
+            }
             indicators_added = 0
 
             for col in ind_df.columns:
@@ -74,7 +81,9 @@ def build_batch_data(
                     continue
                 if col not in db_cols:
                     if col in critical_fields:
-                        logger.warning("Column '%s' not in db_cols but is critical, skipping", col)
+                        logger.warning(
+                            "Column '%s' not in db_cols but is critical, skipping", col
+                        )
                     continue
 
                 val = row_dict.get(col)
@@ -108,18 +117,40 @@ def build_batch_data(
                     continue
 
             if indicators_added == 0:
-                logger.debug("Row %s: inserting base fields without calculated indicators", idx)
+                logger.debug(
+                    "Row %s: inserting base fields without calculated indicators", idx
+                )
 
             batch_data.append(indicator_data)
 
         except Exception as e:
-            logger.error("Row %s: Error processing row: %s", idx if "idx" in locals() else "unknown", e, exc_info=True, extra={"row_index": str(idx) if "idx" in locals() else "unknown", "symbol": symbol, "timeframe": timeframe})
+            logger.error(
+                "Row %s: Error processing row: %s",
+                idx if "idx" in locals() else "unknown",
+                e,
+                exc_info=True,
+                extra={
+                    "row_index": str(idx) if "idx" in locals() else "unknown",
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                },
+            )
             skipped_rows += 1
             continue
 
     if duplicate_rows > 0 and on_duplicate:
         on_duplicate(symbol, timeframe, duplicate_rows)
-        logger.warning("Detected %d duplicate timestamps in batch for %s/%s", duplicate_rows, symbol, timeframe)
+        logger.warning(
+            "Detected %d duplicate timestamps in batch for %s/%s",
+            duplicate_rows,
+            symbol,
+            timeframe,
+        )
 
-    logger.info("Prepared %d records for insertion, skipped %d rows (duplicates: %d)", len(batch_data), skipped_rows, duplicate_rows)
+    logger.info(
+        "Prepared %d records for insertion, skipped %d rows (duplicates: %d)",
+        len(batch_data),
+        skipped_rows,
+        duplicate_rows,
+    )
     return batch_data, skipped_rows

@@ -41,7 +41,9 @@ def resolve_instruments_cache_file(cache_dir: Path | None = None) -> Path:
     return target_dir / "instruments_list.json"
 
 
-def load_symbols_from_file(instruments_file: Path, *, logger: Any | None = None) -> list[str]:
+def load_symbols_from_file(
+    instruments_file: Path, *, logger: Any | None = None
+) -> list[str]:
     """Load a symbol list from JSON file, returning [] on invalid content."""
     if not instruments_file.exists():
         return []
@@ -59,7 +61,10 @@ def load_symbols_from_file(instruments_file: Path, *, logger: Any | None = None)
 
     if not isinstance(payload, list):
         if logger is not None:
-            logger.warning("Invalid symbols payload in %s: expected list or dict with 'symbols' key", instruments_file)
+            logger.warning(
+                "Invalid symbols payload in %s: expected list or dict with 'symbols' key",
+                instruments_file,
+            )
         return []
 
     symbols: list[str] = []
@@ -168,7 +173,9 @@ async def ensure_symbols_registered(
     """
     missing = await repository.find_missing_symbols(symbols)
     if not missing:
-        logger.info("ensure_symbols_registered: all %d symbols already registered", len(symbols))
+        logger.info(
+            "ensure_symbols_registered: all %d symbols already registered", len(symbols)
+        )
         return
 
     logger.info(
@@ -180,7 +187,9 @@ async def ensure_symbols_registered(
     async with build_market_data_adapter() as client:
         okx_instruments = await client.get_instruments("SWAP")
 
-    okx_by_symbol = {item["instId"]: item for item in okx_instruments if item.get("instId")}
+    okx_by_symbol = {
+        item["instId"]: item for item in okx_instruments if item.get("instId")
+    }
     not_on_okx = [s for s in missing if s not in okx_by_symbol]
     if not_on_okx:
         raise ValueError(

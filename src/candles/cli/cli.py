@@ -39,9 +39,7 @@ def market_meta():
 
 @market_meta.command()
 @click.option("--force", is_flag=True, help="Force refresh")
-@click.option(
-    "--types", default="SPOT,SWAP,FUTURES", help="Instrument types to load"
-)
+@click.option("--types", default="SPOT,SWAP,FUTURES", help="Instrument types to load")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 def refresh(force: bool, types: str, verbose: bool):
     """Refresh metadata from OKX"""
@@ -237,9 +235,7 @@ def clear_cache():
 
 
 @market_meta.command()
-@click.option(
-    "--enable/--disable", default=True, help="Enable/disable auto-refresh"
-)
+@click.option("--enable/--disable", default=True, help="Enable/disable auto-refresh")
 def auto_refresh(enable: bool):
     """Manage auto-refresh"""
     if enable:

@@ -206,4 +206,3 @@ with DAG(
     )
 
     refresh_okx >> swap_sync >> smoke_validate
-

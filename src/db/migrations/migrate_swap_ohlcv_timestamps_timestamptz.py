@@ -86,6 +86,8 @@ async def _list_partition_relations(session) -> list[str]:
         )
     )
     return [str(row[0]) for row in res.fetchall()]
+
+
 @asynccontextmanager
 async def _get_migration_session() -> AsyncSession:
     engine = create_async_engine(
@@ -119,7 +121,9 @@ async def migrate_swap_ohlcv_timestamps_timestamptz() -> None:
     async with _get_migration_session() as session:
         try:
             if not await _table_exists(session, PARENT_TABLE_NAME):
-                logger.info("swap_ohlcv_p is absent; skipping timestamptz normalization")
+                logger.info(
+                    "swap_ohlcv_p is absent; skipping timestamptz normalization"
+                )
                 return
 
             partition_relations: list[str] = []
@@ -127,9 +131,15 @@ async def migrate_swap_ohlcv_timestamps_timestamptz() -> None:
                 partition_relations = await _list_partition_relations(session)
 
             for column_name in TIMESTAMP_COLUMNS:
-                if not await _column_is_timestamptz(session, PARENT_TABLE_NAME, column_name):
+                if not await _column_is_timestamptz(
+                    session, PARENT_TABLE_NAME, column_name
+                ):
                     await session.execute(
-                        text(_build_alter_timestamp_type_sql(PARENT_TABLE_NAME, column_name))
+                        text(
+                            _build_alter_timestamp_type_sql(
+                                PARENT_TABLE_NAME, column_name
+                            )
+                        )
                     )
                     await session.commit()
 

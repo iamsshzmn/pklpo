@@ -36,4 +36,3 @@ class OrderValidationResult:
     is_valid: bool
     violations: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
-

@@ -70,10 +70,12 @@ def test_push_swap_repair_metrics_emits_new_semantic_gauges(monkeypatch) -> None
     assert 'outcome="partial"' in text
     assert 'blocked_reason="empty-chunk"' in text
     assert 'blocked_cause="api_returned_empty"' in text
-    assert 'pklpo_swap_repair_api_fill_ratio{' in text
+    assert "pklpo_swap_repair_api_fill_ratio{" in text
 
 
-def test_push_swap_repair_metrics_without_outcome_skips_outcome_counter(monkeypatch) -> None:
+def test_push_swap_repair_metrics_without_outcome_skips_outcome_counter(
+    monkeypatch,
+) -> None:
     captured = _capture_registry(monkeypatch)
 
     ok = prometheus.push_swap_repair_metrics(
@@ -97,3 +99,46 @@ def test_push_swap_repair_metrics_without_outcome_skips_outcome_counter(monkeypa
     text = captured["text"]
     assert "pklpo_swap_repair_received_bars" in text
     assert "outcome=" not in text
+
+
+def test_push_swap_repair_metrics_emits_last200_guard_series(monkeypatch) -> None:
+    captured = _capture_registry(monkeypatch)
+
+    ok = prometheus.push_swap_repair_metrics(
+        [
+            {
+                "symbol": "BTC-USDT-SWAP",
+                "timeframe": "1H",
+                "mode": "apply",
+                "strategy": "last_n_closed_bars",
+                "status": "ok",
+                "unresolved_timestamps": [],
+                "corrupted_count": 1,
+                "repaired_count": 2,
+                "affected_recalc_range": (10, 100),
+            },
+            {
+                "symbol": "ETH-USDT-SWAP",
+                "timeframe": "1H",
+                "mode": "apply",
+                "strategy": "last_n_closed_bars",
+                "status": "blocked",
+                "unresolved_timestamps": [20, 30],
+                "corrupted_count": 2,
+                "repaired_count": 0,
+                "affected_recalc_range": None,
+            },
+        ]
+    )
+
+    assert ok is True
+    text = captured["text"]
+    assert 'pklpo_last200_pairs_checked_total{timeframe="1H"} 2.0' in text
+    assert 'pklpo_last200_pairs_ok_total{timeframe="1H"} 1.0' in text
+    assert 'pklpo_last200_missing_bars_total{timeframe="1H"} 4.0' in text
+    assert 'pklpo_last200_corrupted_bars_total{timeframe="1H"} 3.0' in text
+    assert (
+        'pklpo_last200_remaining_after_total{status="blocked",timeframe="1H"} 2.0'
+        in text
+    )
+    assert 'pklpo_last200_indicator_recalc_enqueued_total{timeframe="1H"} 1.0' in text

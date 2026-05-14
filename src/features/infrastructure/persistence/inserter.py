@@ -82,7 +82,9 @@ async def _ensure_indicator_monthly_partitions(
     if timestamps.empty:
         return
 
-    start_dt = _month_start(datetime.fromtimestamp(int(timestamps.min()) / 1000, tz=UTC))
+    start_dt = _month_start(
+        datetime.fromtimestamp(int(timestamps.min()) / 1000, tz=UTC)
+    )
     end_dt = _month_start(datetime.fromtimestamp(int(timestamps.max()) / 1000, tz=UTC))
     manager = partition_manager or create_partition_manager(session)
 

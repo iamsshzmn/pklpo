@@ -31,7 +31,9 @@ TF_TO_MS = {
 def build_quality_gate_config(config: MarketSelectionConfig) -> QualityGateConfig:
     """Project application config into the domain quality config."""
     return QualityGateConfig(
-        thresholds={tf: values.copy() for tf, values in config.quality.thresholds.items()},
+        thresholds={
+            tf: values.copy() for tf, values in config.quality.thresholds.items()
+        },
         warmup_min_bars=config.quality.warmup_min_bars,
         gap_threshold_multiplier=config.quality.gap_threshold_multiplier,
         tf_bar_ms=TF_TO_MS.copy(),
@@ -58,7 +60,8 @@ def build_scoring_config(config: MarketSelectionConfig) -> DomainScoringConfig:
     return DomainScoringConfig(
         base_weights=config.scoring.base_weights.copy(),
         regime_deltas={
-            regime: deltas.copy() for regime, deltas in config.scoring.regime_deltas.items()
+            regime: deltas.copy()
+            for regime, deltas in config.scoring.regime_deltas.items()
         },
         tf_weights=config.scoring.tf_weights.copy(),
         missing_senior_penalty=config.scoring.missing_senior_penalty.copy(),

@@ -31,7 +31,9 @@ class SqlAlchemyIndicatorRepository:
         self,
         session: AsyncSession,
         *,
-        partition_manager_factory: Callable[[AsyncSession], PartitionManager] | None = None,
+        partition_manager_factory: (
+            Callable[[AsyncSession], PartitionManager] | None
+        ) = None,
         storage_backend: str = "postgresql",
         storage_targets: tuple[str, ...] | None = None,
     ) -> None:

@@ -261,7 +261,6 @@ class MarketDataExtRepository:
         """
         self.engine = engine
 
-
     def upsert_records(
         self,
         records: list[dict[str, Any]],

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ..ports import FeatureStorageGateway
 
 _TIMEFRAME_LIMITS = {
-    "1m": 15000,
+    "1m": 2880,
     "5m": 10000,
     "15m": 5000,
     "30m": 4000,

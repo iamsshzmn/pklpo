@@ -215,8 +215,12 @@ class UniverseManager:
             stability = stability_data[symbol]
 
             # Check stability criteria
-            meets_std_7d = stability["std_7d"] is None or stability["std_7d"] <= std_7d_max
-            meets_std_30d = stability["std_30d"] is None or stability["std_30d"] <= std_30d_max
+            meets_std_7d = (
+                stability["std_7d"] is None or stability["std_7d"] <= std_7d_max
+            )
+            meets_std_30d = (
+                stability["std_30d"] is None or stability["std_30d"] <= std_30d_max
+            )
             has_history = stability["days"] >= min_history_days
 
             # Check for critical flags

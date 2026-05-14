@@ -92,9 +92,7 @@ def build_sync_config(
 # ---------------------------------------------------------------------------
 
 
-async def check_data_freshness(
-    session: AsyncSession, mode: str
-) -> tuple[bool, str]:
+async def check_data_freshness(session: AsyncSession, mode: str) -> tuple[bool, str]:
     """Check whether swap_ohlcv_p data is fresh enough to skip a sync run.
 
     Returns:
@@ -104,9 +102,7 @@ async def check_data_freshness(
     max_lag_seconds = 120 if mode == "fast" else 900
 
     res = await session.execute(
-        text(
-            "SELECT MAX(timestamp) FROM swap_ohlcv_p WHERE timeframe = :tf"
-        ),
+        text("SELECT MAX(timestamp) FROM swap_ohlcv_p WHERE timeframe = :tf"),
         {"tf": timeframe_to_check},
     )
     max_ts_ms = res.scalar()
@@ -208,18 +204,14 @@ async def run_smoke_validation(
     res_total = await session.execute(text("SELECT COUNT(*) FROM swap_ohlcv_p"))
     total_rows = res_total.scalar() or 0
 
-    res_max = await session.execute(
-        text("SELECT MAX(timestamp) FROM swap_ohlcv_p")
-    )
+    res_max = await session.execute(text("SELECT MAX(timestamp) FROM swap_ohlcv_p"))
     max_ts_ms = res_max.scalar()
     lag_sec: float | None = None
     if max_ts_ms:
         lag_sec = (datetime.now(UTC).timestamp() * 1000 - max_ts_ms) / 1000
 
     start_of_day_ms = int(
-        datetime.now(UTC)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .timestamp()
+        datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         * 1000
     )
     res_today = await session.execute(
@@ -241,16 +233,12 @@ async def run_smoke_validation(
     if mode in ("fast", "ext"):
         for tf in ["1m", "5m"]:
             res_tf = await session.execute(
-                text(
-                    "SELECT MAX(timestamp) FROM swap_ohlcv_p WHERE timeframe = :tf"
-                ),
+                text("SELECT MAX(timestamp) FROM swap_ohlcv_p WHERE timeframe = :tf"),
                 {"tf": tf},
             )
             max_tf_ts = res_tf.scalar()
             if max_tf_ts:
-                tf_lags[tf] = (
-                    datetime.now(UTC).timestamp() * 1000 - max_tf_ts
-                ) / 1000
+                tf_lags[tf] = (datetime.now(UTC).timestamp() * 1000 - max_tf_ts) / 1000
 
     fr_pct: float | None = None
     oi_pct: float | None = None

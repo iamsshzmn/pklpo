@@ -39,7 +39,7 @@ async def main():
   python -m src.scoring_engine.processor_cli --symbol BTC-USDT-SWAP
 
   # Обработать символ с конкретным таймфреймом
-  python -m src.scoring_engine.processor_cli --symbol BTC-USDT-SWAP --timeframe 1m
+  python -m src.scoring_engine.processor_cli --symbol BTC-USDT-SWAP --timeframe 5m
 
   # Показать статистику
   python -m src.scoring_engine.processor_cli --stats

@@ -65,7 +65,9 @@ def _is_db_outage_error(error: BaseException) -> bool:
     transient_errnos = {111, -2, 11001}
 
     for current in _iter_exception_chain(error):
-        if isinstance(current, (ConnectionError, ConnectionRefusedError, socket.gaierror)):
+        if isinstance(
+            current, (ConnectionError, ConnectionRefusedError, socket.gaierror)
+        ):
             return True
         if isinstance(current, (sa_exc.OperationalError, sa_exc.InterfaceError)):
             return True
@@ -102,8 +104,20 @@ class _AdditionalDataLoader:
     def __init__(self, market_data: MarketDataPort) -> None:
         self._market_data = market_data
         self._stats: dict[str, dict[str, float]] = {
-            "funding": {"ok": 0, "retries": 0, "rate_limit": 0, "timeout": 0, "errors": 0},
-            "open_interest": {"ok": 0, "retries": 0, "rate_limit": 0, "timeout": 0, "errors": 0},
+            "funding": {
+                "ok": 0,
+                "retries": 0,
+                "rate_limit": 0,
+                "timeout": 0,
+                "errors": 0,
+            },
+            "open_interest": {
+                "ok": 0,
+                "retries": 0,
+                "rate_limit": 0,
+                "timeout": 0,
+                "errors": 0,
+            },
         }
 
     async def fetch_for_symbol(self, symbol: str) -> dict[str, Any]:
@@ -119,7 +133,9 @@ class _AdditionalDataLoader:
             if failure_kind is MarketDataFailureKind.RATE_LIMIT:
                 self._stats["funding"]["rate_limit"] += 1
                 self._stats["funding"]["retries"] += 1
-                logger.warning("Funding rate fetch rate-limited for %s: %s", symbol, exc)
+                logger.warning(
+                    "Funding rate fetch rate-limited for %s: %s", symbol, exc
+                )
             elif failure_kind is MarketDataFailureKind.TIMEOUT:
                 self._stats["funding"]["timeout"] += 1
                 logger.warning("Funding rate fetch timed out for %s: %s", symbol, exc)
@@ -137,7 +153,9 @@ class _AdditionalDataLoader:
             if failure_kind is MarketDataFailureKind.RATE_LIMIT:
                 self._stats["open_interest"]["rate_limit"] += 1
                 self._stats["open_interest"]["retries"] += 1
-                logger.warning("Open interest fetch rate-limited for %s: %s", symbol, exc)
+                logger.warning(
+                    "Open interest fetch rate-limited for %s: %s", symbol, exc
+                )
             elif failure_kind is MarketDataFailureKind.TIMEOUT:
                 self._stats["open_interest"]["timeout"] += 1
                 logger.warning("Open interest fetch timed out for %s: %s", symbol, exc)
@@ -195,9 +213,7 @@ class _SyncStats:
             "latency_avg_ms": round(lats.mean() * 1000, 3),
             "latency_p95_ms": round(lats.percentile(95) * 1000, 3),
             "batch_size_avg": round(batches.mean(), 2),
-            "batch_size_max": (
-                max(batches._samples) if batches._samples else 0
-            ),
+            "batch_size_max": (max(batches._samples) if batches._samples else 0),
         }
 
 
@@ -299,14 +315,15 @@ class RunCandleSyncUseCase:
                 break
             except Exception as exc:
                 failure_kind = classify_market_data_failure(exc)
-                if (
-                    not self._retry_policy.is_retriable_failure(failure_kind)
-                    or not self._retry_policy.can_retry(attempts)
-                ):
+                if not self._retry_policy.is_retriable_failure(
+                    failure_kind
+                ) or not self._retry_policy.can_retry(attempts):
                     raise
                 attempts += 1
                 await stats.record_fetch_retry(
-                    rate_limited=self._retry_policy.is_rate_limited_failure(failure_kind),
+                    rate_limited=self._retry_policy.is_rate_limited_failure(
+                        failure_kind
+                    ),
                     timed_out=failure_kind is MarketDataFailureKind.TIMEOUT,
                 )
                 if self._telemetry is not None:
@@ -400,7 +417,11 @@ class RunCandleSyncUseCase:
                     else:
                         raise
                 total += count
-                if latest_stored_ts is not None and last_ts is not None and int(last_ts) <= latest_stored_ts:
+                if (
+                    latest_stored_ts is not None
+                    and last_ts is not None
+                    and int(last_ts) <= latest_stored_ts
+                ):
                     break
                 if count < self._retry_policy.request_limit() or not last_ts:
                     break
@@ -482,13 +503,19 @@ class RunCandleSyncUseCase:
                             )
                     except Exception as exc:
                         errors_count += 1
-                        if isinstance(exc, DatabaseUnavailableError) or _is_db_outage_error(exc):
+                        if isinstance(
+                            exc, DatabaseUnavailableError
+                        ) or _is_db_outage_error(exc):
                             abort_requested.set()
                             logger.exception(
                                 "Database unavailable during swap sync; aborting remaining symbols"
                             )
-                            raise DatabaseUnavailableError("database_unavailable") from exc
-                        logger.exception("Failed to sync symbol %s", symbol, exc_info=exc)
+                            raise DatabaseUnavailableError(
+                                "database_unavailable"
+                            ) from exc
+                        logger.exception(
+                            "Failed to sync symbol %s", symbol, exc_info=exc
+                        )
                         results_by_symbol[symbol] = {}
 
             try:

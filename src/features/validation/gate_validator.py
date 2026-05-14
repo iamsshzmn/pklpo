@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.features.domain.strategy import max_lookback
 from src.logging import get_features_logger
 
 logger = get_features_logger("features.gate_validation")
@@ -108,6 +109,12 @@ class GateValidator:
                     f"Missing critical features: {missing_critical}"
                 )
 
+            # Gate 2b: Indicator lookback requirements.
+            lookback_errors = self._validate_indicator_lookbacks(df)
+            if lookback_errors:
+                result["valid"] = False
+                result["errors"].extend(lookback_errors)
+
             # Gate 3: Feature group quality checks
             for group_name, features in feature_groups.items():
                 group_result = self._validate_feature_group(df, group_name, features)
@@ -145,6 +152,35 @@ class GateValidator:
             result["valid"] = False
             result["errors"].append(f"Validation error: {e!s}")
             return False, result
+
+    def _validate_indicator_lookbacks(self, df: pd.DataFrame) -> list[str]:
+        """Reject calculated indicators when the source window is too short."""
+        exclude_cols = {
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "ts",
+            "timestamp",
+            "data_status",
+            "failed_groups",
+            "calculated_at",
+            "run_id",
+            "algo_version",
+            "params_hash",
+        }
+        errors: list[str] = []
+        row_count = len(df)
+        for col in df.columns:
+            if col in exclude_cols:
+                continue
+            required = max_lookback(str(col))
+            if required > row_count:
+                errors.append(
+                    f"{col} requires at least {required} OHLCV rows; got {row_count}"
+                )
+        return errors
 
     def _validate_feature_group(
         self, df: pd.DataFrame, group_name: str, features: list[str]

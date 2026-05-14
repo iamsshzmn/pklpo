@@ -61,7 +61,9 @@ class CandleStorePort(Protocol):
         self, *, symbol: str, timeframe: str
     ) -> int | None: ...
 
-    async def get_fill_stats(self, start_timestamp_ms: int) -> dict[str, int | float]: ...
+    async def get_fill_stats(
+        self, start_timestamp_ms: int
+    ) -> dict[str, int | float]: ...
 
 
 class SyncStatePort(Protocol):

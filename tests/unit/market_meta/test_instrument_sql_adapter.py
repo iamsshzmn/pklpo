@@ -16,7 +16,10 @@ async def test_find_missing_symbols_returns_symbols_not_in_db() -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("src.market_meta.infrastructure.sql_adapter.get_db_session", return_value=mock_ctx):
+    with patch(
+        "src.market_meta.infrastructure.sql_adapter.get_db_session",
+        return_value=mock_ctx,
+    ):
         repo = InstrumentSqlRepository()
         missing = await repo.find_missing_symbols(
             ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
@@ -36,7 +39,10 @@ async def test_find_missing_symbols_returns_empty_when_all_present() -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("src.market_meta.infrastructure.sql_adapter.get_db_session", return_value=mock_ctx):
+    with patch(
+        "src.market_meta.infrastructure.sql_adapter.get_db_session",
+        return_value=mock_ctx,
+    ):
         repo = InstrumentSqlRepository()
         missing = await repo.find_missing_symbols(["BTC-USDT-SWAP"])
 
@@ -54,7 +60,10 @@ async def test_find_missing_symbols_returns_all_when_db_empty() -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_session)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("src.market_meta.infrastructure.sql_adapter.get_db_session", return_value=mock_ctx):
+    with patch(
+        "src.market_meta.infrastructure.sql_adapter.get_db_session",
+        return_value=mock_ctx,
+    ):
         repo = InstrumentSqlRepository()
         missing = await repo.find_missing_symbols(["BTC-USDT-SWAP", "ETH-USDT-SWAP"])
 

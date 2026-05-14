@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import text
 
@@ -93,7 +93,9 @@ class SyncStateManager:
             is_reprocess: Если True, watermark не обновляется (защита курсора).
         """
         if is_reprocess:
-            print(f"[REPROCESS] Watermark не обновляется для {pipeline}/{symbol}/{data_type}")
+            print(
+                f"[REPROCESS] Watermark не обновляется для {pipeline}/{symbol}/{data_type}"
+            )
             return
 
         if dry_run:
@@ -165,7 +167,7 @@ class SyncStateManager:
 
         return start_ts, end_ts
 
-    def get_all_states(self, pipeline: Pipeline | None = None) -> list[dict]:
+    def get_all_states(self, pipeline: Pipeline | None = None) -> list[dict[str, Any]]:
         """Получает все записи sync_state.
 
         Args:

@@ -283,7 +283,8 @@ class MarketSelectionMetrics:
             "current_universe_size": self._gauges.get("universe_size", 0),
             "last_execution_time": self._gauges.get("last_execution_time", 0),
             "avg_execution_time": (
-                sum(self._histograms["execution_time"]) / len(self._histograms["execution_time"])
+                sum(self._histograms["execution_time"])
+                / len(self._histograms["execution_time"])
                 if self._histograms["execution_time"]
                 else 0.0
             ),

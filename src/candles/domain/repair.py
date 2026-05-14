@@ -68,7 +68,7 @@ def is_blocked_repair_outcome(
 
 @dataclass(frozen=True)
 class NoProgressPolicy:
-    critical_timeframes: frozenset[str] = frozenset({"1m", "1H"})
+    critical_timeframes: frozenset[str] = frozenset({"1H"})
     no_progress_threshold: int = 3
 
     def is_critical(self, timeframe: str) -> bool:

@@ -104,5 +104,7 @@ class OKXClient:
         assert self._session is not None
         async with self._session.request(method, path, params=params) as resp:
             payload = await resp.json()
-            logger.debug("OKX response %s %s: code=%s", method, path, payload.get("code"))
+            logger.debug(
+                "OKX response %s %s: code=%s", method, path, payload.get("code")
+            )
             return payload

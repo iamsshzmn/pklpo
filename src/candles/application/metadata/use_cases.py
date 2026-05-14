@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from ..api import market_meta_api
 from .dto import (
@@ -67,4 +67,4 @@ def validate_instrument_order(
 
 
 def get_market_instrument_info(symbol: str) -> dict[str, Any] | None:
-    return market_meta_api.get_instrument_info(symbol)
+    return cast("dict[str, Any] | None", market_meta_api.get_instrument_info(symbol))

@@ -205,7 +205,9 @@ class SnapshotManager:
             "module_version": metadata.module_version,
             "config": json.loads(metadata.config),
             "symbols": json.loads(metadata.symbols) if metadata.symbols else [],
-            "timeframes": json.loads(metadata.timeframes) if metadata.timeframes else [],
+            "timeframes": (
+                json.loads(metadata.timeframes) if metadata.timeframes else []
+            ),
             "status": metadata.status,
             "rows_calculated": metadata.rows_calculated,
             "execution_duration_seconds": (

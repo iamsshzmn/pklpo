@@ -285,7 +285,9 @@ def _normalize_to_df(
 
     # Hard length check after reindex
     if len(out) != len(df):
-        raise FeatureCalcError(f"result length != input length: {len(out)} != {len(df)}")
+        raise FeatureCalcError(
+            f"result length != input length: {len(out)} != {len(df)}"
+        )
 
     # Numeric types only (do not downcast bool)
     num = out.select_dtypes(include=["number"]).columns.difference(

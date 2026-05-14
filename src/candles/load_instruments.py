@@ -86,12 +86,8 @@ async def save_instruments_to_db(instruments: list, inst_type: str) -> tuple[int
                     ),
                     settle_ccy=item.get("settleCcy"),
                     ct_type=item.get("ctType"),
-                    min_sz=(
-                        float(item.get("minSz", 0)) if item.get("minSz") else None
-                    ),
-                    max_sz=(
-                        float(item.get("maxSz", 0)) if item.get("maxSz") else None
-                    ),
+                    min_sz=(float(item.get("minSz", 0)) if item.get("minSz") else None),
+                    max_sz=(float(item.get("maxSz", 0)) if item.get("maxSz") else None),
                     min_notional=(
                         float(item.get("minNotional", 0))
                         if item.get("minNotional")
@@ -182,7 +178,9 @@ async def load_instruments() -> None:
                     instruments = await client.get_instruments(inst_type)
 
                     if instruments:
-                        logger.info("Fetched %s %s instruments", len(instruments), inst_type)
+                        logger.info(
+                            "Fetched %s %s instruments", len(instruments), inst_type
+                        )
 
                         new_count, updated_count = await save_instruments_to_db(
                             instruments, inst_type
@@ -224,9 +222,7 @@ async def load_instruments() -> None:
 
 def register(subparsers):
     """Register CLI command."""
-    p = subparsers.add_parser(
-        "load-instruments", help="Load instruments from OKX API"
-    )
+    p = subparsers.add_parser("load-instruments", help="Load instruments from OKX API")
     p.add_argument(
         "--force", action="store_true", help="Force refresh of all instruments"
     )

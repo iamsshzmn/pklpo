@@ -64,7 +64,6 @@ async def check_unique_index():
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_indicators_unique
                     ON {IndicatorStorageContract.table_name} (symbol, timeframe, timestamp)
                 """
-
             )
             await session.execute(create_index_sql)
             await session.commit()
@@ -186,7 +185,6 @@ async def test_upsert():
                     ON CONFLICT (symbol, timeframe, timestamp)
                 DO UPDATE SET rsi_14 = EXCLUDED.rsi_14, calculated_at = EXCLUDED.calculated_at
             """
-
             )
 
             await session.execute(test_insert)

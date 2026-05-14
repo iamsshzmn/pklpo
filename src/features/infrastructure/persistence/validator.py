@@ -50,7 +50,9 @@ def validate_timestamp(timestamp_ms: Any, row_idx: Any) -> bool:
         return False
 
     if timestamp_ms < 1000000000000:
-        logger.warning("Row %s: Suspicious timestamp %s, skipping", row_idx, timestamp_ms)
+        logger.warning(
+            "Row %s: Suspicious timestamp %s, skipping", row_idx, timestamp_ms
+        )
         return False
 
     return True

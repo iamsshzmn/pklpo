@@ -158,12 +158,14 @@ async def check_tables_exist(session: AsyncSession) -> dict[str, bool]:
 
     result = {}
     for table in tables:
-        query = text("""
+        query = text(
+            """
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
                 WHERE table_name = :table_name
             )
-        """)
+        """
+        )
         row = await session.execute(query, {"table_name": table})
         result[table] = bool(row.scalar())
 

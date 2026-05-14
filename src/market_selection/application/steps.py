@@ -83,7 +83,9 @@ class PipelineStepExecutor:
         tf_data: dict[str, pd.DataFrame] = {}
         atr_percentiles: dict[str, float] = {}
         for tf in self.config.regime_tfs:
-            tf_data[tf] = await self.db.fetch_regime_metrics(tf, ts_eval, basket_symbols)
+            tf_data[tf] = await self.db.fetch_regime_metrics(
+                tf, ts_eval, basket_symbols
+            )
             atr_percentiles[tf] = await self.db.fetch_atr_percentile(
                 tf,
                 ts_eval,
@@ -130,7 +132,9 @@ class PipelineStepExecutor:
 
         results = []
         for _, row in quality_df.iterrows():
-            data_lag_seconds = int((ts_eval - row["max_ts"]) / 1000) if row["max_ts"] else 999999
+            data_lag_seconds = (
+                int((ts_eval - row["max_ts"]) / 1000) if row["max_ts"] else 999999
+            )
             results.append(
                 self.quality_gate.evaluate(
                     symbol=row["symbol"],
@@ -331,7 +335,9 @@ class PipelineStepExecutor:
         max_lag_seconds = 0
         for tf in self.config.regime_tfs:
             lag_seconds = await self.db.check_regime_tf_lag(tf, ts_eval)
-            threshold_seconds = self.config.regime.regime_lag_max_minutes.get(tf, 1440) * 60
+            threshold_seconds = (
+                self.config.regime.regime_lag_max_minutes.get(tf, 1440) * 60
+            )
             if lag_seconds > threshold_seconds:
                 stale_tfs.append(tf)
                 max_lag_seconds = max(max_lag_seconds, lag_seconds)

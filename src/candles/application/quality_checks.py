@@ -66,7 +66,10 @@ async def check_freshness(
                 timeframe="1m",
                 value=round(lag_min, 2) if lag_min else None,
                 meta={
-                    "thresholds": {"warn": thresholds.warn, "critical": thresholds.critical},
+                    "thresholds": {
+                        "warn": thresholds.warn,
+                        "critical": thresholds.critical,
+                    },
                 },
             )
         )
@@ -169,7 +172,10 @@ async def check_coverage_1m(
                     "ohlcv_minutes": row["ohlcv_minutes"],
                     "ext_minutes": row["ext_minutes"],
                     "window_minutes": window_minutes,
-                    "thresholds": {"warn": thresholds.warn, "critical": thresholds.critical},
+                    "thresholds": {
+                        "warn": thresholds.warn,
+                        "critical": thresholds.critical,
+                    },
                 },
             )
         )
@@ -370,7 +376,10 @@ async def check_duplicates_1m(
                     "duplicate_rows": int(row["duplicate_rows"] or 0),
                     "total_bars": int(row["total_bars"] or 0),
                     "window_minutes": window_minutes,
-                    "thresholds": {"warn": thresholds.warn, "critical": thresholds.critical},
+                    "thresholds": {
+                        "warn": thresholds.warn,
+                        "critical": thresholds.critical,
+                    },
                 },
             )
         )

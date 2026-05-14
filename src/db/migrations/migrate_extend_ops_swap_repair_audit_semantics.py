@@ -9,7 +9,6 @@ from sqlalchemy import text
 
 from src.utils.session_utils import get_db_session
 
-
 _ALTER_STATEMENTS: tuple[str, ...] = (
     "ALTER TABLE ops.swap_repair_audit ADD COLUMN IF NOT EXISTS outcome TEXT NULL;",
     "ALTER TABLE ops.swap_repair_audit ADD COLUMN IF NOT EXISTS received_bars INTEGER NULL;",

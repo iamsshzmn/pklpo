@@ -64,45 +64,50 @@ class MarketSelectionPersistence:
             quality = quality_results.get(score.symbol)
             raw = metrics_raw.get(score.symbol, {})
 
-            values.append({
-                "symbol": score.symbol,
-                "timeframe": timeframe,
-                "ts_eval": ts_eval,
-                # Raw metrics
-                "vol_raw": raw.get("vol_raw"),
-                "trend_q_raw": raw.get("trend_q_raw"),
-                "noise_raw": raw.get("noise_raw"),
-                "stability_raw": raw.get("stability_raw"),
-                "liq_raw": raw.get("liq_raw"),
-                # Normalized scores
-                "vol_score": score.vol_score,
-                "trend_q_score": score.trend_q_score,
-                "noise_score": score.noise_score,
-                "stability_score": score.stability_score,
-                "liq_score": score.liq_score,
-                # Aggregated
-                "score_tf_base": score.score_tf_base,
-                "score_tf": score.score_tf,
-                # Quality
-                "quality_score": quality.quality_score if quality else 1.0,
-                "fill_rate": quality.fill_rate if quality else 1.0,
-                "gap_rate": quality.gap_rate if quality else 0.0,
-                "data_lag_seconds": quality.data_lag_seconds if quality else 0,
-                "valid_bars": quality.valid_bars if quality else 0,
-                "expected_bars": quality.expected_bars if quality else 0,
-                "eligible": quality.eligible if quality else True,
-                # Regime
-                "global_regime": regime.regime.value,
-                "global_strength": regime.strength,
-                "regime_confidence": regime.confidence,
-                # Metadata
-                "reason_flags": [f.value for f in (quality.reason_flags if quality else [])],
-                "window_days": window_days,
-                "config_hash": config_hash,
-            })
+            values.append(
+                {
+                    "symbol": score.symbol,
+                    "timeframe": timeframe,
+                    "ts_eval": ts_eval,
+                    # Raw metrics
+                    "vol_raw": raw.get("vol_raw"),
+                    "trend_q_raw": raw.get("trend_q_raw"),
+                    "noise_raw": raw.get("noise_raw"),
+                    "stability_raw": raw.get("stability_raw"),
+                    "liq_raw": raw.get("liq_raw"),
+                    # Normalized scores
+                    "vol_score": score.vol_score,
+                    "trend_q_score": score.trend_q_score,
+                    "noise_score": score.noise_score,
+                    "stability_score": score.stability_score,
+                    "liq_score": score.liq_score,
+                    # Aggregated
+                    "score_tf_base": score.score_tf_base,
+                    "score_tf": score.score_tf,
+                    # Quality
+                    "quality_score": quality.quality_score if quality else 1.0,
+                    "fill_rate": quality.fill_rate if quality else 1.0,
+                    "gap_rate": quality.gap_rate if quality else 0.0,
+                    "data_lag_seconds": quality.data_lag_seconds if quality else 0,
+                    "valid_bars": quality.valid_bars if quality else 0,
+                    "expected_bars": quality.expected_bars if quality else 0,
+                    "eligible": quality.eligible if quality else True,
+                    # Regime
+                    "global_regime": regime.regime.value,
+                    "global_strength": regime.strength,
+                    "regime_confidence": regime.confidence,
+                    # Metadata
+                    "reason_flags": [
+                        f.value for f in (quality.reason_flags if quality else [])
+                    ],
+                    "window_days": window_days,
+                    "config_hash": config_hash,
+                }
+            )
 
         # Build UPSERT query
-        query = text("""
+        query = text(
+            """
             INSERT INTO market_scores_tf (
                 symbol, timeframe, ts_eval,
                 vol_raw, trend_q_raw, noise_raw, stability_raw, liq_raw,
@@ -150,7 +155,8 @@ class MarketSelectionPersistence:
                 window_days = EXCLUDED.window_days,
                 config_hash = EXCLUDED.config_hash,
                 created_at = NOW()
-        """)
+        """
+        )
 
         for val in values:
             await self.session.execute(query, val)
@@ -167,7 +173,8 @@ class MarketSelectionPersistence:
 
         Status should be 'building' initially.
         """
-        query = text("""
+        query = text(
+            """
             INSERT INTO market_universe_versions (
                 ts_version, ts_eval, status, universe_size, eligible_count,
                 eligible_5m, eligible_15m, eligible_1h, eligible_4h,
@@ -200,10 +207,13 @@ class MarketSelectionPersistence:
                 fallback_reason = EXCLUDED.fallback_reason,
                 execution_time_seconds = EXCLUDED.execution_time_seconds,
                 notes = EXCLUDED.notes
-        """)
+        """
+        )
 
         await self.session.execute(query, version.to_dict())
-        logger.info(f"Inserted universe version {version.ts_version} with status {version.status.value}")
+        logger.info(
+            f"Inserted universe version {version.ts_version} with status {version.status.value}"
+        )
 
     async def insert_universe_entries(
         self,
@@ -219,7 +229,8 @@ class MarketSelectionPersistence:
         if not entries:
             return 0
 
-        query = text("""
+        query = text(
+            """
             INSERT INTO market_universe (
                 ts_version, symbol, final_score, rank,
                 score_4h, score_1h, score_15m, score_5m,
@@ -253,7 +264,8 @@ class MarketSelectionPersistence:
                 global_strength_at_time = EXCLUDED.global_strength_at_time,
                 reason_flags = EXCLUDED.reason_flags,
                 penalty_applied = EXCLUDED.penalty_applied
-        """)
+        """
+        )
 
         for entry in entries:
             data = entry.to_dict()
@@ -261,7 +273,9 @@ class MarketSelectionPersistence:
             data["config_hash"] = config_hash
             await self.session.execute(query, data)
 
-        logger.info(f"Inserted {len(entries)} universe entries for version {ts_version}")
+        logger.info(
+            f"Inserted {len(entries)} universe entries for version {ts_version}"
+        )
         return len(entries)
 
     async def update_version_status(
@@ -271,11 +285,13 @@ class MarketSelectionPersistence:
         notes: str | None = None,
     ) -> None:
         """Update status of a universe version."""
-        query = text("""
+        query = text(
+            """
             UPDATE market_universe_versions
             SET status = :status, notes = COALESCE(:notes, notes)
             WHERE ts_version = :ts_version
-        """)
+        """
+        )
 
         await self.session.execute(
             query,
@@ -317,7 +333,8 @@ class MarketSelectionPersistence:
         - inserted_count: rows inserted in destination snapshot
         - skipped_conflicts: deduped source rows that conflicted on target PK
         """
-        query = text("""
+        query = text(
+            """
             WITH source_rows AS (
                 SELECT
                     symbol, final_score, rank,
@@ -378,7 +395,8 @@ class MarketSelectionPersistence:
                     - (SELECT COUNT(*)::int FROM inserted)
                 )::int AS skipped_conflicts
             FROM source_stats
-        """)
+        """
+        )
 
         result = await self.session.execute(
             query,
@@ -437,7 +455,10 @@ class MarketSelectionPersistence:
             )
         except Exception as exc:
             message = str(exc).lower()
-            if "lock timeout" in message or "canceling statement due to lock timeout" in message:
+            if (
+                "lock timeout" in message
+                or "canceling statement due to lock timeout" in message
+            ):
                 raise LockTimeoutError(
                     f"Advisory lock timeout for ts_version={ts_version} after {lock_timeout_ms}ms"
                 ) from exc
@@ -458,7 +479,8 @@ class MarketSelectionPersistence:
         config_hash: str,
     ) -> None:
         """Insert regime history record."""
-        query = text("""
+        query = text(
+            """
             INSERT INTO market_regime_history (
                 ts_eval, global_regime, global_strength, regime_confidence,
                 regime_1d, regime_1d_strength,
@@ -492,7 +514,8 @@ class MarketSelectionPersistence:
                 basket_atr_close_median = EXCLUDED.basket_atr_close_median,
                 basket_ema_slope_median = EXCLUDED.basket_ema_slope_median,
                 is_stale = EXCLUDED.is_stale
-        """)
+        """
+        )
 
         data = regime.to_dict()
         data["ts_eval"] = ts_eval
@@ -513,32 +536,44 @@ class MarketSelectionPersistence:
         Returns (scores_deleted, universe_deleted)
         """
         # Cleanup old scores
-        scores_query = text("""
+        scores_query = text(
+            """
             DELETE FROM market_scores_tf
             WHERE created_at < NOW() - INTERVAL ':days days'
-        """.replace(":days", str(scores_retention_days)))
+        """.replace(
+                ":days", str(scores_retention_days)
+            )
+        )
 
         scores_result = await self.session.execute(scores_query)
         scores_deleted = scores_result.rowcount
 
         # Cleanup old universe entries and versions
-        universe_query = text("""
+        universe_query = text(
+            """
             WITH old_versions AS (
                 SELECT ts_version FROM market_universe_versions
                 WHERE created_at < NOW() - INTERVAL ':days days'
             )
             DELETE FROM market_universe
             WHERE ts_version IN (SELECT ts_version FROM old_versions)
-        """.replace(":days", str(universe_retention_days)))
+        """.replace(
+                ":days", str(universe_retention_days)
+            )
+        )
 
         universe_result = await self.session.execute(universe_query)
         universe_deleted = universe_result.rowcount
 
         # Cleanup version records
-        version_query = text("""
+        version_query = text(
+            """
             DELETE FROM market_universe_versions
             WHERE created_at < NOW() - INTERVAL ':days days'
-        """.replace(":days", str(universe_retention_days)))
+        """.replace(
+                ":days", str(universe_retention_days)
+            )
+        )
 
         await self.session.execute(version_query)
 

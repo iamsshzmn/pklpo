@@ -220,7 +220,7 @@ class SettingsValidator:
     @classmethod
     def validate_settings(cls, settings: dict[str, Any]) -> list[ValidationError]:
         """Валидация всех настроек"""
-        errors = []
+        errors: list[ValidationError] = []
 
         # Валидация обязательных полей
         validators = {
@@ -240,7 +240,7 @@ class SettingsValidator:
         for field, validator in validators.items():
             if field in settings:
                 is_valid, error = validator(settings[field])
-                if not is_valid:
+                if not is_valid and error is not None:
                     errors.append(error)
 
         return errors

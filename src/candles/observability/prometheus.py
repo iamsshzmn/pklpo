@@ -260,8 +260,12 @@ def push_swap_sync_metrics(stats: dict[str, Any]) -> bool:
         timeout_gauge.labels(mode).set(float(stats.get("api_timeout_count", 0)))
 
         db_write = stats.get("db_write", {}) or {}
-        db_latency_avg_gauge.labels(mode).set(float(db_write.get("latency_avg_ms", 0.0)))
-        db_latency_p95_gauge.labels(mode).set(float(db_write.get("latency_p95_ms", 0.0)))
+        db_latency_avg_gauge.labels(mode).set(
+            float(db_write.get("latency_avg_ms", 0.0))
+        )
+        db_latency_p95_gauge.labels(mode).set(
+            float(db_write.get("latency_p95_ms", 0.0))
+        )
         db_batch_avg_gauge.labels(mode).set(float(db_write.get("batch_size_avg", 0.0)))
         db_batch_max_gauge.labels(mode).set(float(db_write.get("batch_size_max", 0.0)))
 
@@ -441,6 +445,42 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
             [*label_names, "blocked_cause"],
             registry=registry,
         )
+        last200_pairs_checked_total = Counter(
+            "pklpo_last200_pairs_checked_total",
+            "Pairs checked by the last-200 closed-bars guard",
+            ["timeframe"],
+            registry=registry,
+        )
+        last200_pairs_ok_total = Counter(
+            "pklpo_last200_pairs_ok_total",
+            "Pairs that ended ok in the last-200 closed-bars guard",
+            ["timeframe"],
+            registry=registry,
+        )
+        last200_missing_bars_total = Counter(
+            "pklpo_last200_missing_bars_total",
+            "Bars requiring repair attention in the last-200 guard before final verification",
+            ["timeframe"],
+            registry=registry,
+        )
+        last200_corrupted_bars_total = Counter(
+            "pklpo_last200_corrupted_bars_total",
+            "Corrupted bars detected by the last-200 guard",
+            ["timeframe"],
+            registry=registry,
+        )
+        last200_remaining_after_total = Counter(
+            "pklpo_last200_remaining_after_total",
+            "Bars still unresolved after the last-200 guard run",
+            ["timeframe", "status"],
+            registry=registry,
+        )
+        last200_indicator_recalc_enqueued_total = Counter(
+            "pklpo_last200_indicator_recalc_enqueued_total",
+            "Feature recalculation ranges enqueued by the last-200 guard",
+            ["timeframe"],
+            registry=registry,
+        )
 
         for payload in normalized:
             labels = (
@@ -449,9 +489,13 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
                 str(payload.get("mode", "")),
                 str(payload.get("strategy", "")),
             )
-            rows_written_gauge.labels(*labels).set(float(payload.get("rows_written", 0)))
+            rows_written_gauge.labels(*labels).set(
+                float(payload.get("rows_written", 0))
+            )
             gap_tasks_gauge.labels(*labels).set(float(payload.get("gap_tasks", 0)))
-            requested_bars_gauge.labels(*labels).set(float(payload.get("requested_bars", 0)))
+            requested_bars_gauge.labels(*labels).set(
+                float(payload.get("requested_bars", 0))
+            )
             remaining_gap_tasks_gauge.labels(*labels).set(
                 float(payload.get("remaining_gap_tasks", 0))
             )
@@ -462,9 +506,13 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
             auto_apply_incomplete_gauge.labels(*labels).set(
                 1.0 if payload.get("auto_apply_incomplete") else 0.0
             )
-            received_bars_gauge.labels(*labels).set(float(payload.get("received_bars", 0)))
+            received_bars_gauge.labels(*labels).set(
+                float(payload.get("received_bars", 0))
+            )
             progress_gauge.labels(*labels).set(float(payload.get("progress", 0)))
-            api_fill_ratio_gauge.labels(*labels).set(float(payload.get("api_fill_ratio", 0.0)))
+            api_fill_ratio_gauge.labels(*labels).set(
+                float(payload.get("api_fill_ratio", 0.0))
+            )
             write_success_ratio_gauge.labels(*labels).set(
                 float(payload.get("write_success_ratio", 0.0))
             )
@@ -485,6 +533,25 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
             outcome_value = payload.get("outcome")
             if outcome_value is not None:
                 outcome_total_gauge.labels(*labels, str(outcome_value)).inc()
+            if str(payload.get("strategy", "")) == "last_n_closed_bars":
+                timeframe = str(payload.get("timeframe", ""))
+                status = str(payload.get("status", "unknown"))
+                unresolved = list(payload.get("unresolved_timestamps", []))
+                missing_before = int(payload.get("repaired_count", 0)) + len(unresolved)
+                last200_pairs_checked_total.labels(timeframe).inc()
+                if status == "ok":
+                    last200_pairs_ok_total.labels(timeframe).inc()
+                if missing_before > 0:
+                    last200_missing_bars_total.labels(timeframe).inc(missing_before)
+                corrupted = int(payload.get("corrupted_count", 0))
+                if corrupted > 0:
+                    last200_corrupted_bars_total.labels(timeframe).inc(corrupted)
+                if unresolved:
+                    last200_remaining_after_total.labels(timeframe, status).inc(
+                        len(unresolved)
+                    )
+                if status == "ok" and payload.get("affected_recalc_range") is not None:
+                    last200_indicator_recalc_enqueued_total.labels(timeframe).inc()
 
         pushed = _push_registry(registry, job_name="swap_repair_v1")
         if pushed:

@@ -74,7 +74,9 @@ class RunContext:
         )
 
     @classmethod
-    def from_run_id(cls, run_id: str, params: dict[str, Any] | None = None) -> RunContext:
+    def from_run_id(
+        cls, run_id: str, params: dict[str, Any] | None = None
+    ) -> RunContext:
         """
         Восстанавливает RunContext из существующего run_id (для replay/debug).
 

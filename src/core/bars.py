@@ -62,9 +62,7 @@ class BarsConfig:
                 f"contract_val должен быть > 0, получен {self.contract_val}"
             )
         if self.min_trades < 1:
-            raise ValueError(
-                f"min_trades должен быть >= 1, получен {self.min_trades}"
-            )
+            raise ValueError(f"min_trades должен быть >= 1, получен {self.min_trades}")
         if self.volume_unit == "contracts" and self.contract_val == 1.0:
             warnings.warn(
                 "volume_unit='contracts' с contract_val=1.0 может быть неточным. "

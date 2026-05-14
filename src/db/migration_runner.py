@@ -21,7 +21,9 @@ def _is_missing_migration_logs_error(exc: Exception) -> bool:
 
 async def _drop_broken_migration_logging_trigger(session) -> None:
     await session.execute(
-        text("DROP TRIGGER IF EXISTS trigger_log_migration_changes ON schema_migrations")
+        text(
+            "DROP TRIGGER IF EXISTS trigger_log_migration_changes ON schema_migrations"
+        )
     )
     await session.commit()
 
@@ -186,13 +188,14 @@ async def _is_effectively_applied(migration_id: str) -> bool:
         "240_combination_features": lambda: _table_exists("combination_features"),
         "250_market_data_ext": lambda: _table_exists("market_data_ext"),
         "260_market_selection": lambda: _table_exists("market_scores_tf"),
-        "270_swap_ohlcv_partitioned": lambda: _partitioned_table_exists(
-            "swap_ohlcv_p"
-        ),
+        "270_swap_ohlcv_partitioned": lambda: _partitioned_table_exists("swap_ohlcv_p"),
         "320_instruments_metadata_refreshed_at_ms": lambda: _column_exists(
             "instruments", "metadata_refreshed_at_ms"
         ),
         "290_swap_ohlcv_timestamptz": lambda: _swap_ohlcv_timestamp_columns_are_timestamptz(),
+        "340_swap_ohlcv_retention_policy": lambda: _table_exists(
+            "swap_ohlcv_retention_policy"
+        ),
     }
     detector = detectors.get(migration_id)
     if detector is None:
@@ -217,7 +220,9 @@ async def reconcile_applied_migrations() -> list[str]:
             continue
 
         started = time.time()
-        await _record_status(migration.id, migration.name, "applied", started, attempt=0)
+        await _record_status(
+            migration.id, migration.name, "applied", started, attempt=0
+        )
         reconciled.append(migration.id)
         logger.info(
             "reconciled migration record for %s (%s)",

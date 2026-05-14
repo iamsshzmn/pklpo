@@ -90,7 +90,9 @@ async def _create_parent_table(session) -> None:
     )
 
 
-async def _create_monthly_partitions(session, months_back: int = 2, months_forward: int = 6) -> None:
+async def _create_monthly_partitions(
+    session, months_back: int = 2, months_forward: int = 6
+) -> None:
     today = date.today()
     base = _month_start(today.year, today.month)
 

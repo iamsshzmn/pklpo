@@ -10,7 +10,7 @@ from src.candles.domain.repair import NoProgressPolicy
 def test_default_values() -> None:
     policy = NoProgressPolicy()
 
-    assert policy.critical_timeframes == frozenset({"1m", "1H"})
+    assert policy.critical_timeframes == frozenset({"1H"})
     assert policy.no_progress_threshold == 3
 
 
@@ -18,8 +18,8 @@ def test_default_instances_are_equal() -> None:
     assert NoProgressPolicy() == NoProgressPolicy()
 
 
-def test_is_critical_true_for_1m() -> None:
-    assert NoProgressPolicy().is_critical("1m") is True
+def test_is_critical_false_for_1m() -> None:
+    assert NoProgressPolicy().is_critical("1m") is False
 
 
 def test_is_critical_true_for_1h() -> None:

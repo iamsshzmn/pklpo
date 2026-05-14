@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
-"""
-CLI команда для управления очисткой данных в swap_ohlcv_p
-"""
+"""CLI command for policy-driven swap_ohlcv_p cleanup."""
 
-import asyncio
+from __future__ import annotations
+
 import logging
+from typing import Any
 
 from sqlalchemy import text
 
@@ -13,184 +12,122 @@ from src.utils.session_utils import get_db_session
 logger = logging.getLogger(__name__)
 
 
-def register(subparsers):
-    """Регистрирует команду в CLI"""
-    p = subparsers.add_parser("cleanup", help="Управление очисткой данных")
-    p.add_argument(
-        "--days",
-        type=int,
-        default=2,
-        help="Удалить данные старше N дней (по умолчанию 2)",
+def register(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "cleanup",
+        help="Run policy-driven swap_ohlcv_p cleanup",
     )
-    p.add_argument(
+    parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Показать что будет удалено без выполнения",
+        help="Show policy cutoffs and row counts without deleting data",
     )
-    p.add_argument("--stats", action="store_true", help="Показать статистику данных")
-    p.set_defaults(_handler=handle)
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="Deprecated; retention is now read from swap_ohlcv_retention_policy",
+    )
+    parser.add_argument("--stats", action="store_true", help="Show swap_ohlcv_p stats")
+    parser.set_defaults(_handler=handle)
 
 
-async def handle(args):
-    """Обработчик CLI команды"""
+async def handle(args: Any) -> None:
+    if args.days is not None:
+        logger.warning("--days is deprecated; using swap_ohlcv_retention_policy")
     if args.stats:
         await show_stats()
     elif args.dry_run:
-        await dry_run_cleanup(args.days)
+        await dry_run_cleanup()
     else:
-        await perform_cleanup(args.days)
+        await perform_cleanup()
 
 
-async def show_stats():
-    """Показывает статистику данных"""
+async def show_stats() -> None:
     async with get_db_session() as session:
-        # Общая статистика
         result = await session.execute(
             text(
                 """
-            SELECT
-                COUNT(*) as total_rows,
-                COUNT(DISTINCT symbol) as unique_symbols,
-                COUNT(DISTINCT timeframe) as unique_timeframes,
-                MIN(timestamp) as oldest_timestamp,
-                MAX(timestamp) as newest_timestamp
-            FROM swap_ohlcv_p
-        """
-            )
-        )
-        stats = result.fetchone()
-
-        print("📊 СТАТИСТИКА ТАБЛИЦЫ swap_ohlcv_p:")
-        print(f"   • Всего записей: {stats[0]:,}")
-        print(f"   • Уникальных символов: {stats[1]}")
-        print(f"   • Уникальных таймфреймов: {stats[2]}")
-
-        if stats[3] and stats[4]:
-            from datetime import datetime
-
-            oldest = datetime.fromtimestamp(stats[3])
-            newest = datetime.fromtimestamp(stats[4])
-            print(f"   • Самые старые данные: {oldest}")
-            print(f"   • Самые новые данные: {newest}")
-
-        # Статистика по дням
-        result = await session.execute(
-            text(
-                """
-            SELECT
-                DATE(to_timestamp(timestamp)) as date,
-                COUNT(*) as count
-            FROM swap_ohlcv_p
-            GROUP BY DATE(to_timestamp(timestamp))
-            ORDER BY date DESC
-            LIMIT 10
-        """
-            )
-        )
-        daily_stats = result.fetchall()
-
-        print("\n📅 ДАННЫЕ ПО ДНЯМ (последние 10):")
-        for date, count in daily_stats:
-            print(f"   • {date}: {count:,} записей")
-
-
-async def dry_run_cleanup(days: int):
-    """Показывает что будет удалено без выполнения"""
-    async with get_db_session() as session:
-        cutoff_timestamp = int(asyncio.get_event_loop().time()) - (days * 24 * 60 * 60)
-
-        # Подсчитываем записи для удаления
-        result = await session.execute(
-            text(
-                """
-            SELECT COUNT(*) as count_to_delete
-            FROM swap_ohlcv_p
-            WHERE timestamp < :cutoff_timestamp
-        """
-            ),
-            {"cutoff_timestamp": cutoff_timestamp},
-        )
-
-        count_to_delete = result.fetchone()[0]
-
-        print("🔍 DRY RUN: Что будет удалено")
-        print(f"   • Удалятся данные старше {days} дней")
-        print(f"   • Timestamp cutoff: {cutoff_timestamp}")
-        print(f"   • Записей для удаления: {count_to_delete:,}")
-
-        if count_to_delete > 0:
-            # Показываем примеры записей которые будут удалены
-            result = await session.execute(
-                text(
-                    """
-                SELECT symbol, timeframe, timestamp, to_timestamp(timestamp) as date
+                SELECT
+                    timeframe,
+                    COUNT(*) AS rows,
+                    MIN(timestamp) AS oldest_timestamp,
+                    MAX(timestamp) AS newest_timestamp
                 FROM swap_ohlcv_p
-                WHERE timestamp < :cutoff_timestamp
-                ORDER BY timestamp DESC
-                LIMIT 5
-            """
-                ),
-                {"cutoff_timestamp": cutoff_timestamp},
+                GROUP BY timeframe
+                ORDER BY timeframe
+                """
             )
+        )
+        rows = result.fetchall()
 
-            examples = result.fetchall()
-            print("\n📋 Примеры записей для удаления:")
-            for symbol, timeframe, timestamp, date in examples:
-                print(f"   • {symbol} {timeframe}: {date} (ts: {timestamp})")
+    print("swap_ohlcv_p stats")
+    for timeframe, count, oldest, newest in rows:
+        print(
+            f"  {timeframe}: rows={count:,}, oldest={oldest}, newest={newest}"
+        )
 
 
-async def perform_cleanup(days: int):
-    """Выполняет очистку данных"""
+async def dry_run_cleanup() -> None:
+    async with get_db_session() as session:
+        result = await session.execute(
+            text(
+                """
+                SELECT
+                    p.timeframe,
+                    p.retention_days,
+                    CASE
+                        WHEN p.retention_days IS NULL THEN NULL
+                        ELSE (
+                            EXTRACT(EPOCH FROM NOW() - make_interval(days => p.retention_days)) * 1000
+                        )::BIGINT
+                    END AS cutoff_timestamp,
+                    CASE
+                        WHEN p.retention_days IS NULL THEN 0
+                        ELSE (
+                            SELECT COUNT(*)
+                            FROM swap_ohlcv_p c
+                            WHERE c.timeframe = p.timeframe
+                              AND c.timestamp < (
+                                  EXTRACT(EPOCH FROM NOW() - make_interval(days => p.retention_days)) * 1000
+                              )::BIGINT
+                        )
+                    END AS count_to_delete
+                FROM swap_ohlcv_retention_policy p
+                ORDER BY p.timeframe
+                """
+            )
+        )
+        rows = result.fetchall()
+
+    print("DRY RUN: policy-driven swap_ohlcv_p cleanup")
+    for timeframe, retention_days, cutoff_timestamp, count_to_delete in rows:
+        retention = "infinite" if retention_days is None else f"{retention_days} days"
+        print(
+            f"  {timeframe}: retention={retention}, cutoff={cutoff_timestamp}, "
+            f"rows_to_delete={count_to_delete:,}"
+        )
+
+
+async def perform_cleanup() -> None:
     async with get_db_session() as session:
         try:
-            logger.info(f"🗑️ Запускаем очистку данных старше {days} дней...")
-
-            # Вызываем функцию очистки
             result = await session.execute(
-                text(
-                    """
-                SELECT * FROM manual_cleanup_swap_data(:days_old)
-            """
-                ),
-                {"days_old": days},
+                text("SELECT * FROM cleanup_old_swap_data(:triggered_by)"),
+                {"triggered_by": "cli"},
             )
-
-            cleanup_result = result.fetchone()
-
-            if cleanup_result:
-                deleted_count, cutoff_timestamp = cleanup_result
-                logger.info(f"✅ Очистка завершена: удалено {deleted_count:,} записей")
-                logger.info(f"   • Timestamp cutoff: {cutoff_timestamp}")
-            else:
-                logger.info("ℹ️ Нет данных для удаления")
-
+            rows = result.fetchall()
             await session.commit()
-
-        except Exception as e:
+        except Exception:
             await session.rollback()
-            logger.error(f"❌ Ошибка при очистке: {e}")
             raise
 
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Управление очисткой данных")
-    parser.add_argument(
-        "--days", type=int, default=2, help="Удалить данные старше N дней"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Показать что будет удалено"
-    )
-    parser.add_argument("--stats", action="store_true", help="Показать статистику")
-
-    args = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO)
-
-    if args.stats:
-        asyncio.run(show_stats())
-    elif args.dry_run:
-        asyncio.run(dry_run_cleanup(args.days))
-    else:
-        asyncio.run(perform_cleanup(args.days))
+    deleted_total = sum(int(row[2]) for row in rows)
+    print("policy-driven swap_ohlcv_p cleanup complete")
+    for row in rows:
+        timeframe, cutoff_timestamp, deleted_count, duration_ms, skipped_reason = row
+        print(
+            f"  {timeframe}: cutoff={cutoff_timestamp}, deleted={deleted_count}, "
+            f"duration_ms={duration_ms}, skipped={skipped_reason}"
+        )
+    print(f"deleted_total={deleted_total}")

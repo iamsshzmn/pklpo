@@ -381,11 +381,8 @@ class AccelerationAnalyzer:
             for i in range(len(price_changes) - 1, -1, -1):
                 change = price_changes.iloc[i]
 
-                if (
-                    (acceleration_type == AccelerationType.BULLISH
-                    and change > 0)
-                    or (acceleration_type == AccelerationType.BEARISH
-                    and change < 0)
+                if (acceleration_type == AccelerationType.BULLISH and change > 0) or (
+                    acceleration_type == AccelerationType.BEARISH and change < 0
                 ):
                     duration += 1
                 else:
@@ -422,10 +419,9 @@ class AccelerationAnalyzer:
                 current_rsi = features_data["rsi_14"].iloc[-1]
 
                 if (
-                    (acceleration_type == AccelerationType.BULLISH
-                    and current_rsi < 70)
-                    or (acceleration_type == AccelerationType.BEARISH
-                    and current_rsi > 30)
+                    acceleration_type == AccelerationType.BULLISH and current_rsi < 70
+                ) or (
+                    acceleration_type == AccelerationType.BEARISH and current_rsi > 30
                 ):
                     factors.append(0.2)
                 else:

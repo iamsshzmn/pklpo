@@ -88,6 +88,7 @@ class GroupCalculationConfig:
         }
     )
 
+
 class GroupCalculationOrchestrator:
     """
     Orchestrator for group-based feature calculation.

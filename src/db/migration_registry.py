@@ -59,9 +59,6 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_create_ops_swap_repair_audit import (
         migrate_create_ops_swap_repair_audit,
     )
-    from src.db.migrations.migrate_extend_ops_swap_repair_audit_semantics import (
-        migrate_extend_ops_swap_repair_audit_semantics,
-    )
     from src.db.migrations.migrate_create_positions import (
         run_migrations as mig_positions,
     )
@@ -79,6 +76,9 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_expand_indicators_precision import (
         migrate_expand_indicators_precision,
     )
+    from src.db.migrations.migrate_extend_ops_swap_repair_audit_semantics import (
+        migrate_extend_ops_swap_repair_audit_semantics,
+    )
     from src.db.migrations.migrate_fix_score_results_precision import (
         migrate_fix_score_results_precision,
     )
@@ -86,6 +86,9 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_monitoring_metrics import migrate_monitoring_metrics
     from src.db.migrations.migrate_recreate_swap_ohlcv_partitioned import (
         migrate_recreate_swap_ohlcv_partitioned,
+    )
+    from src.db.migrations.migrate_swap_ohlcv_retention_policy import (
+        migrate_swap_ohlcv_retention_policy,
     )
     from src.db.migrations.migrate_swap_ohlcv_timestamps_timestamptz import (
         migrate_swap_ohlcv_timestamps_timestamptz,
@@ -227,5 +230,10 @@ def get_migrations() -> list[Migration]:
             "330_ops_swap_repair_audit_semantics",
             "extend ops.swap_repair_audit with outcome + progress fields",
             migrate_extend_ops_swap_repair_audit_semantics,
+        ),
+        Migration(
+            "340_swap_ohlcv_retention_policy",
+            "replace swap OHLCV insert-trigger cleanup with per-timeframe retention",
+            migrate_swap_ohlcv_retention_policy,
         ),
     ]

@@ -22,7 +22,8 @@ async def migrate_create_data_quality_metrics() -> None:
     async with get_db_session() as session:
         try:
             await session.execute(
-                text("""
+                text(
+                    """
                     CREATE TABLE IF NOT EXISTS data_quality_metrics (
                         id SERIAL PRIMARY KEY,
                         symbol VARCHAR(50) NOT NULL,
@@ -38,7 +39,8 @@ async def migrate_create_data_quality_metrics() -> None:
 
                     CREATE INDEX IF NOT EXISTS idx_dqm_measured_at
                         ON data_quality_metrics (measured_at);
-                """)
+                """
+                )
             )
             await session.commit()
             logger.info("data_quality_metrics table ready")

@@ -46,6 +46,7 @@ class _TracingTelemetryAdapter:
 # Port adapters
 # ---------------------------------------------------------------------------
 
+
 class _MarketDataPortAdapter:
     """Adapts the concrete market adapter to the MarketDataPort protocol."""
 
@@ -131,9 +132,7 @@ class _CandleStorePortAdapter:
             additional_data=additional_data,
         )
 
-    async def get_latest_timestamp(
-        self, *, symbol: str, timeframe: str
-    ) -> int | None:
+    async def get_latest_timestamp(self, *, symbol: str, timeframe: str) -> int | None:
         return await self._repository.get_latest_timestamp(
             symbol=symbol,
             timeframe=timeframe,
@@ -150,16 +149,24 @@ class _InstrumentCatalogPort:
         self._repository = repository
 
     async def refresh_catalog(self) -> list[str]:
-        return await refresh_instruments_list(repository=self._repository, logger=logger)
+        return await refresh_instruments_list(
+            repository=self._repository, logger=logger
+        )
 
     async def load_curated_symbols(self) -> list[str]:
-        repo_symbols = load_symbols_from_file(resolve_repo_instruments_file(), logger=logger)
+        repo_symbols = load_symbols_from_file(
+            resolve_repo_instruments_file(), logger=logger
+        )
         if repo_symbols:
-            logger.info("Loaded %s symbols from repo instruments list", len(repo_symbols))
+            logger.info(
+                "Loaded %s symbols from repo instruments list", len(repo_symbols)
+            )
         return repo_symbols
 
     async def load_cached_symbols(self) -> list[str]:
-        cache_symbols = load_symbols_from_file(resolve_instruments_cache_file(), logger=logger)
+        cache_symbols = load_symbols_from_file(
+            resolve_instruments_cache_file(), logger=logger
+        )
         if cache_symbols:
             logger.info("Loaded %s symbols from runtime cache", len(cache_symbols))
         return cache_symbols
@@ -171,6 +178,7 @@ class _InstrumentCatalogPort:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _resolve_execution_mode(value: str | None) -> ExecutionMode:
     mapping = {
@@ -188,7 +196,9 @@ def _build_market_adapter(config: dict[str, Any]) -> Any:
     return adapter
 
 
-def _build_runtime_config(config: dict[str, Any] | SyncConfig | None) -> tuple[SyncConfig, dict[str, Any]]:
+def _build_runtime_config(
+    config: dict[str, Any] | SyncConfig | None
+) -> tuple[SyncConfig, dict[str, Any]]:
     if isinstance(config, SyncConfig):
         validated = config
         raw_config: dict[str, Any] = {}
@@ -249,6 +259,7 @@ def _stats_from_result(result: SyncJobResult) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 async def run_catalog_refresh_via_application() -> dict[str, object]:
     """Refresh instrument catalog — used by Airflow DAG."""

@@ -11,8 +11,11 @@ async def test_ensure_symbols_registered_no_missing_is_noop() -> None:
     mock_repo = AsyncMock()
     mock_repo.find_missing_symbols = AsyncMock(return_value=[])
 
-    with patch("src.candles.instruments_service.build_market_data_adapter") as mock_adapter:
+    with patch(
+        "src.candles.instruments_service.build_market_data_adapter"
+    ) as mock_adapter:
         from src.candles.instruments_service import ensure_symbols_registered
+
         await ensure_symbols_registered(
             ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
             repository=mock_repo,
@@ -37,10 +40,19 @@ async def test_ensure_symbols_registered_fetches_and_saves_missing() -> None:
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("src.candles.instruments_service.build_market_data_adapter", return_value=mock_ctx), \
-         patch("src.candles.instruments_service.save_instruments_to_db", new_callable=AsyncMock) as mock_save:
+    with (
+        patch(
+            "src.candles.instruments_service.build_market_data_adapter",
+            return_value=mock_ctx,
+        ),
+        patch(
+            "src.candles.instruments_service.save_instruments_to_db",
+            new_callable=AsyncMock,
+        ) as mock_save,
+    ):
         mock_save.return_value = (1, 0)
         from src.candles.instruments_service import ensure_symbols_registered
+
         await ensure_symbols_registered(
             ["BTC-USDT-SWAP", "SOL-USDT-SWAP"],
             repository=mock_repo,
@@ -57,15 +69,21 @@ async def test_ensure_symbols_registered_raises_if_symbol_not_on_okx() -> None:
     mock_repo.find_missing_symbols = AsyncMock(return_value=["FAKE-USDT-SWAP"])
 
     mock_client = AsyncMock()
-    mock_client.get_instruments = AsyncMock(return_value=[
-        {"instId": "BTC-USDT-SWAP", "instType": "SWAP", "state": "live"},
-    ])
+    mock_client.get_instruments = AsyncMock(
+        return_value=[
+            {"instId": "BTC-USDT-SWAP", "instType": "SWAP", "state": "live"},
+        ]
+    )
     mock_ctx = MagicMock()
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("src.candles.instruments_service.build_market_data_adapter", return_value=mock_ctx):
+    with patch(
+        "src.candles.instruments_service.build_market_data_adapter",
+        return_value=mock_ctx,
+    ):
         from src.candles.instruments_service import ensure_symbols_registered
+
         with pytest.raises(ValueError, match="FAKE-USDT-SWAP"):
             await ensure_symbols_registered(
                 ["BTC-USDT-SWAP", "FAKE-USDT-SWAP"],

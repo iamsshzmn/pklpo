@@ -267,7 +267,10 @@ def _markdown_to_html(md: str, config: ReportConfig) -> str:
         elif stripped.startswith("|") and stripped.endswith("|"):
             cells = [c.strip() for c in stripped[1:-1].split("|")]
             # Separator row (---|---): skip
-            if all(set(c.replace("-", "").replace(":", "").replace(" ", "")) == set() for c in cells):
+            if all(
+                set(c.replace("-", "").replace(":", "").replace(" ", "")) == set()
+                for c in cells
+            ):
                 continue
             if not in_table:
                 html_lines.append("<table>")
@@ -283,7 +286,9 @@ def _markdown_to_html(md: str, config: ReportConfig) -> str:
             if in_table:
                 html_lines.append("</table>")
                 in_table = False
-            text = stripped[2:].replace("**", "<strong>", 1).replace("**", "</strong>", 1)
+            text = (
+                stripped[2:].replace("**", "<strong>", 1).replace("**", "</strong>", 1)
+            )
             html_lines.append(f"<li>{text}</li>")
         elif stripped.startswith("**") and stripped.endswith("**"):
             if in_table:

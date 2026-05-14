@@ -166,7 +166,9 @@ def sanitize_records(
             elif isinstance(value, pd.Series | pd.DataFrame):
                 if len(value) > 0:
                     scalar_value = (
-                        value.iloc[0] if isinstance(value, pd.Series) else value.iloc[0, 0]
+                        value.iloc[0]
+                        if isinstance(value, pd.Series)
+                        else value.iloc[0, 0]
                     )
                     if isinstance(scalar_value, int | float | np.number):
                         sanitized_record[key] = sanitize_numeric_value(scalar_value)
@@ -246,7 +248,9 @@ def build_upsert_statement(
                             else value.iloc[0, 0]
                         )
                         normalized_record[key] = (
-                            None if pd.isna(scalar_value) else _normalize_value(scalar_value)
+                            None
+                            if pd.isna(scalar_value)
+                            else _normalize_value(scalar_value)
                         )
                     except Exception:
                         normalized_record[key] = None
@@ -341,7 +345,9 @@ def build_upsert_statement(
                                     ):
                                         is_integer = True
 
-                                if has_precision_scale and isinstance(col_type, Numeric):
+                                if has_precision_scale and isinstance(
+                                    col_type, Numeric
+                                ):
                                     clipped = _clip_numeric_value(
                                         float(value),
                                         col_type.precision,
@@ -349,13 +355,19 @@ def build_upsert_statement(
                                     )
                                     normalized = int(clipped) if is_integer else clipped
                                 else:
-                                    normalized = int(float(value)) if is_integer else float(value)
+                                    normalized = (
+                                        int(float(value))
+                                        if is_integer
+                                        else float(value)
+                                    )
                             else:
                                 normalized = float(value)
                             record[key] = normalized
                         except (ValueError, TypeError):
                             record[key] = None
-                    elif value is not None and not isinstance(value, int | float | np.number):
+                    elif value is not None and not isinstance(
+                        value, int | float | np.number
+                    ):
                         try:
                             normalized: float = float(value)
                             if has_precision_scale and isinstance(col_type, Numeric):
@@ -423,7 +435,9 @@ async def execute_upsert(
                 pass
 
         result = await session.execute(stmt)
-        if should_log(LogCategory.DIAG, Verbosity.DEBUG) and hasattr(result, "rowcount"):
+        if should_log(LogCategory.DIAG, Verbosity.DEBUG) and hasattr(
+            result, "rowcount"
+        ):
             logger.debug(f"Affected rows: {result.rowcount}")
         return len(records)
     except Exception as e:

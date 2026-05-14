@@ -34,7 +34,9 @@ def _load_partition_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleT
 
     airflow_operators_python = types.ModuleType("airflow.operators.python")
     airflow_operators_python.PythonOperator = _DummyOperator
-    monkeypatch.setitem(sys.modules, "airflow.operators.python", airflow_operators_python)
+    monkeypatch.setitem(
+        sys.modules, "airflow.operators.python", airflow_operators_python
+    )
 
     module_path = Path(
         "D:/projects/pklpo/ops/airflow/dags/indicators_partition_maintenance.py"
@@ -67,7 +69,9 @@ def test_run_partition_maintenance_task_returns_loop_result(
         partition_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
     )
     monkeypatch.setattr(partition_dag_module, "setup_env", lambda env: None)
-    monkeypatch.setattr(partition_dag_module, "get_or_create_event_loop", lambda: _Loop())
+    monkeypatch.setattr(
+        partition_dag_module, "get_or_create_event_loop", lambda: _Loop()
+    )
 
     result = partition_dag_module.run_partition_maintenance_task(
         dag_run=SimpleNamespace(
@@ -99,7 +103,9 @@ def test_validate_partition_horizon_task_reraises_failures(
         partition_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
     )
     monkeypatch.setattr(partition_dag_module, "setup_env", lambda env: None)
-    monkeypatch.setattr(partition_dag_module, "get_or_create_event_loop", lambda: _Loop())
+    monkeypatch.setattr(
+        partition_dag_module, "get_or_create_event_loop", lambda: _Loop()
+    )
 
     with pytest.raises(RuntimeError, match="missing partitions"):
         partition_dag_module.validate_partition_horizon_task(

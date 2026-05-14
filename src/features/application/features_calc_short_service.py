@@ -375,8 +375,7 @@ async def run_features_calc_short_validate(
                             SELECT MAX(timestamp)
                             FROM {IndicatorStorageContract.table_name}
                             WHERE timeframe = :tf
-                            """
-                            ,
+                            """,
                         ),
                         {"tf": tf},
                     )

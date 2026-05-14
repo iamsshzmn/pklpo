@@ -26,10 +26,10 @@ async def main():
         epilog="""
 Примеры использования:
   # Тест с расширенной конфигурацией
-  python -m src.scoring_engine.cli_extended --symbol BTC-USDT-SWAP --tf 1m --ts 1754218200 --config weights_extended.yaml
+  python -m src.scoring_engine.cli_extended --symbol BTC-USDT-SWAP --tf 5m --ts 1754218200 --config weights_extended.yaml
 
   # Сравнение с базовой конфигурацией
-  python -m src.scoring_engine.cli_extended --symbol BTC-USDT-SWAP --tf 1m --ts 1754218200 --compare
+  python -m src.scoring_engine.cli_extended --symbol BTC-USDT-SWAP --tf 5m --ts 1754218200 --compare
         """,
     )
 

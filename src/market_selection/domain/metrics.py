@@ -299,7 +299,9 @@ class PairMetricsCalculator:
             return None
 
         # Calculate switch_rate: how often regime changes
-        switches = sum(1 for i in range(1, len(regimes)) if regimes[i] != regimes[i - 1])
+        switches = sum(
+            1 for i in range(1, len(regimes)) if regimes[i] != regimes[i - 1]
+        )
         switch_rate = switches / len(regimes)
 
         # Calculate dominance: share of most common regime
@@ -328,7 +330,9 @@ class PairMetricsCalculator:
         if len(window_ema) < 10:
             return "NEUTRAL"
 
-        ema_slope_norm = self._calc_window_ema_slope_norm(valid_df, window_ema, start_idx, index)
+        ema_slope_norm = self._calc_window_ema_slope_norm(
+            valid_df, window_ema, start_idx, index
+        )
         adx = valid_df["adx_14"].iloc[index]
         atr_close = atr_close_ratio.iloc[index]
 
@@ -384,4 +388,3 @@ class PairMetricsCalculator:
 
         cv = vol_std / (vol_mean + EPS)
         return vol_median / (cv + 1.0)
-

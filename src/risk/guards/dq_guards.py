@@ -385,7 +385,7 @@ class DQGuard:
                     field_analysis[field]["values"].append(float(value))
 
         # Рассчитываем статистику для числовых полей
-        for field, analysis in field_analysis.items():
+        for analysis in field_analysis.values():
             if analysis["numeric_count"] > 0:
                 values = analysis["values"]
                 analysis["mean"] = np.mean(values)

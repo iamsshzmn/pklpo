@@ -352,7 +352,14 @@ class MarketSelectionDB:
 
         return pd.DataFrame(
             rows,
-            columns=["symbol", "valid_bars", "gaps_count", "max_ts", "feature_bars", "has_volume"],
+            columns=[
+                "symbol",
+                "valid_bars",
+                "gaps_count",
+                "max_ts",
+                "feature_bars",
+                "has_volume",
+            ],
         )
 
     async def fetch_pair_metrics_data(
@@ -383,7 +390,16 @@ class MarketSelectionDB:
 
         df = pd.DataFrame(
             rows,
-            columns=["symbol", "timestamp", "close", "volume", "prev_close", "atr_14", "adx_14", "ema"],
+            columns=[
+                "symbol",
+                "timestamp",
+                "close",
+                "volume",
+                "prev_close",
+                "atr_14",
+                "adx_14",
+                "ema",
+            ],
         )
         numeric_cols = ["close", "volume", "prev_close", "atr_14", "adx_14", "ema"]
         for col in numeric_cols:
@@ -409,7 +425,12 @@ class MarketSelectionDB:
 
         result = await self.session.execute(
             query,
-            {"tf": timeframe, "ts_start": ts_start, "ts_eval": ts_eval, "min_bars": min_bars},
+            {
+                "tf": timeframe,
+                "ts_start": ts_start,
+                "ts_eval": ts_eval,
+                "min_bars": min_bars,
+            },
         )
 
         rows = result.fetchall()
@@ -443,7 +464,12 @@ class MarketSelectionDB:
 
         result = await self.session.execute(
             query,
-            {"tf": timeframe, "ts_start": ts_start, "ts_eval": ts_eval, "symbols": basket_symbols},
+            {
+                "tf": timeframe,
+                "ts_start": ts_start,
+                "ts_eval": ts_eval,
+                "symbols": basket_symbols,
+            },
         )
 
         rows = result.fetchall()
@@ -453,7 +479,15 @@ class MarketSelectionDB:
         # Convert to DataFrame
         bars_df = pd.DataFrame(
             rows,
-            columns=["symbol", "timestamp", "adx_14", "atr_close_ratio", "ema", "close", "volume"],
+            columns=[
+                "symbol",
+                "timestamp",
+                "adx_14",
+                "atr_close_ratio",
+                "ema",
+                "close",
+                "volume",
+            ],
         )
 
         # Calculate metrics per symbol
@@ -491,13 +525,15 @@ class MarketSelectionDB:
             else:
                 ema_slope = 0.0
 
-            results.append({
-                "symbol": symbol,
-                "adx_median": adx_median,
-                "atr_close_ratio": atr_close_median,
-                "ema_slope": ema_slope,
-                "volume_median": volume_median,
-            })
+            results.append(
+                {
+                    "symbol": symbol,
+                    "adx_median": adx_median,
+                    "atr_close_ratio": atr_close_median,
+                    "ema_slope": ema_slope,
+                    "volume_median": volume_median,
+                }
+            )
 
         return pd.DataFrame(results)
 
@@ -517,7 +553,12 @@ class MarketSelectionDB:
 
         result = await self.session.execute(
             query,
-            {"tf": timeframe, "ts_start": ts_start, "ts_eval": ts_eval, "pct": percentile},
+            {
+                "tf": timeframe,
+                "ts_start": ts_start,
+                "ts_eval": ts_eval,
+                "pct": percentile,
+            },
         )
 
         row = result.fetchone()

@@ -44,9 +44,7 @@ def convert_timestamps_to_int64(records: list[dict[str, Any]]) -> list[dict[str,
             else:
                 record["timestamp"] = int(float(ts_value))
         except (ValueError, TypeError, OverflowError) as e:
-            raise ValueError(
-                f"Row {i}: Invalid timestamp value: {ts_value}"
-            ) from e
+            raise ValueError(f"Row {i}: Invalid timestamp value: {ts_value}") from e
 
     return records
 
@@ -128,10 +126,7 @@ def filter_records_by_schema(
             f"{sorted(filtered_out)[:5]}{'...' if len(filtered_out) > 5 else ''}"
         )
 
-    return [
-        {k: v for k, v in record.items() if k in db_columns}
-        for record in records
-    ]
+    return [{k: v for k, v in record.items() if k in db_columns} for record in records]
 
 
 def validate_pk_fields(
@@ -151,9 +146,7 @@ def validate_pk_fields(
     for i, record in enumerate(records):
         for pk_field in pk_fields:
             if pk_field not in record or record[pk_field] is None:
-                raise ValueError(
-                    f"Row {i}: PK field '{pk_field}' is missing or NULL"
-                )
+                raise ValueError(f"Row {i}: PK field '{pk_field}' is missing or NULL")
 
 
 def validate_service_fields(
@@ -193,7 +186,12 @@ def get_numeric_columns_from_table(indicators_table) -> set[str]:
         Set of numeric column names
     """
     numeric_types = (
-        "NUMERIC", "DOUBLE PRECISION", "REAL", "FLOAT", "INTEGER", "BIGINT"
+        "NUMERIC",
+        "DOUBLE PRECISION",
+        "REAL",
+        "FLOAT",
+        "INTEGER",
+        "BIGINT",
     )
 
     numeric_cols = set()

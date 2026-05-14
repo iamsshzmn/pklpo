@@ -36,7 +36,9 @@ class FakeMaintenancePort:
     ) -> PartitionCoverageSnapshot:
         return PartitionCoverageSnapshot(
             present_partitions=tuple(
-                partition.name for partition in partitions if partition.name in self.present
+                partition.name
+                for partition in partitions
+                if partition.name in self.present
             )
         )
 

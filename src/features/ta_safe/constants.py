@@ -20,6 +20,7 @@ def get_backend() -> str:
     except Exception:
         return "auto"
 
+
 # Required OHLCV columns
 REQ = ("open", "high", "low", "close", "volume")
 

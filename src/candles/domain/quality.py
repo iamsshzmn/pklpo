@@ -31,7 +31,9 @@ class Thresholds:
 
     warn: float
     critical: float
-    direction: str = "gt"  # "gt" = value > threshold is bad, "lt" = value < threshold is bad
+    direction: str = (
+        "gt"  # "gt" = value > threshold is bad, "lt" = value < threshold is bad
+    )
 
     def evaluate(self, value: float | None) -> Severity:
         """Определить severity по значению."""

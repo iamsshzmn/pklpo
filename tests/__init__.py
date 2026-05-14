@@ -1,1 +1,1 @@
-"""Test suite for pklpo features module."""
+"""Test package markers for stable pytest import resolution."""

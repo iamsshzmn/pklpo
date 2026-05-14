@@ -60,12 +60,14 @@ async def record_quality_metrics(
     for metric_name, metric_value in metrics.items():
         try:
             await session.execute(
-                text("""
+                text(
+                    """
                     INSERT INTO data_quality_metrics
                         (symbol, timeframe, metric_name, metric_value, window_hours, measured_at)
                     VALUES
                         (:symbol, :timeframe, :metric_name, :metric_value, :window_hours, :measured_at)
-                """),
+                """
+                ),
                 {
                     "symbol": symbol,
                     "timeframe": timeframe,
@@ -79,7 +81,9 @@ async def record_quality_metrics(
         except Exception:
             logger.warning(
                 "Failed to record metric %s for %s/%s",
-                metric_name, symbol, timeframe,
+                metric_name,
+                symbol,
+                timeframe,
                 exc_info=True,
             )
 
@@ -109,7 +113,8 @@ async def get_quality_trend(
         List of (measured_at, metric_value) tuples, newest first.
     """
     result = await session.execute(
-        text("""
+        text(
+            """
             SELECT measured_at, metric_value
             FROM data_quality_metrics
             WHERE symbol = :symbol
@@ -118,7 +123,8 @@ async def get_quality_trend(
               AND window_hours = :window_hours
             ORDER BY measured_at DESC
             LIMIT :limit
-        """),
+        """
+        ),
         {
             "symbol": symbol,
             "timeframe": timeframe,

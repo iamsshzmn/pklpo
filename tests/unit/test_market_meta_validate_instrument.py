@@ -22,7 +22,9 @@ async def test_validate_instrument_exists_passes_for_known_symbol() -> None:
 @pytest.mark.asyncio
 async def test_validate_instrument_exists_raises_for_unknown_symbol() -> None:
     with pytest.raises(InstrumentNotFoundError) as exc_info:
-        await validate_instrument_exists("FAKE-USDT-SWAP", repository=_FakeRepo(exists=False))
+        await validate_instrument_exists(
+            "FAKE-USDT-SWAP", repository=_FakeRepo(exists=False)
+        )
     assert exc_info.value.symbol == "FAKE-USDT-SWAP"
     assert "FAKE-USDT-SWAP" in str(exc_info.value)
 
@@ -30,7 +32,9 @@ async def test_validate_instrument_exists_raises_for_unknown_symbol() -> None:
 @pytest.mark.asyncio
 async def test_validate_instrument_exists_error_message_includes_symbol() -> None:
     with pytest.raises(InstrumentNotFoundError) as exc_info:
-        await validate_instrument_exists("ETH-USDT-SWAP", repository=_FakeRepo(exists=False))
+        await validate_instrument_exists(
+            "ETH-USDT-SWAP", repository=_FakeRepo(exists=False)
+        )
     assert "ETH-USDT-SWAP" in str(exc_info.value)
     assert exc_info.value.symbol == "ETH-USDT-SWAP"
 

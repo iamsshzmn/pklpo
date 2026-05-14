@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 import plotly.graph_objs as go
 import psycopg2
@@ -9,7 +11,7 @@ from src.models import INDICATORS_TABLE_NAME
 conn = psycopg2.connect(
     dbname="pklpo",
     user="pklpo_user",
-    password="strongpassword",
+    password=os.environ.get("PKLPO_DB_PASSWORD", ""),
     host="localhost",
     port="5432",
 )

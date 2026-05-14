@@ -220,7 +220,9 @@ class DataQualityGate:
         if fill_min >= 1.0:
             fill_component = 1.0 if fill_rate >= 1.0 else 0.0
         else:
-            fill_component = max(0.0, min(1.0, (fill_rate - fill_min) / (1.0 - fill_min)))
+            fill_component = max(
+                0.0, min(1.0, (fill_rate - fill_min) / (1.0 - fill_min))
+            )
 
         # Gap component: how much below maximum
         if gap_max <= 0:

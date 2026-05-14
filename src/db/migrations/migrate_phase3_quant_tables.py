@@ -32,7 +32,9 @@ async def migrate_phase3_quant_tables() -> None:
         # ------------------------------------------------------------------ #
         # 1. Расширение таблицы ohlcv_p для dollar bars                       #
         # ------------------------------------------------------------------ #
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             ALTER TABLE ohlcv_p
                 ADD COLUMN IF NOT EXISTS bars_mode   VARCHAR(10)  DEFAULT 'time',
                 ADD COLUMN IF NOT EXISTS bars_source VARCHAR(20),
@@ -42,20 +44,28 @@ async def migrate_phase3_quant_tables() -> None:
                 ADD COLUMN IF NOT EXISTS ts_end      BIGINT,
                 ADD COLUMN IF NOT EXISTS duration_s  INTEGER,
                 ADD COLUMN IF NOT EXISTS trades_count INTEGER
-        """))
+        """
+            )
+        )
         logger.info("Expanded ohlcv_p with quant columns (bars_mode, bars_source, ...)")
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_ohlcv_p_bars_mode
                 ON ohlcv_p (bars_mode)
                 WHERE bars_mode = 'dollar'
-        """))
+        """
+            )
+        )
         logger.info("Created partial index idx_ohlcv_p_bars_mode")
 
         # ------------------------------------------------------------------ #
         # 2. Таблица labels (triple-barrier)                                   #
         # ------------------------------------------------------------------ #
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS labels (
                 id            BIGSERIAL PRIMARY KEY,
                 symbol        VARCHAR(50)  NOT NULL,
@@ -70,29 +80,45 @@ async def migrate_phase3_quant_tables() -> None:
                 run_id        VARCHAR(64)  NOT NULL,
                 created_at    TIMESTAMPTZ  DEFAULT NOW()
             )
-        """))
+        """
+            )
+        )
         logger.info("Created table: labels")
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_sym_tf_ts_run
                 ON labels (symbol, timeframe, timestamp, run_id)
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_labels_run_id
                 ON labels (run_id)
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_labels_sym_tf_ts
                 ON labels (symbol, timeframe, timestamp)
-        """))
+        """
+            )
+        )
         logger.info("Created indexes on labels")
 
         # ------------------------------------------------------------------ #
         # 3. Таблица ml_artifacts                                              #
         # ------------------------------------------------------------------ #
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS ml_artifacts (
                 id             BIGSERIAL    PRIMARY KEY,
                 run_id         VARCHAR(64)  NOT NULL,
@@ -103,18 +129,28 @@ async def migrate_phase3_quant_tables() -> None:
                 metrics        JSONB,
                 created_at     TIMESTAMPTZ  DEFAULT NOW()
             )
-        """))
+        """
+            )
+        )
         logger.info("Created table: ml_artifacts")
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_ml_artifacts_run
                 ON ml_artifacts (run_id)
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_ml_artifacts_run_type
                 ON ml_artifacts (run_id, artifact_type)
-        """))
+        """
+            )
+        )
         logger.info("Created indexes on ml_artifacts")
 
         await session.commit()
