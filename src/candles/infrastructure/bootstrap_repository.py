@@ -143,22 +143,22 @@ class BootstrapCandlesRepository(RepairCandlesRepository):
             if row is None:
                 return None
             return BootstrapProgress(
-                symbol=str(row[0]),
-                timeframe=str(row[1]),
-                lookback_days=int(row[2]),
-                target_start_ts=int(row[3]),
-                target_end_ts=int(row[4]),
-                checkpoint_ts=int(row[5]) if row[5] is not None else None,
-                current_min_ts=int(row[6]) if row[6] is not None else None,
-                current_max_ts=int(row[7]) if row[7] is not None else None,
-                expected_bars=int(row[8]),
-                actual_bars=int(row[9]) if row[9] is not None else None,
-                missing_bars=int(row[10]) if row[10] is not None else None,
-                coverage_pct=float(row[11]) if row[11] is not None else None,
-                status=str(row[12]),
-                bootstrap_completed=bool(row[13]),
-                error_streak=int(row[14]),
-                last_error=str(row[15]) if row[15] is not None else None,
+                symbol=str(row.symbol),
+                timeframe=str(row.timeframe),
+                lookback_days=int(row.lookback_days),
+                target_start_ts=int(row.target_start_ts),
+                target_end_ts=int(row.target_end_ts),
+                checkpoint_ts=int(row.checkpoint_ts) if row.checkpoint_ts is not None else None,
+                current_min_ts=int(row.current_min_ts) if row.current_min_ts is not None else None,
+                current_max_ts=int(row.current_max_ts) if row.current_max_ts is not None else None,
+                expected_bars=int(row.expected_bars),
+                actual_bars=int(row.actual_bars) if row.actual_bars is not None else None,
+                missing_bars=int(row.missing_bars) if row.missing_bars is not None else None,
+                coverage_pct=float(row.coverage_pct) if row.coverage_pct is not None else None,
+                status=str(row.status),
+                bootstrap_completed=bool(row.bootstrap_completed),
+                error_streak=int(row.error_streak),
+                last_error=str(row.last_error) if row.last_error is not None else None,
             )
 
         return await self._run_with_db_retry(_operation)
