@@ -49,6 +49,12 @@ The following Phase 0 decisions are accepted:
 - Keep `RepairResult` unchanged in this track. If the guarantee/recalc flow
   needs a distinct completion contract, it will use a separate outcome model in
   a later phase.
+- `1m` is explicitly excluded from the last-N closed-bars guarantee. It is a
+  hot-only operational timeframe used for sync heartbeat, freshness checks,
+  short operational features, and quality monitoring. Historical completeness
+  for `1m` is not guaranteed.
+- The last-200 guard covers only historical-SLA storage timeframes:
+  `1H`, `4H`, `1D`, `1W`, and `1M`.
 
 ## Consequences
 
@@ -61,6 +67,9 @@ Positive:
   DAG orchestration independently without reopening the core ownership model.
 - The `indicators` versus `indicators_p` discrepancy is explicit instead of
   becoming an implicit source of drift.
+- Repair/backfill flows may still use generic `1m` timeframe primitives for
+  bounded operational work, but no scheduled guard or long-term guarantee may
+  treat `1m` as a historical-SLA timeframe.
 
 Tradeoffs:
 
