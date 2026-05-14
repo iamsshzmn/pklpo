@@ -2,17 +2,25 @@ from pathlib import Path
 
 from src.config.settings import OKXSettings, Settings, reload_settings
 
+EXPECTED_WEEK_ANCHOR_TS_MS = 1_777_824_000_000
+
+
+def _clear_okx_env(monkeypatch) -> None:
+    monkeypatch.delenv("OKX_API_KEY", raising=False)
+    monkeypatch.delenv("OKX_BASE_URL", raising=False)
+    monkeypatch.delenv("OKX_WEEK_ANCHOR_TS_MS", raising=False)
+
 
 def test_okx_settings_week_anchor_uses_code_placeholder(monkeypatch):
     monkeypatch.delenv("OKX_WEEK_ANCHOR_TS_MS", raising=False)
     settings = OKXSettings()
-    assert settings.week_anchor_ts_ms == 0
+    assert settings.week_anchor_ts_ms == EXPECTED_WEEK_ANCHOR_TS_MS
 
 
 def test_okx_settings_ignores_week_anchor_env_override(monkeypatch):
     monkeypatch.setenv("OKX_WEEK_ANCHOR_TS_MS", "1234567890000")
     settings = OKXSettings()
-    assert settings.week_anchor_ts_ms == 0
+    assert settings.week_anchor_ts_ms == EXPECTED_WEEK_ANCHOR_TS_MS
 
 
 def test_okx_settings_still_reads_other_env_values(monkeypatch):
@@ -25,16 +33,21 @@ def test_okx_settings_still_reads_other_env_values(monkeypatch):
     assert settings.base_url == "https://example.test"
 
 
-def test_okx_settings_ignores_week_anchor_dotenv_override(tmp_path: Path):
+def test_okx_settings_ignores_week_anchor_dotenv_override(
+    monkeypatch,
+    tmp_path: Path,
+):
+    _clear_okx_env(monkeypatch)
     env_file = tmp_path / ".env"
     env_file.write_text("OKX_WEEK_ANCHOR_TS_MS=1234567890000\n", encoding="utf-8")
 
     settings = OKXSettings(_env_file=env_file)
 
-    assert settings.week_anchor_ts_ms == 0
+    assert settings.week_anchor_ts_ms == EXPECTED_WEEK_ANCHOR_TS_MS
 
 
-def test_okx_settings_still_reads_other_dotenv_values(tmp_path: Path):
+def test_okx_settings_still_reads_other_dotenv_values(monkeypatch, tmp_path: Path):
+    _clear_okx_env(monkeypatch)
     env_file = tmp_path / ".env"
     env_file.write_text(
         "OKX_WEEK_ANCHOR_TS_MS=1234567890000\n"
@@ -45,7 +58,7 @@ def test_okx_settings_still_reads_other_dotenv_values(tmp_path: Path):
 
     settings = OKXSettings(_env_file=env_file)
 
-    assert settings.week_anchor_ts_ms == 0
+    assert settings.week_anchor_ts_ms == EXPECTED_WEEK_ANCHOR_TS_MS
     assert settings.api_key.get_secret_value() == "dotenv-key"
     assert settings.base_url == "https://dotenv.test"
 
@@ -55,13 +68,14 @@ def test_reload_settings_ignores_week_anchor_env_override(monkeypatch):
 
     settings = reload_settings()
 
-    assert settings.okx.week_anchor_ts_ms == 0
+    assert settings.okx.week_anchor_ts_ms == EXPECTED_WEEK_ANCHOR_TS_MS
 
 
 def test_reload_settings_reads_other_dotenv_values(
     monkeypatch,
     tmp_path: Path,
 ):
+    _clear_okx_env(monkeypatch)
     env_file = tmp_path / ".env"
     env_file.write_text(
         "OKX_WEEK_ANCHOR_TS_MS=1234567890000\n"
@@ -73,12 +87,13 @@ def test_reload_settings_reads_other_dotenv_values(
 
     settings = reload_settings()
 
-    assert settings.okx.week_anchor_ts_ms == 0
+    assert settings.okx.week_anchor_ts_ms == EXPECTED_WEEK_ANCHOR_TS_MS
     assert settings.okx.api_key.get_secret_value() == "dotenv-key"
     assert settings.okx.base_url == "https://dotenv.test"
 
 
-def test_settings_custom_env_file_reads_okx_values(tmp_path: Path):
+def test_settings_custom_env_file_reads_okx_values(monkeypatch, tmp_path: Path):
+    _clear_okx_env(monkeypatch)
     env_file = tmp_path / "custom.env"
     env_file.write_text(
         "OKX_WEEK_ANCHOR_TS_MS=1234567890000\n"
@@ -89,6 +104,6 @@ def test_settings_custom_env_file_reads_okx_values(tmp_path: Path):
 
     settings = Settings(_env_file=env_file, _env_file_encoding="utf-8")
 
-    assert settings.okx.week_anchor_ts_ms == 0
+    assert settings.okx.week_anchor_ts_ms == EXPECTED_WEEK_ANCHOR_TS_MS
     assert settings.okx.api_key.get_secret_value() == "custom-key"
     assert settings.okx.base_url == "https://custom.test"

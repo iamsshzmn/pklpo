@@ -59,7 +59,7 @@ class OKXSettings(BaseSettings):
         extra="ignore",
     )
 
-    DEFAULT_WEEK_ANCHOR_TS_MS: ClassVar[int] = 0
+    DEFAULT_WEEK_ANCHOR_TS_MS: ClassVar[int] = 1_777_824_000_000
 
     api_key: SecretStr = Field(default=SecretStr(""))
     api_secret: SecretStr = Field(default=SecretStr(""))
@@ -82,6 +82,18 @@ class OKXSettings(BaseSettings):
         """Check whether API keys are set."""
         return bool(self.api_key.get_secret_value())
 
+    def __init__(
+        self,
+        _env_file: Any = ".env",
+        _env_file_encoding: str | None = "utf-8",
+        **values: Any,
+    ) -> None:
+        super().__init__(
+            _env_file=_env_file,
+            _env_file_encoding=_env_file_encoding,
+            **values,
+        )
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -91,7 +103,7 @@ class OKXSettings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Keep the temporary week anchor code-defined per ADR-2026-05-03."""
+        """Keep the OKX weekly anchor code-defined per ADR-2026-05-03."""
         return (
             init_settings,
             _without_week_anchor_source(env_settings),
@@ -162,47 +174,71 @@ class FeaturesSettings(BaseSettings):
 
     # Validation thresholds (OCP: modify without changing code)
     price_outlier_threshold: float = Field(
-        default=0.02, ge=0.0, le=1.0,
+        default=0.02,
+        ge=0.0,
+        le=1.0,
         description="Maximum fraction of price outliers (2%)",
     )
     volume_outlier_threshold: float = Field(
-        default=0.02, ge=0.0, le=1.0,
+        default=0.02,
+        ge=0.0,
+        le=1.0,
         description="Maximum fraction of volume outliers (2%)",
     )
     outlier_multiplier: float = Field(
-        default=1.5, ge=1.0, le=5.0,
+        default=1.5,
+        ge=1.0,
+        le=5.0,
         description="IQR multiplier for outlier detection",
     )
 
     # Warm-up window settings
     ma_warmup_multiplier: float = Field(
-        default=2.0, ge=1.0, le=5.0,
+        default=2.0,
+        ge=1.0,
+        le=5.0,
         description="Warm-up = MA period * multiplier",
     )
     atr_warmup_multiplier: float = Field(
-        default=2.0, ge=1.0, le=5.0,
+        default=2.0,
+        ge=1.0,
+        le=5.0,
         description="Warm-up = ATR period * multiplier",
     )
     min_warmup_rows: int = Field(
-        default=50, ge=10, le=500,
+        default=50,
+        ge=10,
+        le=500,
         description="Minimum warm-up rows",
     )
 
     # Price change validation
     min_price_change: float = Field(
-        default=0.001, ge=0.0, le=0.1,
+        default=0.001,
+        ge=0.0,
+        le=0.1,
         description="Minimum price change (0.1%)",
     )
     max_price_change: float = Field(
-        default=0.5, ge=0.1, le=1.0,
+        default=0.5,
+        ge=0.1,
+        le=1.0,
         description="Maximum price change (50%)",
     )
 
     # Group calculation configuration
     calculation_order: list[str] = Field(
         default=[
-            "overlap", "ma", "oscillators", "volatility", "volume",
-            "trend", "candles", "squeeze", "statistics", "performance",
+            "overlap",
+            "ma",
+            "oscillators",
+            "volatility",
+            "volume",
+            "trend",
+            "candles",
+            "squeeze",
+            "statistics",
+            "performance",
         ],
         description="Order of group calculation",
     )
@@ -210,9 +246,14 @@ class FeaturesSettings(BaseSettings):
     # Feature periods for warm-up validation
     feature_periods: dict[str, int] = Field(
         default={
-            "sma_20": 20, "sma_50": 50, "sma_200": 200,
-            "ema_8": 8, "ema_21": 21, "ema_50": 50,
-            "atr_14": 14, "atr_21": 21,
+            "sma_20": 20,
+            "sma_50": 50,
+            "sma_200": 200,
+            "ema_8": 8,
+            "ema_21": 21,
+            "ema_50": 50,
+            "atr_14": 14,
+            "atr_21": 21,
         },
         description="Feature name to period mapping for warm-up validation",
     )
@@ -265,9 +306,7 @@ class RiskSettings(BaseSettings):
     def validate_limits(self) -> "RiskSettings":
         """Validate limit consistency."""
         if self.default_risk_per_trade > self.max_risk_per_trade:
-            raise ValueError(
-                "default_risk_per_trade cannot exceed max_risk_per_trade"
-            )
+            raise ValueError("default_risk_per_trade cannot exceed max_risk_per_trade")
         if self.daily_loss_limit > self.weekly_loss_limit:
             raise ValueError("daily_loss_limit cannot exceed weekly_loss_limit")
         return self
@@ -398,7 +437,9 @@ class ObservabilitySettings(BaseModel):
         default_factory=lambda: _env_bool("OBSERVABILITY_PROMETHEUS_ENABLED", False)
     )
     prometheus_pushgateway_url: str = Field(
-        default_factory=lambda: os.getenv("OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", "")
+        default_factory=lambda: os.getenv(
+            "OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", ""
+        )
     )
     metrics_prefix: str = Field(
         default_factory=lambda: os.getenv("OBSERVABILITY_METRICS_PREFIX", "pklpo")
@@ -504,7 +545,9 @@ class Settings(BaseSettings):
     quant: QuantSettings = Field(default_factory=QuantSettings)
 
     # Paths
-    project_root: Path = Field(default_factory=lambda: Path(__file__).parent.parent.parent)
+    project_root: Path = Field(
+        default_factory=lambda: Path(__file__).parent.parent.parent
+    )
     data_dir: Path = Field(default=Path("./data"))
 
     def __init__(
@@ -566,6 +609,7 @@ def reload_settings() -> Settings:
 # ---------------------------------------------------------------------------
 # Utility helpers (formerly split across env_validator.py)
 # ---------------------------------------------------------------------------
+
 
 def get_database_url() -> str:
     """
