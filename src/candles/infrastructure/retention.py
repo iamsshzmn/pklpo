@@ -1,8 +1,8 @@
 """
-Retention политика для market_data_ext.
+Retention policy for market_data_ext.
 
-Управление очисткой старых данных с разными retention периодами
-для разных типов данных.
+Manages cleanup of old data with different retention periods
+for different data types.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -16,20 +16,20 @@ logger = get_logger("market_data_retention")
 
 class MarketDataExtRetention:
     """
-    Управление retention для market_data_ext.
+    Retention management for market_data_ext.
 
-    Разные retention периоды для разных типов данных:
-    - L2: 7 дней (высокая частота, низкая ценность старых данных)
-    - OI: 90 дней (достаточно для анализа трендов)
-    - Funding: 730 дней (2 года, исторические данные важны)
+    Different retention periods for different data types:
+    - L2: 7 days (high frequency, low value of old data)
+    - OI: 90 days (sufficient for trend analysis)
+    - Funding: 730 days (2 years, historical data is important)
     """
 
     def __init__(self, engine):
         """
-        Инициализация retention сервиса.
+        Initialize retention service.
 
         Args:
-            engine: SQLAlchemy engine для подключения к БД
+            engine: SQLAlchemy engine for DB connection
         """
         self.engine = engine
 
@@ -41,18 +41,18 @@ class MarketDataExtRetention:
         funding_retention_days: int = 730,
     ) -> dict[str, int]:
         """
-        Удаляет старые данные согласно retention политике.
+        Delete old data according to retention policy.
 
         Args:
-            dry_run: Если True, только показывает что будет удалено, без фактического удаления
-            l2_retention_days: Retention период для L2 данных (дни)
-            oi_retention_days: Retention период для OI данных (дни)
-            funding_retention_days: Retention период для Funding данных (дни)
+            dry_run: If True, only show what would be deleted without actual deletion
+            l2_retention_days: Retention period for L2 data (days)
+            oi_retention_days: Retention period for OI data (days)
+            funding_retention_days: Retention period for Funding data (days)
 
         Returns:
-            Словарь с количеством удалённых записей по типам
+            Dict with count of deleted records by type
         """
-        logger.info(f"Запуск очистки market_data_ext (dry_run={dry_run})...")
+        logger.info("Starting market_data_ext cleanup (dry_run=%s)...", dry_run)
 
         deleted: dict[str, int] = {
             "l2": 0,
@@ -60,17 +60,19 @@ class MarketDataExtRetention:
             "funding": 0,
         }
 
-        # Определяем cutoff даты
         now = datetime.now(UTC)
         l2_cutoff = now - timedelta(days=l2_retention_days)
         oi_cutoff = now - timedelta(days=oi_retention_days)
         funding_cutoff = now - timedelta(days=funding_retention_days)
 
         if dry_run:
-            logger.info(f"Dry run: L2 cutoff: {l2_cutoff}, OI cutoff: {oi_cutoff}, Funding cutoff: {funding_cutoff}")
-            # В dry_run режиме считаем количество записей, которые будут удалены
+            logger.info(
+                "Dry run: L2 cutoff: %s, OI cutoff: %s, Funding cutoff: %s",
+                l2_cutoff,
+                oi_cutoff,
+                funding_cutoff,
+            )
             with self.engine.connect() as conn:
-                # L2
                 result = conn.execute(
                     text(
                         """
@@ -84,7 +86,6 @@ class MarketDataExtRetention:
                 )
                 deleted["l2"] = result.scalar() or 0
 
-                # OI
                 result = conn.execute(
                     text(
                         """
@@ -98,7 +99,6 @@ class MarketDataExtRetention:
                 )
                 deleted["oi"] = result.scalar() or 0
 
-                # Funding
                 result = conn.execute(
                     text(
                         """
@@ -112,12 +112,10 @@ class MarketDataExtRetention:
                 )
                 deleted["funding"] = result.scalar() or 0
 
-            logger.info(f"Dry run завершен. Было бы удалено: {deleted}")
+            logger.info("Dry run complete. Would have deleted: %s", deleted)
             return deleted
 
-        # Фактическое удаление
         with self.engine.begin() as conn:
-            # Удаление L2 данных
             result = conn.execute(
                 text(
                     """
@@ -129,9 +127,8 @@ class MarketDataExtRetention:
                 {"cutoff": l2_cutoff},
             )
             deleted["l2"] = result.rowcount
-            logger.info(f"Удалено {deleted['l2']} старых L2 записей.")
+            logger.info("Deleted %d old L2 records.", deleted["l2"])
 
-            # Удаление OI данных
             result = conn.execute(
                 text(
                     """
@@ -143,9 +140,8 @@ class MarketDataExtRetention:
                 {"cutoff": oi_cutoff},
             )
             deleted["oi"] = result.rowcount
-            logger.info(f"Удалено {deleted['oi']} старых OI записей.")
+            logger.info("Deleted %d old OI records.", deleted["oi"])
 
-            # Удаление Funding Rates данных
             result = conn.execute(
                 text(
                     """
@@ -157,12 +153,11 @@ class MarketDataExtRetention:
                 {"cutoff": funding_cutoff},
             )
             deleted["funding"] = result.rowcount
-            logger.info(f"Удалено {deleted['funding']} старых Funding Rates записей.")
+            logger.info("Deleted %d old Funding Rate records.", deleted["funding"])
 
-        # VACUUM ANALYZE для освобождения места
         with self.engine.connect() as conn:
             conn.execute(text("VACUUM ANALYZE market_data_ext"))
             conn.commit()
-        logger.info("VACUUM ANALYZE market_data_ext выполнен.")
+        logger.info("VACUUM ANALYZE market_data_ext complete.")
 
         return deleted
