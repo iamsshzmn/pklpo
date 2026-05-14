@@ -277,6 +277,56 @@ module = [
 follow_imports = "skip"
 ignore_errors = true
 
+[[tool.mypy.overrides]]
+module = [
+    "features.utils.memlog",
+    "src.alerts.slack_webhook",
+    "src.backtest.*",
+    "src.candles.ccxt_okx_adapter",
+    "src.candles.cli.run_migration",
+    "src.candles.domain.risk_limits",
+    "src.candles.infrastructure.database",
+    "src.candles.infrastructure.client",
+    "src.candles.infrastructure.okx_integration",
+    "src.candles.infrastructure.market",
+    "src.candles.infrastructure.metrics",
+    "src.candles.infrastructure.repair_repository",
+    "src.candles.infrastructure.reprocess",
+    "src.candles.interfaces.repair",
+    "src.candles.interfaces.swap_sync",
+    "src.candles.application.api",
+    "src.candles.cli.cli",
+    "src.candles.load_instruments",
+    "src.candles.observability.metrics",
+    "src.candles.repository",
+    "src.candles.domain.sync_config",
+    "src.cli.commands.*",
+    "src.db.migrations.*",
+    "src.db.monitoring_cli",
+    "src.db.migration_runner",
+    "src.database.migrations.*",
+    "src.features.infrastructure.models",
+    "src.features.*",
+    "src.features.ta_safe.*",
+    "src.features_combinations.*",
+    "src.market_selection.*",
+    "src.metrics.*",
+    "src.migrate_create_instruments",
+    "src.models",
+    "src.mtf.*",
+    "src.positions.*",
+    "src.risk.*",
+    "src.scoring_engine.*",
+    "src.signals.*",
+    "src.settings.*",
+    "src.trade_recommender.*",
+    "src.tuning.*",
+    "src.utils.*",
+    "src.visual.dash_indicators",
+]
+follow_imports = "skip"
+ignore_errors = true
+
 
 [tool.coverage.run]
 source = ["src"]

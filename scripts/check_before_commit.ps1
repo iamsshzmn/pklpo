@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $failures = @()
+$env:PRE_COMMIT_HOME = Join-Path $PSScriptRoot "..\\.pre-commit-cache"
 
 function Invoke-Step {
     param(
@@ -39,8 +40,8 @@ if (-not $SkipTypecheck) {
 }
 
 if (-not $SkipTests) {
-    Invoke-Step 'pytest -m "not slow and not integration"' {
-        pytest -m "not slow and not integration"
+    Invoke-Step 'pytest --no-cov -m "not slow and not integration"' {
+        pytest --no-cov -m "not slow and not integration"
     }
 }
 
