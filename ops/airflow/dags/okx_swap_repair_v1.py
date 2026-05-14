@@ -50,8 +50,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import asyncio
 
-SUPPORTED_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
-LAST_200_GUARD_TIMEFRAMES = ("1m", "1H", "4H", "1D", "1W", "1M")
+SUPPORTED_TIMEFRAMES = ("1H", "4H")
+LAST_200_GUARD_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
 LAST_200_GUARD_TRIGGER = "last-200-guard"
 DEFAULT_TRIGGER = "repair-all-swaps"
 REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
@@ -79,7 +79,7 @@ REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
         "bars": 200,
         "publish_on_statuses": ["partial", "blocked", "deferred", "not_matured"],
         "recalc_specs": [],
-        "critical_timeframes": ["1m", "1H"],
+        "critical_timeframes": ["1H"],
     },
 }
 

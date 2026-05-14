@@ -1,4 +1,5 @@
 from .dto import RepairCommand, RepairPreview, RepairResult
+from .last_n_closed_bars import GuaranteeLastClosedBarsUseCase
 from .planning import (
     AutoApplyWindowPlan,
     RepairChunk,
@@ -28,6 +29,7 @@ from .use_cases import RunGapRepairUseCase, RunHistoricalBackfillUseCase
 __all__ = [
     "AutoApplyWindowPlan",
     "CandleCoverageQueryPort",
+    "GuaranteeLastClosedBarsUseCase",
     "HistoricalCandleSourcePort",
     "RepairCandleStorePort",
     "RepairChunk",

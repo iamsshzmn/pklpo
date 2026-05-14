@@ -97,15 +97,12 @@ async def test_repair_repository_upsert_and_query_roundtrip() -> None:
         )
 
         assert inserted == 2
-        assert (
-            await repository.list_timestamps(
-                symbol=symbol,
-                timeframe=timeframe,
-                start_ts_ms=base_ts_ms,
-                end_ts_ms=base_ts_ms + 180_000,
-            )
-            == [base_ts_ms, base_ts_ms + 60_000]
-        )
+        assert await repository.list_timestamps(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_ts_ms=base_ts_ms,
+            end_ts_ms=base_ts_ms + 180_000,
+        ) == [base_ts_ms, base_ts_ms + 60_000]
         assert (
             await repository.count_candles(
                 symbol=symbol,
@@ -148,15 +145,12 @@ async def test_repair_repository_upsert_and_query_roundtrip() -> None:
         )
 
         assert upserted == 2
-        assert (
-            await repository.list_timestamps(
-                symbol=symbol,
-                timeframe=timeframe,
-                start_ts_ms=base_ts_ms,
-                end_ts_ms=base_ts_ms + 240_000,
-            )
-            == [base_ts_ms, base_ts_ms + 60_000, base_ts_ms + 120_000]
-        )
+        assert await repository.list_timestamps(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_ts_ms=base_ts_ms,
+            end_ts_ms=base_ts_ms + 240_000,
+        ) == [base_ts_ms, base_ts_ms + 60_000, base_ts_ms + 120_000]
         assert (
             await repository.count_candles(
                 symbol=symbol,
@@ -209,7 +203,9 @@ async def test_repair_repository_upsert_and_query_roundtrip() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_get_listing_anchor_metadata_returns_none_for_missing_instrument() -> None:
+async def test_get_listing_anchor_metadata_returns_none_for_missing_instrument() -> (
+    None
+):
     db_url = _resolve_test_db_url()
     if not db_url:
         pytest.skip("DATABASE_URL or POSTGRES_* configuration is required")
@@ -238,7 +234,9 @@ async def test_get_listing_anchor_metadata_detects_stale_metadata() -> None:
         pytest.skip("DATABASE_URL or POSTGRES_* configuration is required")
 
     engine = create_async_engine(db_url, future=True)
-    session_factory = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    session_factory = sessionmaker(
+        bind=engine, class_=AsyncSession, expire_on_commit=False
+    )
     test_symbol = f"TEST-META-{uuid.uuid4().hex[:8]}"
     now_ms = int(datetime.now(UTC).timestamp() * 1000)
     stale_refreshed_at_ms = now_ms - 2 * _STALE_THRESHOLD_MS
@@ -255,15 +253,22 @@ async def test_get_listing_anchor_metadata_detects_stale_metadata() -> None:
             await session.execute(
                 text(
                     """
-                    INSERT INTO instruments (symbol, list_time, metadata_refreshed_at_ms)
-                    VALUES (:symbol, :list_time, :refreshed_at)
+                    INSERT INTO instruments (
+                        symbol,
+                        inst_id,
+                        list_time,
+                        metadata_refreshed_at_ms
+                    )
+                    VALUES (:symbol, :inst_id, :list_time, :refreshed_at)
                     ON CONFLICT (symbol) DO UPDATE SET
+                        inst_id = EXCLUDED.inst_id,
                         list_time = EXCLUDED.list_time,
                         metadata_refreshed_at_ms = EXCLUDED.metadata_refreshed_at_ms
                     """
                 ),
                 {
                     "symbol": test_symbol,
+                    "inst_id": test_symbol,
                     "list_time": listing_ts_ms,
                     "refreshed_at": stale_refreshed_at_ms,
                 },
@@ -277,12 +282,106 @@ async def test_get_listing_anchor_metadata_detects_stale_metadata() -> None:
         assert metadata.list_time_ts_ms == listing_ts_ms
         assert metadata.metadata_refreshed_at_ms == stale_refreshed_at_ms
         age_ms = now_ms - (metadata.metadata_refreshed_at_ms or 0)
-        assert age_ms > _STALE_THRESHOLD_MS, "stale metadata should be detectable via age check"
+        assert (
+            age_ms > _STALE_THRESHOLD_MS
+        ), "stale metadata should be detectable via age check"
     finally:
         async with session_factory() as session:
             await session.execute(
                 text("DELETE FROM instruments WHERE symbol = :symbol"),
                 {"symbol": test_symbol},
+            )
+            await session.commit()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_list_existing_valid_timestamps_excludes_missing_and_corrupted_rows() -> (
+    None
+):
+    db_url = _resolve_test_db_url()
+    if not db_url:
+        pytest.skip("DATABASE_URL or POSTGRES_* configuration is required")
+
+    engine = create_async_engine(db_url, future=True)
+    session_factory = sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    repository = RepairCandlesRepository()
+
+    symbol = f"TEST-VALID-{uuid.uuid4().hex[:12]}"
+    timeframe = "1m"
+    base_ts_ms = int(time.time() // 60 * 60 * 1000)
+    fetched_at = datetime(2026, 5, 3, 12, 0, tzinfo=UTC)
+
+    try:
+        try:
+            async with engine.begin():
+                pass
+        except (OSError, socket.gaierror, SQLAlchemyError) as exc:
+            pytest.skip(f"test database is not reachable: {exc}")
+
+        async with session_factory() as session:
+            await session.execute(
+                text("DELETE FROM swap_ohlcv_p WHERE symbol = :symbol"),
+                {"symbol": symbol},
+            )
+            await session.commit()
+
+        await repository.selective_upsert_candles(
+            symbol=symbol,
+            timeframe=timeframe,
+            candles=[
+                {
+                    "timestamp": base_ts_ms,
+                    "open": 100,
+                    "high": 110,
+                    "low": 95,
+                    "close": 105,
+                    "volume": 1000,
+                    "vol_ccy": 2000,
+                    "vol_usd": 3000,
+                    "fetched_at": fetched_at,
+                },
+                {
+                    "timestamp": base_ts_ms + 120_000,
+                    "open": 100,
+                    "high": 90,
+                    "low": 95,
+                    "close": 105,
+                    "volume": 1000,
+                    "vol_ccy": 2000,
+                    "vol_usd": 3000,
+                    "fetched_at": fetched_at,
+                },
+                {
+                    "timestamp": base_ts_ms + 180_000,
+                    "open": 106,
+                    "high": 112,
+                    "low": 104,
+                    "close": 109,
+                    "volume": 1100,
+                    "vol_ccy": 2100,
+                    "vol_usd": 3100,
+                    "fetched_at": fetched_at,
+                },
+            ],
+        )
+
+        assert await repository.list_existing_valid_timestamps(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_ts_ms=base_ts_ms,
+            end_ts_ms=base_ts_ms + 240_000,
+        ) == [base_ts_ms, base_ts_ms + 180_000]
+    finally:
+        async with session_factory() as session:
+            await session.execute(
+                text("DELETE FROM swap_ohlcv_p WHERE symbol = :symbol"),
+                {"symbol": symbol},
             )
             await session.commit()
         await engine.dispose()

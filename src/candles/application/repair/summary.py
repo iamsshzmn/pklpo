@@ -214,15 +214,21 @@ class RepairSummary:
             verification_method=_coerce_verification_method(
                 payload.get("verification_method")
             ),
-            rows_written=_coerce_int(payload.get("rows_written", 0), field_name="rows_written"),
-            fetch_calls=_coerce_int(payload.get("fetch_calls", 0), field_name="fetch_calls"),
+            rows_written=_coerce_int(
+                payload.get("rows_written", 0), field_name="rows_written"
+            ),
+            fetch_calls=_coerce_int(
+                payload.get("fetch_calls", 0), field_name="fetch_calls"
+            ),
             verified=_coerce_bool(payload.get("verified", False)),
             padding_bars=_coerce_int(
                 payload.get("padding_bars", 0),
                 field_name="padding_bars",
             ),
             guardrail_violations=_coerce_unique_strs(
-                tuple(str(value) for value in (payload.get("guardrail_violations") or []))
+                tuple(
+                    str(value) for value in (payload.get("guardrail_violations") or [])
+                )
             ),
             watermark_updated=_coerce_bool(payload.get("watermark_updated", False)),
             auto_apply_incomplete=(
@@ -327,7 +333,9 @@ def build_noop_repair_summary(
         rows_written=0,
         fetch_calls=0,
         verified=True,
-        padding_bars=_coerce_int(validated.get("padding_bars", 0), field_name="padding_bars"),
+        padding_bars=_coerce_int(
+            validated.get("padding_bars", 0), field_name="padding_bars"
+        ),
         guardrail_violations=(),
         watermark_updated=False,
         auto_apply_incomplete=False,
@@ -359,7 +367,11 @@ def merge_repair_summaries(
         )
 
     coerced = [
-        summary if isinstance(summary, RepairSummary) else RepairSummary.from_mapping(summary)
+        (
+            summary
+            if isinstance(summary, RepairSummary)
+            else RepairSummary.from_mapping(summary)
+        )
         for summary in summaries
     ]
     _assert_same(coerced, field_name="symbol")
@@ -400,11 +412,14 @@ def merge_repair_summaries(
         rows_written=total_written,
         fetch_calls=sum(summary.fetch_calls for summary in coerced),
         verified=last_summary.verified,
-        padding_bars=_coerce_int(validated.get("padding_bars", 0), field_name="padding_bars"),
+        padding_bars=_coerce_int(
+            validated.get("padding_bars", 0), field_name="padding_bars"
+        ),
         guardrail_violations=guardrail_violations,
         watermark_updated=any(summary.watermark_updated for summary in coerced),
         auto_apply_incomplete=(
-            last_summary.remaining_gap_tasks > 0 or last_summary.remaining_requested_bars > 0
+            last_summary.remaining_gap_tasks > 0
+            or last_summary.remaining_requested_bars > 0
         ),
         received_bars=total_received,
         remaining_missing_before=remaining_missing_before,

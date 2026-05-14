@@ -137,7 +137,7 @@ def test_validate_swap_repair_conf_builds_internal_preset_from_trigger(
 
     assert result["trigger"] == "repair-all-swaps"
     assert result["symbols"] == ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
-    assert result["timeframes"] == ["1H", "4H", "1D", "1W", "1M"]
+    assert result["timeframes"] == ["1H", "4H"]
     assert result["mode"] == "apply"
     assert result["repair_strategy"] == "gap-repair"
     assert result["auto_apply_anchor_strategy"] == "listing-date"
@@ -162,7 +162,8 @@ def test_validate_swap_repair_conf_builds_last_200_guard_preset(
 
     assert result["trigger"] == "last-200-guard"
     assert result["symbols"] == ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
-    assert result["timeframes"] == ["1m", "1H", "4H", "1D", "1W", "1M"]
+    assert result["timeframes"] == ["1H", "4H", "1D", "1W", "1M"]
+    assert "1m" not in result["critical_timeframes"]
     assert result["bars"] == 200
     assert result["mode"] == "apply"
     assert result["repair_strategy"] == "last_n_closed_bars"
@@ -524,16 +525,16 @@ def test_run_swap_repair_once_forwards_no_progress_policy_from_preset(
             "max_range_days": 7,
             "max_fail_ratio": 1.0,
             "padding_bars": 0,
-            "critical_timeframes": ["1m"],
+            "critical_timeframes": ["1H"],
             "no_progress_threshold": 2,
         },
-        timeframe="1m",
+        timeframe="1H",
         start_ts_ms=10,
         end_ts_ms=100,
     )
 
     assert len(calls) == 1
-    assert calls[0]["critical_timeframes"] == ["1m"]
+    assert calls[0]["critical_timeframes"] == ["1H"]
     assert calls[0]["no_progress_threshold"] == 2
 
 
@@ -1129,7 +1130,7 @@ def test_swap_repair_task_translates_guardrail_valueerror_to_airflow_fail(
                 {
                     "trigger": "repair-all-swaps",
                     "symbols": ["BTC-USDT-SWAP"],
-                    "timeframes": ["1m"],
+                    "timeframes": ["1H"],
                     "mode": "apply",
                     "repair_strategy": "gap-repair",
                     "padding_bars": 0,
@@ -1140,7 +1141,7 @@ def test_swap_repair_task_translates_guardrail_valueerror_to_airflow_fail(
                     "auto_apply_anchor_strategy": "listing-date",
                     "anchor_ts_ms": None,
                     "auto_apply_window": True,
-                    "critical_timeframes": ["1m"],
+                    "critical_timeframes": ["1H"],
                     "no_progress_threshold": 1,
                 }
             )
@@ -1154,7 +1155,7 @@ def test_swap_repair_task_translates_no_progress_valueerror_to_airflow_fail(
     import sys
 
     async def _raise_no_progress(**_kwargs: Any) -> dict[str, Any]:
-        raise ValueError("no progress on critical TF 1m: 1 iterations in a row")
+        raise ValueError("no progress on critical TF 1H: 1 iterations in a row")
 
     class _Loop:
         @staticmethod
@@ -1184,7 +1185,7 @@ def test_swap_repair_task_translates_no_progress_valueerror_to_airflow_fail(
                 {
                     "trigger": "repair-all-swaps",
                     "symbols": ["BTC-USDT-SWAP"],
-                    "timeframes": ["1m"],
+                    "timeframes": ["1H"],
                     "mode": "apply",
                     "repair_strategy": "gap-repair",
                     "padding_bars": 0,
@@ -1195,7 +1196,7 @@ def test_swap_repair_task_translates_no_progress_valueerror_to_airflow_fail(
                     "auto_apply_anchor_strategy": "listing-date",
                     "anchor_ts_ms": None,
                     "auto_apply_window": True,
-                    "critical_timeframes": ["1m"],
+                    "critical_timeframes": ["1H"],
                     "no_progress_threshold": 1,
                 }
             )
@@ -1233,7 +1234,7 @@ def test_swap_repair_task_does_not_translate_other_exceptions(
                 {
                     "trigger": "repair-all-swaps",
                     "symbols": ["BTC-USDT-SWAP"],
-                    "timeframes": ["1m"],
+                    "timeframes": ["1H"],
                     "mode": "apply",
                     "repair_strategy": "gap-repair",
                     "padding_bars": 0,
@@ -1244,7 +1245,7 @@ def test_swap_repair_task_does_not_translate_other_exceptions(
                     "auto_apply_anchor_strategy": "listing-date",
                     "anchor_ts_ms": None,
                     "auto_apply_window": True,
-                    "critical_timeframes": ["1m"],
+                    "critical_timeframes": ["1H"],
                     "no_progress_threshold": 1,
                 }
             )

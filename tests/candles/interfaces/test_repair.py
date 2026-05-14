@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from src.candles.domain.repair import RepairExecutionMode, RepairStrategy
+from src.candles.domain.repair_timeframes import expected_next_open
 from src.candles.interfaces import repair as repair_interface
 
 
@@ -130,7 +131,9 @@ async def test_run_swap_repair_wires_gap_repair_use_case_without_market_adapter(
             "_DateTimeModule",
             (),
             {
-                "now": staticmethod(lambda tz=None: datetime(2026, 4, 11, 12, 34, tzinfo=tz)),
+                "now": staticmethod(
+                    lambda tz=None: datetime(2026, 4, 11, 12, 34, tzinfo=tz)
+                ),
                 "fromisoformat": staticmethod(datetime.fromisoformat),
             },
         )(),
@@ -222,7 +225,9 @@ async def test_run_swap_repair_selects_backfill_use_case_without_market_adapter(
 
 
 @pytest.mark.asyncio
-async def test_run_swap_repair_apply_uses_market_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_swap_repair_apply_uses_market_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     FakeUseCase.init_calls = []
     FakeUseCase.run_calls = []
     build_calls: list[dict[str, Any]] = []
@@ -233,7 +238,9 @@ async def test_run_swap_repair_apply_uses_market_adapter(monkeypatch: pytest.Mon
         build_calls.append(config)
         return {"config": config}
 
-    monkeypatch.setattr(repair_interface, "build_market_data_adapter", _build_market_data_adapter)
+    monkeypatch.setattr(
+        repair_interface, "build_market_data_adapter", _build_market_data_adapter
+    )
     monkeypatch.setattr(
         repair_interface,
         "_MarketDataPortAdapter",
@@ -290,7 +297,9 @@ async def test_run_swap_repair_auto_apply_delegates_with_explicit_contract(
             "watermark_updated": False,
         }
 
-    monkeypatch.setattr(repair_interface, "run_swap_repair_timeframe", _fake_run_swap_repair_timeframe)
+    monkeypatch.setattr(
+        repair_interface, "run_swap_repair_timeframe", _fake_run_swap_repair_timeframe
+    )
 
     summary = await repair_interface.run_swap_repair_auto_apply(
         symbol="BTC-USDT-SWAP",
@@ -343,7 +352,9 @@ async def test_run_swap_repair_auto_apply_passes_listing_date_strategy(
             "watermark_updated": False,
         }
 
-    monkeypatch.setattr(repair_interface, "run_swap_repair_timeframe", _fake_run_swap_repair_timeframe)
+    monkeypatch.setattr(
+        repair_interface, "run_swap_repair_timeframe", _fake_run_swap_repair_timeframe
+    )
 
     await repair_interface.run_swap_repair_auto_apply(
         symbol="BTC-USDT-SWAP",
@@ -359,6 +370,140 @@ async def test_run_swap_repair_auto_apply_passes_listing_date_strategy(
 
     assert calls[0]["auto_apply_anchor_strategy"] == "listing-date"
     assert calls[0]["anchor_ts_ms"] is None
+
+
+@pytest.mark.asyncio
+async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _MonthlyRepository:
+        def __init__(self) -> None:
+            self.timestamps = {
+                int(datetime(2026, 1, 1).timestamp() * 1000),
+                int(datetime(2026, 2, 1).timestamp() * 1000),
+                int(datetime(2026, 3, 1).timestamp() * 1000),
+            }
+
+        async def get_coverage_bounds(
+            self,
+            *,
+            symbol: str,
+            timeframe: str,
+            end_ts_ms: int,
+        ) -> tuple[int | None, int | None]:
+            del symbol, timeframe, end_ts_ms
+            return min(self.timestamps), max(self.timestamps)
+
+        async def list_timestamps(
+            self,
+            *,
+            symbol: str,
+            timeframe: str,
+            start_ts_ms: int,
+            end_ts_ms: int,
+        ) -> list[int]:
+            del symbol, timeframe
+            return sorted(
+                ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms
+            )
+
+        async def count_missing_timestamps(
+            self,
+            *,
+            symbol: str,
+            timeframe: str,
+            start_ts_ms: int,
+            end_ts_ms: int,
+        ) -> int:
+            del symbol
+            expected: list[int] = []
+            cursor = start_ts_ms
+            while cursor < end_ts_ms:
+                expected.append(cursor)
+                cursor = expected_next_open(cursor, timeframe)
+            existing = {
+                ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms
+            }
+            return sum(1 for ts in expected if ts not in existing)
+
+        async def selective_upsert_candles(
+            self,
+            *,
+            symbol: str,
+            timeframe: str,
+            candles: list[dict[str, Any]],
+        ) -> int:
+            del symbol, timeframe
+            written = 0
+            for candle in candles:
+                ts = int(candle["timestamp"])
+                if ts not in self.timestamps:
+                    self.timestamps.add(ts)
+                    written += 1
+            return written
+
+    class _FakeMarketPort:
+        async def fetch_history_candles(
+            self,
+            *,
+            instrument_id: str,
+            timeframe: str,
+            start_ts_ms: int,
+            end_ts_ms: int,
+        ) -> list[dict[str, Any]]:
+            del instrument_id, timeframe, end_ts_ms
+            return [
+                {
+                    "ts": start_ts_ms,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0,
+                    "close": 1,
+                    "volume": 10,
+                }
+            ]
+
+    repository = _MonthlyRepository()
+    monkeypatch.setattr(repair_interface, "RepairCandlesRepository", lambda: repository)
+    monkeypatch.setattr(
+        repair_interface,
+        "build_market_data_adapter",
+        lambda config: {"config": config},
+    )
+    monkeypatch.setattr(
+        repair_interface,
+        "_MarketDataPortAdapter",
+        lambda adapter: FakeMarketDataContext(_FakeMarketPort()),
+    )
+    monkeypatch.setattr(
+        repair_interface,
+        "datetime",
+        type(
+            "_DateTimeModule",
+            (),
+            {
+                "now": staticmethod(
+                    lambda tz=None: datetime(2026, 4, 8, 12, 0, tzinfo=tz)
+                ),
+                "fromisoformat": staticmethod(datetime.fromisoformat),
+            },
+        )(),
+    )
+
+    summary = await repair_interface.run_swap_repair_auto_apply(
+        symbol="BTC-USDT-SWAP",
+        timeframe="1M",
+        strategy=RepairStrategy.GAP_REPAIR,
+        max_gap_tasks_per_run=10,
+        max_requested_bars_per_run=100,
+        max_range_days=7,
+        max_fail_ratio=0.2,
+        padding_bars=0,
+    )
+
+    assert summary["timeframe"] == "1M"
+    assert summary["rows_written"] == 1
+    assert summary["outcome"] == "success"
 
 
 @pytest.mark.asyncio
@@ -390,7 +535,9 @@ async def test_plan_swap_repair_delegates_preview_with_anchor_strategy(
         )()
 
     monkeypatch.setattr(repair_interface, "RepairCandlesRepository", FakeRepository)
-    monkeypatch.setattr(repair_interface, "preview_repair_timeframe", _fake_preview_repair_timeframe)
+    monkeypatch.setattr(
+        repair_interface, "preview_repair_timeframe", _fake_preview_repair_timeframe
+    )
     monkeypatch.setattr(
         repair_interface,
         "datetime",
@@ -398,7 +545,9 @@ async def test_plan_swap_repair_delegates_preview_with_anchor_strategy(
             "_DateTimeModule",
             (),
             {
-                "now": staticmethod(lambda tz=None: datetime(2026, 4, 11, 12, 34, tzinfo=tz)),
+                "now": staticmethod(
+                    lambda tz=None: datetime(2026, 4, 11, 12, 34, tzinfo=tz)
+                ),
                 "fromisoformat": staticmethod(datetime.fromisoformat),
             },
         )(),

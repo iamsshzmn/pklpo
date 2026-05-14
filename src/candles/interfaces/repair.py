@@ -16,7 +16,7 @@ from src.candles.application.repair import (
     preview_repair_timeframe,
     run_repair_timeframe,
 )
-from src.candles.domain.okx_calendar import OKXCandleCalendar
+from src.candles.domain.okx_calendar import StorageCalendar
 from src.candles.domain.repair import (
     NoProgressPolicy,
     RepairExecutionMode,
@@ -98,10 +98,8 @@ def _default_recalc_specs(specs: list[str] | None) -> list[str]:
     return specs if specs else list(FEATURE_SPECS)
 
 
-def _build_calendar() -> OKXCandleCalendar:
-    settings = get_settings()
-    week_anchor = int(settings.okx.week_anchor_ts_ms or 1777824000000)
-    return OKXCandleCalendar(week_anchor_ts_ms=week_anchor)
+def _build_calendar() -> StorageCalendar:
+    return StorageCalendar()
 
 
 def _build_guardrails(
@@ -150,7 +148,7 @@ def _build_repair_use_case(
     telemetry: _TracingTelemetryAdapter,
     strategy: RepairStrategy,
     source: Any,
-    calendar: OKXCandleCalendar,
+    calendar: StorageCalendar,
     no_progress_policy: NoProgressPolicy | None = None,
 ) -> RunGapRepairUseCase | RunHistoricalBackfillUseCase:
     use_case_cls = (
@@ -189,7 +187,7 @@ async def _open_repair_runtime(
     mode: RepairExecutionMode,
     strategy: RepairStrategy,
     config: dict[str, Any] | None,
-    calendar: OKXCandleCalendar,
+    calendar: StorageCalendar,
     no_progress_policy: NoProgressPolicy | None = None,
 ) -> AsyncIterator[_RepairRuntime]:
     repository = RepairCandlesRepository()
@@ -252,7 +250,7 @@ def _build_execute_once(
     guardrails: RepairGuardrails,
     now_ts_ms: int,
     padding_bars: int,
-    calendar: OKXCandleCalendar,
+    calendar: StorageCalendar,
     auto_apply_window: bool = False,
 ) -> Callable[..., Awaitable[RepairSummary]]:
     async def _execute_once(

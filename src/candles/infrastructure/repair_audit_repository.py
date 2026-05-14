@@ -98,4 +98,8 @@ class SwapRepairAuditRepository:
 
         async with get_db_session() as session:
             result = await session.execute(stmt, params)
-            return int(result.rowcount if result.rowcount and result.rowcount > 0 else len(params))
+            return int(
+                result.rowcount
+                if result.rowcount and result.rowcount > 0
+                else len(params)
+            )

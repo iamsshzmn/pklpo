@@ -33,7 +33,9 @@ def _resolve_test_db_url() -> str | None:
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_count_missing_timestamps_returns_nine_with_one_bar_in_ten_slots() -> None:
+async def test_count_missing_timestamps_returns_nine_with_one_bar_in_ten_slots() -> (
+    None
+):
     db_url = _resolve_test_db_url()
     if not db_url:
         pytest.skip("DATABASE_URL or POSTGRES_* configuration is required")

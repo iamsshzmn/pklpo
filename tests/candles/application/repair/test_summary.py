@@ -44,7 +44,11 @@ def _summary(
 def test_merge_repair_summaries_rejects_mismatched_symbol() -> None:
     with pytest.raises(ValueError, match="requires identical symbol"):
         merge_repair_summaries(
-            validated={"symbol": "BTC-USDT-SWAP", "repair_strategy": "gap-repair", "padding_bars": 0},
+            validated={
+                "symbol": "BTC-USDT-SWAP",
+                "repair_strategy": "gap-repair",
+                "padding_bars": 0,
+            },
             timeframe="1m",
             summaries=[
                 _summary(symbol="BTC-USDT-SWAP"),
@@ -56,7 +60,11 @@ def test_merge_repair_summaries_rejects_mismatched_symbol() -> None:
 
 def test_merge_repair_summaries_marks_partial_auto_apply() -> None:
     summary = merge_repair_summaries(
-        validated={"symbol": "BTC-USDT-SWAP", "repair_strategy": "gap-repair", "padding_bars": 0},
+        validated={
+            "symbol": "BTC-USDT-SWAP",
+            "repair_strategy": "gap-repair",
+            "padding_bars": 0,
+        },
         timeframe="1m",
         summaries=[
             _summary(remaining_gap_tasks=1, remaining_requested_bars=1),
@@ -239,7 +247,11 @@ def test_merge_two_partial_summaries() -> None:
     )
 
     merged = merge_repair_summaries(
-        validated={"symbol": "BTC-USDT-SWAP", "repair_strategy": "gap-repair", "padding_bars": 0},
+        validated={
+            "symbol": "BTC-USDT-SWAP",
+            "repair_strategy": "gap-repair",
+            "padding_bars": 0,
+        },
         timeframe="1m",
         summaries=[first, second],
         closed_until_ts_ms=120_000,

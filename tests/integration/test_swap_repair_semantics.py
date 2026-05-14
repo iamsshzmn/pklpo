@@ -26,12 +26,15 @@ import pytest
 
 from src.candles.application.repair.dto import RepairCommand
 from src.candles.application.repair.use_cases import RunGapRepairUseCase
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     NoProgressPolicy,
     RepairExecutionMode,
     RepairGuardrails,
     RepairStrategy,
 )
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 @dataclass
@@ -158,6 +161,7 @@ def _make_use_case(
         coverage_query=coverage,
         historical_source=api,
         repair_store=store,
+        calendar=UTC_CAL,
         telemetry=telemetry,
         no_progress_policy=policy,
     )
@@ -250,14 +254,14 @@ async def test_empty_response_yields_empty_outcome_without_exception() -> None:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_three_consecutive_empty_on_1m_escalates_to_exception() -> None:
-    """Critical TF ``1m`` → tracker raises after N consecutive empty iterations."""
+async def test_three_consecutive_empty_on_1h_escalates_to_exception() -> None:
+    """Critical TF ``1H`` raises after N consecutive empty iterations."""
     coverage = InMemoryCoverage(timestamps=[])
     api = FakeHistoricalApi(responses=[[], [], []])
     store = InMemoryStore(coverage=coverage)
     telemetry = RecordingTelemetry()
     policy = NoProgressPolicy(
-        critical_timeframes=frozenset({"1m"}),
+        critical_timeframes=frozenset({"1H"}),
         no_progress_threshold=3,
     )
     use_case = _make_use_case(
@@ -268,9 +272,9 @@ async def test_three_consecutive_empty_on_1m_escalates_to_exception() -> None:
         policy=policy,
     )
 
-    command = _command(timeframe="1m")
+    command = _command(timeframe="1H")
 
     await use_case.run(command)
     await use_case.run(command)
-    with pytest.raises(ValueError, match="no progress on critical TF 1m"):
+    with pytest.raises(ValueError, match="no progress on critical TF 1H"):
         await use_case.run(command)
