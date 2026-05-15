@@ -1,4 +1,5 @@
 """Smoke tests for okx_swap_ohlcv_bootstrap_v1 DAG."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -90,7 +91,9 @@ def _load_bootstrap_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleT
     )
     monkeypatch.setitem(sys.modules, "src.candles.bootstrap", candles_bootstrap)
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/okx_swap_ohlcv_bootstrap_v1.py")
+    module_path = Path(
+        "D:/projects/pklpo/ops/airflow/dags/okx_swap_ohlcv_bootstrap_v1.py"
+    )
     module_name = "tests.db._okx_swap_ohlcv_bootstrap_v1_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
@@ -380,6 +383,7 @@ def test_validate_conf_skip_recalc_default_false(
 def test_validate_conf_skip_recalc_true(
     bootstrap_dag_module: types.ModuleType,
 ) -> None:
+    """skip_recalc=True in conf must be passed through as True."""
     result = _call_validate_conf(
         bootstrap_dag_module,
         {
@@ -390,3 +394,36 @@ def test_validate_conf_skip_recalc_true(
         },
     )
     assert result["skip_recalc"] is True
+
+
+@pytest.mark.unit
+def test_enqueue_indicator_recalc_skips_when_skip_recalc_true(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """When skip_recalc=True, task_enqueue_indicator_recalc must return without enqueuing."""
+    import unittest.mock as mock
+
+    validated = {
+        "lookback_days": 200,
+        "symbols": ["BTC-USDT-SWAP"],
+        "timeframes": ["1H"],
+        "skip_recalc": True,
+        "dry_run": True,
+    }
+
+    ti_stub = SimpleNamespace(xcom_pull=lambda task_ids, key: [])
+    context = {
+        "ti": ti_stub,
+        "params": {},
+        "dag_run": SimpleNamespace(conf={}),
+    }
+
+    bootstrap_dag_module.get_dag_env = lambda: {}
+    bootstrap_dag_module.setup_env = lambda env: None
+    bootstrap_dag_module._get_validated_conf = lambda ctx: validated
+
+    with mock.patch(
+        "src.candles.interfaces.repair.enqueue_indicator_recalc"
+    ) as mock_enqueue:
+        bootstrap_dag_module.task_enqueue_indicator_recalc(**context)
+        mock_enqueue.assert_not_called()
