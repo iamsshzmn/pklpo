@@ -18,7 +18,7 @@ Ops prerequisite — create bootstrap_pool before first run::
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from _common import (  # type: ignore[import-not-found]
@@ -198,44 +198,55 @@ def task_coverage_report(**context: Any) -> list[dict[str, Any]]:
         )
     if validated.get("dry_run"):
         logger.info("dry_run=True — stopping after coverage report")
+        from airflow.exceptions import AirflowSkipException
+
+        raise AirflowSkipException("dry_run=True")
     return report
 
 
-def task_bootstrap_symbol_tf(**context: Any) -> dict[str, Any]:
-    """Bootstrap a single (symbol, timeframe) pair — dispatched via map_index."""
+def task_bootstrap_symbol_tf(**context: Any) -> list[dict[str, Any]]:
+    """Bootstrap all pending (symbol, timeframe) pairs sequentially."""
     env = get_dag_env()
     setup_env(env)
     ti = context["ti"]
-    map_index = getattr(ti, "map_index", 0)
 
     validated = _get_validated_conf(context)
     init_result = ti.xcom_pull(task_ids="init_bootstrap_state", key="return_value") or {}
     pending: list[str] = init_result.get("pending", [])
 
-    if map_index >= len(pending):
-        return {"status": "skipped", "reason": "no pending item at map_index"}
+    if not pending:
+        logger.info("no pending pairs to bootstrap")
+        return []
 
-    pair = pending[map_index]
-    symbol, timeframe = pair.split("/", 1)
+    all_results: list[dict[str, Any]] = []
+    for pair in pending:
+        symbol, timeframe = pair.split("/", 1)
+        command = BootstrapCommand(
+            symbol=symbol,
+            timeframe=timeframe,
+            lookback_days=validated["lookback_days"],
+            chunk_bars=validated["chunk_bars"],
+            circuit_break_after=validated["circuit_break_after"],
+            dry_run=bool(validated.get("dry_run", False)),
+        )
+        try:
+            result = _get_loop().run_until_complete(bootstrap_interface.run_bootstrap(command))
+            logger.info(
+                "bootstrap %s/%s → status=%s missing=%d rows_written=%d",
+                symbol,
+                timeframe,
+                result.status,
+                result.missing_bars,
+                result.rows_written,
+            )
+            all_results.append(result.to_dict())
+        except Exception as exc:
+            logger.error("bootstrap %s/%s failed: %s", symbol, timeframe, exc)
+            all_results.append(
+                {"symbol": symbol, "timeframe": timeframe, "status": "failed", "error": str(exc)}
+            )
 
-    command = BootstrapCommand(
-        symbol=symbol,
-        timeframe=timeframe,
-        lookback_days=validated["lookback_days"],
-        chunk_bars=validated["chunk_bars"],
-        circuit_break_after=validated["circuit_break_after"],
-        dry_run=bool(validated.get("dry_run", False)),
-    )
-    result = _get_loop().run_until_complete(bootstrap_interface.run_bootstrap(command))
-    logger.info(
-        "bootstrap %s/%s → status=%s missing=%d rows_written=%d",
-        symbol,
-        timeframe,
-        result.status,
-        result.missing_bars,
-        result.rows_written,
-    )
-    return result.to_dict()
+    return all_results
 
 
 def task_validate_bootstrap_xcom(**context: Any) -> list[dict[str, Any]]:
@@ -247,26 +258,42 @@ def task_validate_bootstrap_xcom(**context: Any) -> list[dict[str, Any]]:
 
 
 def task_enqueue_indicator_recalc(**context: Any) -> None:
+    import time as _time_mod
+
     env = get_dag_env()
     setup_env(env)
     ti = context["ti"]
     results = ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
     validated = _get_validated_conf(context)
 
-    completed_symbols: list[str] = [
-        str(r.get("symbol", ""))
-        for r in results
-        if isinstance(r, dict) and r.get("status") == "completed"
-    ]
+    now_ms = int(_time_mod.time() * 1000)
+    day_ms = 86_400_000
+    lookback_days = validated.get("lookback_days", 730)
+    start_ts_ms = now_ms - int(lookback_days) * day_ms
 
-    if completed_symbols:
-        _get_loop().run_until_complete(
-            repair_interface.enqueue_indicator_recalc(
-                symbols=list(set(completed_symbols)),
-                timeframes=validated["timeframes"],
+    seen: set[tuple[str, str]] = set()
+    for r in results:
+        if not isinstance(r, dict) or r.get("status") != "completed":
+            continue
+        symbol = str(r.get("symbol", "")).strip()
+        timeframe = str(r.get("timeframe", "")).strip()
+        if not symbol or not timeframe or (symbol, timeframe) in seen:
+            continue
+        seen.add((symbol, timeframe))
+        try:
+            _get_loop().run_until_complete(
+                repair_interface.enqueue_indicator_recalc(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_ts_ms=start_ts_ms,
+                    end_ts_ms=now_ms,
+                )
             )
-        )
-        logger.info("enqueued indicator recalc for %d symbols", len(set(completed_symbols)))
+            logger.info("enqueued indicator recalc for %s/%s", symbol, timeframe)
+        except Exception as exc:
+            logger.warning(
+                "enqueue_indicator_recalc failed for %s/%s: %s", symbol, timeframe, exc
+            )
 
 
 def task_publish_bootstrap_report(**context: Any) -> dict[str, Any]:
@@ -318,7 +345,7 @@ with DAG(
     dag_id="okx_swap_ohlcv_bootstrap_v1",
     description="Manual historical OHLCV backfill for OKX SWAP instruments",
     schedule_interval=None,
-    start_date=datetime(2024, 1, 1),
+    start_date=datetime(2024, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,
     default_args={
