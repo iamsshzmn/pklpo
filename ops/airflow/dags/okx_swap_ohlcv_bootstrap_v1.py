@@ -165,6 +165,7 @@ def task_validate_conf(**context: Any) -> dict[str, Any]:
         field_name="circuit_break_after",
     )
     dry_run = bool(conf.get("dry_run", False))
+    skip_recalc = bool(conf.get("skip_recalc", False))
 
     validated = {
         "lookback_days": lookback_days,
@@ -173,6 +174,7 @@ def task_validate_conf(**context: Any) -> dict[str, Any]:
         "chunk_bars": chunk_bars,
         "circuit_break_after": circuit_break_after,
         "dry_run": dry_run,
+        "skip_recalc": skip_recalc,
     }
     logger.info(
         "bootstrap conf validated: %d symbols, %s TFs, lookback=%d days",
@@ -307,6 +309,10 @@ def task_enqueue_indicator_recalc(**context: Any) -> None:
     results = ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
     validated = _get_validated_conf(context)
 
+    if validated.get("skip_recalc", False):
+        logger.info("skip_recalc=True — skipping indicator recalc enqueue")
+        return
+
     now_ms = int(_time_mod.time() * 1000)
     day_ms = 86_400_000
     lookback_days = validated.get("lookback_days", 730)
@@ -416,6 +422,11 @@ with DAG(
         "chunk_bars": Param(500, type="integer"),
         "circuit_break_after": Param(3, type="integer"),
         "dry_run": Param(False, type="boolean"),
+        "skip_recalc": Param(
+            False,
+            type="boolean",
+            description="Skip indicator recalc enqueue after bootstrap (use for large runs to avoid queue flood)",
+        ),
     },
     tags=["bootstrap", "candles", "swap"],
     doc_md="""
@@ -441,6 +452,7 @@ Airflow UI tip: you can pass arrays **or** comma-separated strings for symbols a
   "lookback_days": 730,
   "chunk_bars": 500,
   "circuit_break_after": 3,
+  "skip_recalc": true,
   "dry_run": false
 }
 ```

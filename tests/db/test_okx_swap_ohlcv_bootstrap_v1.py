@@ -362,3 +362,31 @@ def test_validate_conf_single_symbol_string_no_comma(
         },
     )
     assert result["symbols"] == ["BTC-USDT-SWAP"]
+
+
+@pytest.mark.unit
+def test_validate_conf_skip_recalc_default_false(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """skip_recalc must default to False when not supplied."""
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {"symbols": ["BTC-USDT-SWAP"], "timeframes": ["1H"], "dry_run": True},
+    )
+    assert result["skip_recalc"] is False
+
+
+@pytest.mark.unit
+def test_validate_conf_skip_recalc_true(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {
+            "symbols": ["BTC-USDT-SWAP"],
+            "timeframes": ["1H"],
+            "skip_recalc": True,
+            "dry_run": True,
+        },
+    )
+    assert result["skip_recalc"] is True
