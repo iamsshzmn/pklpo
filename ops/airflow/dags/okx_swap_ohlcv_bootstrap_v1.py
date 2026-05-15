@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import asyncio
 
-SUPPORTED_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
+SUPPORTED_TIMEFRAMES = ("1H", "4H")
 DEFAULT_LOOKBACK_DAYS = 730
 DEFAULT_CHUNK_BARS = 500
 DEFAULT_CIRCUIT_BREAK_AFTER = 3
@@ -417,7 +417,7 @@ with DAG(
         "timeframes": Param(
             None,
             type=["null", "array", "string"],
-            description="Timeframes list or comma-separated string (null=1H,4H)",
+            description="Timeframes list or comma-separated string. Supported: 1H, 4H, 1D, 1W, 1M. Default when null: 1H and 4H.",
         ),
         "chunk_bars": Param(500, type="integer"),
         "circuit_break_after": Param(3, type="integer"),
