@@ -404,10 +404,14 @@ with DAG(
             730, type="integer", description="Days back to bootstrap"
         ),
         "symbols": Param(
-            None, type=["null", "array"], description="Symbols (null=all)"
+            None,
+            type=["null", "array", "string"],
+            description="Symbols list or comma-separated string (null=all curated)",
         ),
         "timeframes": Param(
-            None, type=["null", "array"], description="Timeframes (null=1H,4H)"
+            None,
+            type=["null", "array", "string"],
+            description="Timeframes list or comma-separated string (null=1H,4H)",
         ),
         "chunk_bars": Param(500, type="integer"),
         "circuit_break_after": Param(3, type="integer"),
@@ -437,7 +441,6 @@ Airflow UI tip: you can pass arrays **or** comma-separated strings for symbols a
   "lookback_days": 730,
   "chunk_bars": 500,
   "circuit_break_after": 3,
-  "skip_recalc": true,
   "dry_run": false
 }
 ```
