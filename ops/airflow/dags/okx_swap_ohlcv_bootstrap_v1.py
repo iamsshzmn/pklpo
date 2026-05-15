@@ -8,8 +8,11 @@ Manual trigger only. Trigger via Airflow UI with conf::
         "timeframes": ["1H", "4H"],
         "chunk_bars": 500,
         "circuit_break_after": 3,
+        "skip_recalc": false,
         "dry_run": false
     }
+
+Tip: symbols and timeframes also accept comma-separated strings, e.g. "1H,4H".
 
 Ops prerequisite — create bootstrap_pool before first run::
 
@@ -37,6 +40,7 @@ from airflow.operators.python import PythonOperator
 from src.candles.application.bootstrap.dto import BootstrapCommand, BootstrapResult
 from src.candles.application.bootstrap.summary import merge_bootstrap_results
 from src.candles.bootstrap import create_candles_airflow_callbacks
+from src.candles.domain.timeframes import TF_TO_MS as _TF_TO_MS
 from src.candles.instruments_service import (
     load_symbols_from_file,
     resolve_repo_instruments_file,
@@ -148,7 +152,6 @@ def task_validate_conf(**context: Any) -> dict[str, Any]:
     timeframes = _normalize_string_list(timeframes_raw, "timeframes") or list(
         SUPPORTED_TIMEFRAMES
     )
-    from src.candles.domain.timeframes import TF_TO_MS as _TF_TO_MS
 
     unknown = [tf for tf in timeframes if tf not in _TF_TO_MS]
     if unknown:
