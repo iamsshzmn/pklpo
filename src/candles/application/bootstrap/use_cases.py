@@ -50,6 +50,8 @@ class RunBootstrapUseCase:
         tf_ms = TF_TO_MS.get(timeframe)
         if tf_ms is None:
             raise ValueError(f"unsupported timeframe: {timeframe!r}")
+        if command.circuit_break_after < 1:
+            raise ValueError("circuit_break_after must be >= 1")
 
         # INIT
         listing_time_ms = await self._anchor.get_listing_time_ts_ms(symbol=symbol)
@@ -79,7 +81,7 @@ class RunBootstrapUseCase:
                 chunks_fetched=0,
                 rows_written=0,
                 expected_bars=existing.expected_bars,
-                actual_bars=existing.actual_bars or 0,
+                actual_bars=existing.actual_bars if existing.actual_bars is not None else 0,
                 missing_bars=0,
                 coverage_pct=100.0,
                 elapsed_seconds=time.monotonic() - started,
@@ -140,6 +142,7 @@ class RunBootstrapUseCase:
                         target_end_ts=target_end_ts,
                         expected_bars=expected_bars,
                         status="stuck",
+                        checkpoint_ts=checkpoint_ts,
                         error_streak=error_streak,
                         last_error=str(exc),
                     )
@@ -195,11 +198,7 @@ class RunBootstrapUseCase:
             start_ts_ms=target_start_ts,
             end_ts_ms=target_end_ts,
         )
-        live_expected = count_expected_bars(
-            window=RepairWindow(start_ts_ms=target_start_ts, end_ts_ms=target_end_ts),
-            timeframe=timeframe,
-            calendar=self._calendar,
-        )
+        live_expected = expected_bars
         live_missing = max(0, live_expected - live_actual)
         coverage_pct = (live_actual / live_expected * 100.0) if live_expected > 0 else 100.0
 
