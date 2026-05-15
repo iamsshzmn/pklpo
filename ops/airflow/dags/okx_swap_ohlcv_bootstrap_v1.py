@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import asyncio
 
-SUPPORTED_TIMEFRAMES = ("1H", "4H")
+SUPPORTED_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
 DEFAULT_LOOKBACK_DAYS = 730
 DEFAULT_CHUNK_BARS = 500
 DEFAULT_CIRCUIT_BREAK_AFTER = 3

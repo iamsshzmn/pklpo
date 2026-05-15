@@ -427,3 +427,37 @@ def test_enqueue_indicator_recalc_skips_when_skip_recalc_true(
     ) as mock_enqueue:
         bootstrap_dag_module.task_enqueue_indicator_recalc(**context)
         mock_enqueue.assert_not_called()
+
+
+@pytest.mark.unit
+def test_validate_conf_accepts_1d_timeframe(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """1D must be accepted by validate_conf (it is in TF_TO_MS and StorageCalendar supports it)."""
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {
+            "symbols": ["BTC-USDT-SWAP"],
+            "timeframes": ["1H", "4H", "1D"],
+            "lookback_days": 200,
+            "dry_run": True,
+        },
+    )
+    assert "1D" in result["timeframes"]
+
+
+@pytest.mark.unit
+def test_validate_conf_accepts_1w_1m_timeframes(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """1W and 1M must be accepted by validate_conf."""
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {
+            "symbols": ["BTC-USDT-SWAP"],
+            "timeframes": ["1W", "1M"],
+            "lookback_days": 730,
+            "dry_run": True,
+        },
+    )
+    assert result["timeframes"] == ["1W", "1M"]
