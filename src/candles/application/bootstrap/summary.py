@@ -61,6 +61,7 @@ def merge_bootstrap_results(results: list[BootstrapResult]) -> BootstrapSummary:
         if status in counts:
             counts[status] += 1
         else:
+            # Any status not in the known counts (e.g. "skipped" early-exit) goes here
             skipped += 1
         rows_written += r.rows_written
         chunks_fetched += r.chunks_fetched

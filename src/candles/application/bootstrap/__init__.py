@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .dto import BootstrapCommand, BootstrapProgress, BootstrapResult
 from .ports import BootstrapStatePort
 from .summary import BootstrapSummary, merge_bootstrap_results
