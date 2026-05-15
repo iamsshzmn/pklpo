@@ -136,3 +136,229 @@ def test_bootstrap_dag_schedule_is_none(
     dag = getattr(bootstrap_dag_module, "dag", None)
     assert dag is not None
     assert dag.schedule_interval is None, "bootstrap must be manual-trigger only"
+
+
+# ---------------------------------------------------------------------------
+# task_validate_conf — timeframe validation
+# ---------------------------------------------------------------------------
+
+
+def _make_context(conf: dict[str, Any]) -> dict[str, Any]:
+    """Build a minimal Airflow context stub for task_validate_conf."""
+    dag_run = SimpleNamespace(conf=conf)
+    return {"params": {}, "dag_run": dag_run}
+
+
+def _call_validate_conf(
+    module: types.ModuleType, conf: dict[str, Any]
+) -> dict[str, Any]:
+    """Call task_validate_conf with env setup stubbed out."""
+    context = _make_context(conf)
+    module.get_dag_env = lambda: {}
+    module.setup_env = lambda env: None
+    return module.task_validate_conf(**context)
+
+
+@pytest.mark.unit
+def test_validate_conf_accepts_valid_timeframes(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """Valid separate timeframe strings must pass without error."""
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {
+            "symbols": ["BTC-USDT-SWAP"],
+            "timeframes": ["1H", "4H"],
+            "lookback_days": 200,
+            "chunk_bars": 500,
+            "dry_run": True,
+        },
+    )
+    assert result["timeframes"] == ["1H", "4H"]
+
+
+@pytest.mark.unit
+def test_validate_conf_rejects_comma_in_single_string(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """Comma-joined TFs in one string ('1H, 4H') must raise AirflowFailException."""
+    AirflowFailException = sys.modules["airflow.exceptions"].AirflowFailException
+    with pytest.raises(AirflowFailException, match="1H, 4H"):
+        _call_validate_conf(
+            bootstrap_dag_module,
+            {
+                "symbols": ["BTC-USDT-SWAP"],
+                "timeframes": ["1H, 4H"],
+                "lookback_days": 200,
+                "dry_run": True,
+            },
+        )
+
+
+@pytest.mark.unit
+def test_validate_conf_rejects_unknown_timeframe(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """Completely unrecognised TF string must raise AirflowFailException."""
+    AirflowFailException = sys.modules["airflow.exceptions"].AirflowFailException
+    with pytest.raises(AirflowFailException, match="bad_tf"):
+        _call_validate_conf(
+            bootstrap_dag_module,
+            {
+                "symbols": ["BTC-USDT-SWAP"],
+                "timeframes": ["bad_tf"],
+                "lookback_days": 200,
+                "dry_run": True,
+            },
+        )
+
+
+@pytest.mark.unit
+def test_validate_conf_rejects_mixed_valid_and_invalid(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """A list with one good and one bad TF must still fail."""
+    AirflowFailException = sys.modules["airflow.exceptions"].AirflowFailException
+    with pytest.raises(AirflowFailException, match="bad_tf"):
+        _call_validate_conf(
+            bootstrap_dag_module,
+            {
+                "symbols": ["BTC-USDT-SWAP"],
+                "timeframes": ["1H", "bad_tf"],
+                "lookback_days": 200,
+                "dry_run": True,
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# init_bootstrap_state interface — unknown TF must not silently continue
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_init_bootstrap_state_raises_on_unknown_tf() -> None:
+    """init_bootstrap_state must raise ValueError for unrecognised timeframes,
+    not silently skip them and return empty pending list."""
+    import asyncio
+
+    from src.candles.interfaces.bootstrap import init_bootstrap_state
+
+    class _FailIfCalled:
+        async def get_listing_time_ts_ms(self, *, symbol: str) -> int | None:
+            return None
+
+        async def get_bootstrap_state(self, *, symbol: str, timeframe: str) -> None:
+            return None
+
+        async def count_candles(self, **_: Any) -> int:
+            return 0
+
+        async def upsert_bootstrap_state(self, **_: Any) -> None:
+            pass
+
+    import unittest.mock as mock
+
+    with mock.patch(
+        "src.candles.interfaces.bootstrap.BootstrapCandlesRepository",
+        return_value=_FailIfCalled(),
+    ):
+        with pytest.raises(ValueError, match="1H, 4H"):
+            asyncio.get_event_loop().run_until_complete(
+                init_bootstrap_state(
+                    symbols=["BTC-USDT-SWAP"],
+                    timeframes=["1H, 4H"],
+                    lookback_days=200,
+                )
+            )
+
+
+# ---------------------------------------------------------------------------
+# task_validate_conf — comma-string normalization
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_validate_conf_accepts_symbols_as_comma_string(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """'BTC-USDT-SWAP,ETH-USDT-SWAP' must be split into two symbols."""
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {
+            "symbols": "BTC-USDT-SWAP,ETH-USDT-SWAP",
+            "timeframes": ["1H"],
+            "lookback_days": 200,
+            "dry_run": True,
+        },
+    )
+    assert result["symbols"] == ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
+
+
+@pytest.mark.unit
+def test_validate_conf_accepts_timeframes_as_comma_string(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """'1H,4H' must be split and treated the same as ['1H', '4H']."""
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {
+            "symbols": ["BTC-USDT-SWAP"],
+            "timeframes": "1H,4H",
+            "lookback_days": 200,
+            "dry_run": True,
+        },
+    )
+    assert result["timeframes"] == ["1H", "4H"]
+
+
+@pytest.mark.unit
+def test_validate_conf_comma_string_with_spaces(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """'1H, 4H' (with space) must be split and stripped correctly."""
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {
+            "symbols": ["BTC-USDT-SWAP"],
+            "timeframes": "1H, 4H",
+            "lookback_days": 200,
+            "dry_run": True,
+        },
+    )
+    assert result["timeframes"] == ["1H", "4H"]
+
+
+@pytest.mark.unit
+def test_validate_conf_invalid_tf_in_comma_string_fails(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """'1H,bad_tf' as a comma-string must still fail fast on the bad entry."""
+    AirflowFailException = sys.modules["airflow.exceptions"].AirflowFailException
+    with pytest.raises(AirflowFailException, match="bad_tf"):
+        _call_validate_conf(
+            bootstrap_dag_module,
+            {
+                "symbols": ["BTC-USDT-SWAP"],
+                "timeframes": "1H,bad_tf",
+                "lookback_days": 200,
+                "dry_run": True,
+            },
+        )
+
+
+@pytest.mark.unit
+def test_validate_conf_single_symbol_string_no_comma(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """A single symbol passed as a plain string (no comma) must become a one-element list."""
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {
+            "symbols": "BTC-USDT-SWAP",
+            "timeframes": ["1H"],
+            "lookback_days": 200,
+            "dry_run": True,
+        },
+    )
+    assert result["symbols"] == ["BTC-USDT-SWAP"]

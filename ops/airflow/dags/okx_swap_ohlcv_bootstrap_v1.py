@@ -15,6 +15,7 @@ Ops prerequisite — create bootstrap_pool before first run::
 
     airflow pools set bootstrap_pool 2 "Historical OHLCV bootstrap"
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,6 +56,24 @@ DEFAULT_LOOKBACK_DAYS = 730
 DEFAULT_CHUNK_BARS = 500
 DEFAULT_CIRCUIT_BREAK_AFTER = 3
 
+
+def _normalize_string_list(raw: object, field: str) -> list[str] | None:
+    """Coerce a comma-separated string or list to a stripped list of strings.
+
+    Returns None if raw is None/empty so callers can apply their default.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        parts = [s.strip() for s in raw.split(",") if s.strip()]
+        return parts if parts else None
+    if isinstance(raw, list):
+        return [str(s).strip() for s in raw if str(s).strip()] or None
+    raise AirflowFailException(
+        f"{field} must be a list or comma-separated string, got {type(raw).__name__}"
+    )
+
+
 try:
     _callbacks = create_candles_airflow_callbacks()
     DAG_FAILURE_CALLBACK = _callbacks.on_failure_callback
@@ -71,7 +90,9 @@ def _get_loop() -> asyncio.AbstractEventLoop:
 
 
 def get_dag_env() -> dict[str, str]:
-    return cast("dict[str, str]", _get_common_dag_env(job_name_default="swap_bootstrap_v1"))
+    return cast(
+        "dict[str, str]", _get_common_dag_env(job_name_default="swap_bootstrap_v1")
+    )
 
 
 def setup_env(env: dict[str, str]) -> None:
@@ -117,17 +138,28 @@ def task_validate_conf(**context: Any) -> dict[str, Any]:
         raise AirflowFailException("lookback_days must be positive")
 
     symbols_raw = conf.get("symbols")
-    if symbols_raw:
-        symbols = [str(s) for s in symbols_raw]
-    else:
+    symbols = _normalize_string_list(symbols_raw, "symbols")
+    if not symbols:
         symbols = _load_curated_swap_symbols()
     if not symbols:
         raise AirflowFailException("symbol list is empty")
 
     timeframes_raw = conf.get("timeframes")
-    timeframes = [str(tf) for tf in timeframes_raw] if timeframes_raw else list(SUPPORTED_TIMEFRAMES)
+    timeframes = _normalize_string_list(timeframes_raw, "timeframes") or list(
+        SUPPORTED_TIMEFRAMES
+    )
+    from src.candles.domain.timeframes import TF_TO_MS as _TF_TO_MS
 
-    chunk_bars = _coerce_int(conf.get("chunk_bars", DEFAULT_CHUNK_BARS), field_name="chunk_bars")
+    unknown = [tf for tf in timeframes if tf not in _TF_TO_MS]
+    if unknown:
+        raise AirflowFailException(
+            f"unknown timeframe(s) in conf: {unknown}. "
+            "Each entry must be a separate string like '1H', not '1H, 4H'."
+        )
+
+    chunk_bars = _coerce_int(
+        conf.get("chunk_bars", DEFAULT_CHUNK_BARS), field_name="chunk_bars"
+    )
     circuit_break_after = _coerce_int(
         conf.get("circuit_break_after", DEFAULT_CIRCUIT_BREAK_AFTER),
         field_name="circuit_break_after",
@@ -211,7 +243,9 @@ def task_bootstrap_symbol_tf(**context: Any) -> list[dict[str, Any]]:
     ti = context["ti"]
 
     validated = _get_validated_conf(context)
-    init_result = ti.xcom_pull(task_ids="init_bootstrap_state", key="return_value") or {}
+    init_result = (
+        ti.xcom_pull(task_ids="init_bootstrap_state", key="return_value") or {}
+    )
     pending: list[str] = init_result.get("pending", [])
 
     if not pending:
@@ -230,7 +264,9 @@ def task_bootstrap_symbol_tf(**context: Any) -> list[dict[str, Any]]:
             dry_run=bool(validated.get("dry_run", False)),
         )
         try:
-            result = _get_loop().run_until_complete(bootstrap_interface.run_bootstrap(command))
+            result = _get_loop().run_until_complete(
+                bootstrap_interface.run_bootstrap(command)
+            )
             logger.info(
                 "bootstrap %s/%s → status=%s missing=%d rows_written=%d",
                 symbol,
@@ -243,7 +279,12 @@ def task_bootstrap_symbol_tf(**context: Any) -> list[dict[str, Any]]:
         except Exception as exc:
             logger.error("bootstrap %s/%s failed: %s", symbol, timeframe, exc)
             all_results.append(
-                {"symbol": symbol, "timeframe": timeframe, "status": "failed", "error": str(exc)}
+                {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "status": "failed",
+                    "error": str(exc),
+                }
             )
 
     return all_results
@@ -298,7 +339,9 @@ def task_enqueue_indicator_recalc(**context: Any) -> None:
 
 def task_publish_bootstrap_report(**context: Any) -> dict[str, Any]:
     ti = context["ti"]
-    results_raw = ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
+    results_raw = (
+        ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
+    )
 
     results: list[BootstrapResult] = []
     for r in results_raw:
@@ -329,7 +372,9 @@ def task_publish_bootstrap_report(**context: Any) -> dict[str, Any]:
 
 def task_publish_bootstrap_ops(**context: Any) -> None:
     ti = context["ti"]
-    summary_dict = ti.xcom_pull(task_ids="publish_bootstrap_report", key="return_value") or {}
+    summary_dict = (
+        ti.xcom_pull(task_ids="publish_bootstrap_report", key="return_value") or {}
+    )
     logger.info(
         "bootstrap ops metrics: coverage_pct=%.2f missing_bars=%s",
         summary_dict.get("overall_coverage_pct", 0),
@@ -355,14 +400,53 @@ with DAG(
     on_failure_callback=DAG_FAILURE_CALLBACK,
     on_success_callback=DAG_SUCCESS_CALLBACK,
     params={
-        "lookback_days": Param(730, type="integer", description="Days back to bootstrap"),
-        "symbols": Param(None, type=["null", "array"], description="Symbols (null=all)"),
-        "timeframes": Param(None, type=["null", "array"], description="Timeframes (null=1H,4H)"),
+        "lookback_days": Param(
+            730, type="integer", description="Days back to bootstrap"
+        ),
+        "symbols": Param(
+            None, type=["null", "array"], description="Symbols (null=all)"
+        ),
+        "timeframes": Param(
+            None, type=["null", "array"], description="Timeframes (null=1H,4H)"
+        ),
         "chunk_bars": Param(500, type="integer"),
         "circuit_break_after": Param(3, type="integer"),
         "dry_run": Param(False, type="boolean"),
     },
     tags=["bootstrap", "candles", "swap"],
+    doc_md="""
+## Bootstrap DAG — conf examples
+
+Airflow UI tip: you can pass arrays **or** comma-separated strings for symbols and timeframes.
+
+**Minimal — 3 symbols, 2 timeframes:**
+```json
+{
+  "symbols": "BTC-USDT-SWAP,ETH-USDT-SWAP,BNB-USDT-SWAP",
+  "timeframes": "1H,4H",
+  "lookback_days": 200,
+  "dry_run": true
+}
+```
+
+**Full run — all curated symbols, 730 days:**
+```json
+{
+  "symbols": null,
+  "timeframes": ["1H", "4H"],
+  "lookback_days": 730,
+  "chunk_bars": 500,
+  "circuit_break_after": 3,
+  "skip_recalc": true,
+  "dry_run": false
+}
+```
+
+**Dry-run only (coverage report, no writes):**
+```json
+{"dry_run": true}
+```
+""",
 ) as dag:
     t_validate_conf = PythonOperator(
         task_id="validate_conf",
