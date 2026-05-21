@@ -34,6 +34,12 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_add_swap_fields_to_instruments import (
         migrate_add_swap_fields_to_instruments,
     )
+    from src.db.migrations.migrate_add_swap_ohlcv_alignment_trigger import (
+        migrate_add_swap_ohlcv_alignment_trigger,
+    )
+    from src.db.migrations.migrate_add_swap_ohlcv_constraints import (
+        migrate_add_swap_ohlcv_constraints,
+    )
     from src.db.migrations.migrate_create_combination_features import (
         migrate_create_combination_features,
     )
@@ -55,6 +61,9 @@ def get_migrations() -> list[Migration]:
     )
     from src.db.migrations.migrate_create_ops_data_quality_metrics import (
         migrate_create_ops_data_quality_metrics,
+    )
+    from src.db.migrations.migrate_create_ops_swap_ohlcv_bootstrap_state import (
+        migrate_create_ops_swap_ohlcv_bootstrap_state,
     )
     from src.db.migrations.migrate_create_ops_swap_repair_audit import (
         migrate_create_ops_swap_repair_audit,
@@ -92,6 +101,9 @@ def get_migrations() -> list[Migration]:
     )
     from src.db.migrations.migrate_swap_ohlcv_timestamps_timestamptz import (
         migrate_swap_ohlcv_timestamps_timestamptz,
+    )
+    from src.db.migrations.migrate_validate_swap_ohlcv_constraints import (
+        migrate_validate_swap_ohlcv_constraints,
     )
     from src.migrate_create_instruments import run_migrations as mig_instruments
 
@@ -235,5 +247,25 @@ def get_migrations() -> list[Migration]:
             "340_swap_ohlcv_retention_policy",
             "replace swap OHLCV insert-trigger cleanup with per-timeframe retention",
             migrate_swap_ohlcv_retention_policy,
+        ),
+        Migration(
+            "350_ops_swap_ohlcv_bootstrap_state",
+            "create ops.swap_ohlcv_bootstrap_state table",
+            migrate_create_ops_swap_ohlcv_bootstrap_state,
+        ),
+        Migration(
+            "360_swap_ohlcv_constraints",
+            "add swap OHLCV DB protection constraints",
+            migrate_add_swap_ohlcv_constraints,
+        ),
+        Migration(
+            "370_validate_swap_ohlcv_constraints",
+            "validate swap OHLCV DB protection constraints",
+            migrate_validate_swap_ohlcv_constraints,
+        ),
+        Migration(
+            "380_swap_ohlcv_alignment_trigger",
+            "create disabled swap OHLCV alignment trigger",
+            migrate_add_swap_ohlcv_alignment_trigger,
         ),
     ]
