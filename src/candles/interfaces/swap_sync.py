@@ -5,7 +5,7 @@ Directly wires the application layer to infrastructure adapters.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.candles.application.sync import (
     ExecutionMode,
@@ -29,6 +29,10 @@ from src.candles.repository import SwapCandlesRepository
 from src.logging import get_logger
 
 logger = get_logger("candles.swap_sync")
+
+if TYPE_CHECKING:
+    from src.candles.domain.okx_calendar import StorageCalendar
+    from src.candles.domain.repair import RepairWindow
 
 
 class _TracingTelemetryAdapter:
@@ -124,12 +128,16 @@ class _CandleStorePortAdapter:
         timeframe: str,
         candles: list[dict[str, Any]],
         additional_data: dict[str, Any],
+        window: RepairWindow | None = None,
+        calendar: StorageCalendar | None = None,
     ) -> int:
         return await self._repository.upsert_candles(
             symbol=symbol,
             timeframe=timeframe,
             candles=candles,
             additional_data=additional_data,
+            window=window,
+            calendar=calendar,
         )
 
     async def get_latest_timestamp(self, *, symbol: str, timeframe: str) -> int | None:

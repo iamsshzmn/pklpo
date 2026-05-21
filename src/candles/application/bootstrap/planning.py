@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from src.candles.domain.repair_timeframes import _previous_open
+
 if TYPE_CHECKING:
     from src.candles.domain.okx_calendar import OKXCandleCalendar
 
@@ -32,12 +34,16 @@ def compute_chunk_window(
     *,
     checkpoint_ts: int,
     chunk_bars: int,
-    timeframe_ms: int,
+    timeframe: str,
+    calendar: OKXCandleCalendar,
 ) -> tuple[int, int]:
     """Return (chunk_start_ts, chunk_end_ts) for one backward page fetch.
 
-    chunk_end_ts   = checkpoint_ts
-    chunk_start_ts = checkpoint_ts - chunk_bars * timeframe_ms
+    chunk_end_ts   = floor_open(checkpoint_ts)
+    chunk_start_ts = chunk_bars previous opens before chunk_end_ts
     """
-    chunk_start_ts = checkpoint_ts - chunk_bars * timeframe_ms
-    return chunk_start_ts, checkpoint_ts
+    cursor = calendar.floor_open(checkpoint_ts, timeframe)
+    chunk_end_ts = cursor
+    for _ in range(chunk_bars):
+        cursor = _previous_open(cursor, timeframe)
+    return cursor, chunk_end_ts

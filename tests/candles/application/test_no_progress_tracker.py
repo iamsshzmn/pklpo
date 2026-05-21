@@ -5,12 +5,12 @@ from src.candles.domain.repair import NoProgressPolicy
 
 
 def test_no_progress_tracker_resets_after_positive_progress() -> None:
-    tracker = NoProgressTracker(policy=NoProgressPolicy(), timeframe="1m")
+    tracker = NoProgressTracker(policy=NoProgressPolicy(), timeframe="1H")
 
     tracker.record(progress=0)
     tracker.record(progress=-3)
     assert tracker.snapshot() == {
-        "timeframe": "1m",
+        "timeframe": "1H",
         "critical": True,
         "consecutive_no_progress": 2,
         "consecutive_blocked": 0,
@@ -21,7 +21,7 @@ def test_no_progress_tracker_resets_after_positive_progress() -> None:
 
     assert tracker.should_escalate() is False
     assert tracker.snapshot() == {
-        "timeframe": "1m",
+        "timeframe": "1H",
         "critical": True,
         "consecutive_no_progress": 0,
         "consecutive_blocked": 0,
@@ -30,7 +30,7 @@ def test_no_progress_tracker_resets_after_positive_progress() -> None:
 
 
 def test_no_progress_tracker_escalates_at_threshold_for_critical_timeframe() -> None:
-    tracker = NoProgressTracker(policy=NoProgressPolicy(), timeframe="1m")
+    tracker = NoProgressTracker(policy=NoProgressPolicy(), timeframe="1H")
 
     tracker.record(progress=0)
     tracker.record(progress=0)
@@ -78,7 +78,7 @@ def test_no_progress_tracker_snapshot_shape() -> None:
 
 
 def test_no_progress_tracker_tracks_blocked_without_escalation() -> None:
-    tracker = NoProgressTracker(policy=NoProgressPolicy(), timeframe="1m")
+    tracker = NoProgressTracker(policy=NoProgressPolicy(), timeframe="1H")
 
     tracker.record(progress=0, blocked=True)
     tracker.record(progress=0, blocked=True)
@@ -86,7 +86,7 @@ def test_no_progress_tracker_tracks_blocked_without_escalation() -> None:
 
     assert tracker.should_escalate() is False
     assert tracker.snapshot() == {
-        "timeframe": "1m",
+        "timeframe": "1H",
         "critical": True,
         "consecutive_no_progress": 0,
         "consecutive_blocked": 3,

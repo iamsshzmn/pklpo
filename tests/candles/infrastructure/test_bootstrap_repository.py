@@ -33,7 +33,7 @@ async def test_upsert_bootstrap_state_creates_row() -> None:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_upsert_does_not_reset_checkpoint_ts() -> None:
+async def test_upsert_checkpoint_ts_is_caller_controlled() -> None:
     repo = BootstrapCandlesRepository()
     symbol, timeframe = "TEST-USDT-SWAP", "4H"
     await repo.upsert_bootstrap_state(
@@ -46,7 +46,6 @@ async def test_upsert_does_not_reset_checkpoint_ts() -> None:
         status="running",
         checkpoint_ts=1_500_000,
     )
-    # Re-upsert without checkpoint_ts — checkpoint must NOT be reset
     await repo.upsert_bootstrap_state(
         symbol=symbol,
         timeframe=timeframe,
@@ -58,7 +57,7 @@ async def test_upsert_does_not_reset_checkpoint_ts() -> None:
     )
     state = await repo.get_bootstrap_state(symbol=symbol, timeframe=timeframe)
     assert state is not None
-    assert state.checkpoint_ts == 1_500_000
+    assert state.checkpoint_ts is None
 
 
 @pytest.mark.integration

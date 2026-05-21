@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from src.candles.domain.okx_calendar import StorageCalendar
+    from src.candles.domain.repair import RepairWindow
 
 
 class MarketDataPort(Protocol):
@@ -55,6 +59,8 @@ class CandleStorePort(Protocol):
         timeframe: str,
         candles: list[dict[str, Any]],
         additional_data: dict[str, Any],
+        window: RepairWindow | None = None,
+        calendar: StorageCalendar | None = None,
     ) -> int: ...
 
     async def get_latest_timestamp(

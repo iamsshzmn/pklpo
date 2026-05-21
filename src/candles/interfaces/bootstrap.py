@@ -81,12 +81,10 @@ async def init_bootstrap_state(
         for timeframe in timeframes:
             tf_ms = TF_TO_MS.get(timeframe)
             if tf_ms is None:
-                continue
-
-            existing = await repository.get_bootstrap_state(symbol=symbol, timeframe=timeframe)
-            if existing is not None and existing.bootstrap_completed:
-                skipped.append(f"{symbol}/{timeframe}")
-                continue
+                raise ValueError(
+                    f"unknown timeframe '{timeframe}' — not in TF_TO_MS. "
+                    "Pass each timeframe as a separate list entry, e.g. ['1H', '4H']."
+                )
 
             target_start_ts, target_end_ts = compute_target_window(
                 now_ms=now_ms,
@@ -101,14 +99,19 @@ async def init_bootstrap_state(
                 calendar=calendar,
             )
 
-            # Check if already fully covered (live check)
-            actual = await repository.count_candles(
-                symbol=symbol,
-                timeframe=timeframe,
-                start_ts_ms=target_start_ts,
-                end_ts_ms=target_end_ts,
-            )
-            if actual >= expected_bars > 0:
+            existing = await repository.get_bootstrap_state(symbol=symbol, timeframe=timeframe)
+            if existing is not None and existing.bootstrap_completed:
+                # Reconcile: verify live DB before trusting the completed flag.
+                rec = await repository.count_valid_candles(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_ts_ms=target_start_ts,
+                    end_ts_ms=target_end_ts,
+                )
+                if rec.missing_bars == 0 and rec.invalid_extra_rows == 0:
+                    skipped.append(f"{symbol}/{timeframe}")
+                    continue
+                # State is stale — downgrade so RunBootstrapUseCase will re-fetch.
                 await repository.upsert_bootstrap_state(
                     symbol=symbol,
                     timeframe=timeframe,
@@ -116,11 +119,43 @@ async def init_bootstrap_state(
                     target_start_ts=target_start_ts,
                     target_end_ts=target_end_ts,
                     expected_bars=expected_bars,
-                    actual_bars=actual,
+                    actual_bars=rec.valid_bars,
+                    missing_bars=rec.missing_bars,
+                    coverage_pct=(rec.valid_bars / rec.expected_bars * 100.0)
+                    if rec.expected_bars > 0
+                    else 0.0,
+                    status="incomplete",
+                    bootstrap_completed=False,
+                    checkpoint_ts=target_end_ts,
+                )
+                pending.append(f"{symbol}/{timeframe}")
+                continue
+
+            # Check if already fully covered (live check)
+            rec = await repository.count_valid_candles(
+                symbol=symbol,
+                timeframe=timeframe,
+                start_ts_ms=target_start_ts,
+                end_ts_ms=target_end_ts,
+            )
+            if (
+                rec.expected_bars > 0
+                and rec.missing_bars == 0
+                and rec.invalid_extra_rows == 0
+            ):
+                await repository.upsert_bootstrap_state(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    lookback_days=lookback_days,
+                    target_start_ts=target_start_ts,
+                    target_end_ts=target_end_ts,
+                    expected_bars=expected_bars,
+                    actual_bars=rec.valid_bars,
                     missing_bars=0,
                     coverage_pct=100.0,
                     status="completed",
                     bootstrap_completed=True,
+                    checkpoint_ts=target_start_ts,
                 )
                 skipped.append(f"{symbol}/{timeframe}")
                 continue
@@ -132,10 +167,13 @@ async def init_bootstrap_state(
                 target_start_ts=target_start_ts,
                 target_end_ts=target_end_ts,
                 expected_bars=expected_bars,
-                actual_bars=actual,
-                missing_bars=max(0, expected_bars - actual),
-                coverage_pct=(actual / expected_bars * 100.0) if expected_bars > 0 else 100.0,
+                actual_bars=rec.valid_bars,
+                missing_bars=rec.missing_bars,
+                coverage_pct=(rec.valid_bars / rec.expected_bars * 100.0)
+                if rec.expected_bars > 0
+                else 100.0,
                 status="pending",
+                checkpoint_ts=target_end_ts,
             )
             pending.append(f"{symbol}/{timeframe}")
 
@@ -168,3 +206,108 @@ async def build_coverage_report(
                     "bootstrap_completed": state.bootstrap_completed,
                 })
     return rows
+
+
+async def reconcile_bootstrap_state(
+    *,
+    symbols: list[str],
+    timeframes: list[str],
+    lookback_days: int,
+    config: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Compare completed bootstrap states against live swap_ohlcv_p.
+
+    For every (symbol, timeframe) pair whose state says bootstrap_completed=True,
+    counts real rows in swap_ohlcv_p. If the live count falls below expected_bars,
+    downgrades the state to status='incomplete' / bootstrap_completed=False so the
+    next bootstrap run will re-fetch.
+
+    Returns a list of dicts describing every checked pair and whether it was
+    downgraded.
+    """
+    now_ms = int(_time.time() * 1000)
+    repository = BootstrapCandlesRepository()
+    calendar = StorageCalendar()
+    report: list[dict[str, Any]] = []
+
+    for symbol in symbols:
+        listing_time_ms = await repository.get_listing_time_ts_ms(symbol=symbol)
+        for timeframe in timeframes:
+            tf_ms = TF_TO_MS.get(timeframe)
+            if tf_ms is None:
+                continue
+
+            state = await repository.get_bootstrap_state(symbol=symbol, timeframe=timeframe)
+            if state is None:
+                report.append({
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "action": "no_state",
+                })
+                continue
+
+            target_start_ts, target_end_ts = compute_target_window(
+                now_ms=now_ms,
+                lookback_days=lookback_days,
+                listing_time_ms=listing_time_ms,
+                timeframe=timeframe,
+                calendar=calendar,
+            )
+            rec = await repository.count_valid_candles(
+                symbol=symbol,
+                timeframe=timeframe,
+                start_ts_ms=target_start_ts,
+                end_ts_ms=target_end_ts,
+            )
+
+            if not state.bootstrap_completed:
+                report.append({
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "action": "skipped_not_completed",
+                    "status": state.status,
+                    "live_actual": rec.valid_bars,
+                    "expected_bars": rec.expected_bars,
+                    "invalid_extra_rows": rec.invalid_extra_rows,
+                })
+                continue
+
+            if rec.missing_bars == 0 and rec.invalid_extra_rows == 0:
+                report.append({
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "action": "ok",
+                    "live_actual": rec.valid_bars,
+                    "expected_bars": rec.expected_bars,
+                    "invalid_extra_rows": rec.invalid_extra_rows,
+                })
+                continue
+
+            # Invariant violated: completed=True but live count < expected.
+            await repository.upsert_bootstrap_state(
+                symbol=symbol,
+                timeframe=timeframe,
+                lookback_days=lookback_days,
+                target_start_ts=target_start_ts,
+                target_end_ts=target_end_ts,
+                expected_bars=rec.expected_bars,
+                actual_bars=rec.valid_bars,
+                missing_bars=rec.missing_bars,
+                coverage_pct=(rec.valid_bars / rec.expected_bars * 100.0)
+                if rec.expected_bars > 0
+                else 0.0,
+                status="incomplete",
+                bootstrap_completed=False,
+                checkpoint_ts=target_end_ts,
+            )
+            report.append({
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "action": "downgraded",
+                "live_actual": rec.valid_bars,
+                "expected_bars": rec.expected_bars,
+                "missing_bars": rec.missing_bars,
+                "invalid_extra_rows": rec.invalid_extra_rows,
+            })
+
+    return report

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from src.candles.domain.repair import (
     BackfillPlan,
+    GapTask,
     NoProgressPolicy,
     RepairExecutionMode,
     RepairPlan,
@@ -131,25 +133,85 @@ class _BaseRepairUseCase:
 
         for task in plan.tasks:
             padding_ms = window_padding(plan.timeframe, command.padding_bars)
-            candles = await self._historical_source.fetch_range(
-                symbol=plan.symbol,
-                timeframe=plan.timeframe,
-                start_ts_ms=max(plan.window.start_ts_ms, task.start_ts_ms - padding_ms),
-                end_ts_ms=min(plan.window.end_ts_ms, task.end_ts_ms + padding_ms),
-            )
-            fetch_calls += 1
-            total_fetched += len(candles)
-            valid_rows = validate_repair_candles(
-                candles=candles,
-                task_window=RepairWindow(task.start_ts_ms, task.end_ts_ms),
-                closed_until_ts_ms=plan.window.end_ts_ms,
-            )
-            validated = self._sanitize_candles(valid_rows)
-            total_received += len(validated)
-            rows_written += await self._repair_store.selective_upsert_candles(
-                symbol=plan.symbol,
-                timeframe=plan.timeframe,
-                candles=validated,
+            request_start_ts = max(plan.window.start_ts_ms, task.start_ts_ms - padding_ms)
+            request_end_ts = min(plan.window.end_ts_ms, task.end_ts_ms + padding_ms)
+            fetch_latency_ms = 0
+            db_write_latency_ms = 0
+            fetched_rows = 0
+            received_rows = 0
+            task_written = 0
+
+            try:
+                fetch_started = time.perf_counter()
+                try:
+                    candles = await self._historical_source.fetch_range(
+                        symbol=plan.symbol,
+                        timeframe=plan.timeframe,
+                        start_ts_ms=request_start_ts,
+                        end_ts_ms=request_end_ts,
+                    )
+                finally:
+                    fetch_latency_ms = int(
+                        (time.perf_counter() - fetch_started) * 1000
+                    )
+                fetch_calls += 1
+                fetched_rows = len(candles)
+                total_fetched += fetched_rows
+                valid_rows = validate_repair_candles(
+                    candles=candles,
+                    task_window=RepairWindow(task.start_ts_ms, task.end_ts_ms),
+                    closed_until_ts_ms=plan.window.end_ts_ms,
+                )
+                validated = self._sanitize_candles(valid_rows)
+                received_rows = len(validated)
+                total_received += received_rows
+
+                db_write_started = time.perf_counter()
+                try:
+                    task_written = await self._repair_store.selective_upsert_candles(
+                        symbol=plan.symbol,
+                        timeframe=plan.timeframe,
+                        candles=validated,
+                        window=plan.window,
+                    )
+                finally:
+                    db_write_latency_ms = int(
+                        (time.perf_counter() - db_write_started) * 1000
+                    )
+                rows_written += task_written
+            except Exception as exc:
+                self._telemetry.event(
+                    "candles.repair.task_failed",
+                    **_task_telemetry_payload(
+                        plan=plan,
+                        task=task,
+                        request_start_ts=request_start_ts,
+                        request_end_ts=request_end_ts,
+                        fetched_rows=fetched_rows,
+                        received_rows=received_rows,
+                        written=task_written,
+                        fetch_latency_ms=fetch_latency_ms,
+                        db_write_latency_ms=db_write_latency_ms,
+                        status="error",
+                        error=str(exc),
+                    ),
+                )
+                raise
+
+            self._telemetry.event(
+                "candles.repair.task_result",
+                **_task_telemetry_payload(
+                    plan=plan,
+                    task=task,
+                    request_start_ts=request_start_ts,
+                    request_end_ts=request_end_ts,
+                    fetched_rows=fetched_rows,
+                    received_rows=received_rows,
+                    written=task_written,
+                    fetch_latency_ms=fetch_latency_ms,
+                    db_write_latency_ms=db_write_latency_ms,
+                    status="ok",
+                ),
             )
 
         remaining_missing_after = await self._coverage_query.count_missing_timestamps(
@@ -349,3 +411,41 @@ class RunHistoricalBackfillUseCase(_BaseRepairUseCase):
             window=window,
             tasks=tasks,
         )
+
+
+def _task_telemetry_payload(
+    *,
+    plan: RepairPlan,
+    task: GapTask,
+    request_start_ts: int,
+    request_end_ts: int,
+    fetched_rows: int,
+    received_rows: int,
+    written: int,
+    fetch_latency_ms: int,
+    db_write_latency_ms: int,
+    status: str,
+    error: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "symbol": plan.symbol,
+        "timeframe": plan.timeframe,
+        "strategy": plan.strategy.value,
+        "window_start_ts": plan.window.start_ts_ms,
+        "window_end_ts": plan.window.end_ts_ms,
+        "task_start_ts": task.start_ts_ms,
+        "task_end_ts": task.end_ts_ms,
+        "request_start_ts": request_start_ts,
+        "request_end_ts": request_end_ts,
+        "requested": task.missing_bars,
+        "fetched": fetched_rows,
+        "received": received_rows,
+        "written": written,
+        "rows_written": written,
+        "fetch_latency_ms": fetch_latency_ms,
+        "db_write_latency_ms": db_write_latency_ms,
+        "status": status,
+    }
+    if error is not None:
+        payload["error"] = error
+    return payload

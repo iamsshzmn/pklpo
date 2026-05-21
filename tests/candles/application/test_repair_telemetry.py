@@ -48,8 +48,11 @@ class HistoricalSourceStub:
 @dataclass
 class RepairStoreStub:
     coverage: CoverageQueryStub
+    action_log: list[str] | None = None
 
     async def selective_upsert_candles(self, **kwargs: Any) -> int:
+        if self.action_log is not None:
+            self.action_log.append("store_write")
         for candle in kwargs["candles"]:
             timestamp = int(candle["timestamp"])
             if timestamp not in self.coverage.timestamps:
@@ -60,6 +63,7 @@ class RepairStoreStub:
 @dataclass
 class TelemetryStub:
     events: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    action_log: list[str] | None = None
 
     def increment(self, metric: str, value: int | float = 1, **tags: str) -> None:
         del metric, value, tags
@@ -69,6 +73,8 @@ class TelemetryStub:
 
     def event(self, name: str, **payload: Any) -> None:
         self.events.append((name, payload))
+        if self.action_log is not None:
+            self.action_log.append(f"telemetry:{name}")
 
 
 def _command() -> RepairCommand:
@@ -93,7 +99,8 @@ def _command() -> RepairCommand:
 @pytest.mark.asyncio
 async def test_repair_completed_telemetry_includes_semantic_fields() -> None:
     coverage = CoverageQueryStub(timestamps=[0, 60_000, 4 * 60_000])
-    telemetry = TelemetryStub()
+    action_log: list[str] = []
+    telemetry = TelemetryStub(action_log=action_log)
     use_case = RunGapRepairUseCase(
         coverage_query=coverage,
         historical_source=HistoricalSourceStub(
@@ -118,15 +125,36 @@ async def test_repair_completed_telemetry_includes_semantic_fields() -> None:
                 ]
             ]
         ),
-        repair_store=RepairStoreStub(coverage=coverage),
+        repair_store=RepairStoreStub(coverage=coverage, action_log=action_log),
         telemetry=telemetry,
         calendar=UTC_CAL,
     )
 
     await use_case.run(_command())
 
-    assert telemetry.events[0][0] == "candles.repair.completed"
-    payload = telemetry.events[0][1]
+    assert action_log.index("store_write") < action_log.index(
+        "telemetry:candles.repair.task_result"
+    )
+    assert telemetry.events[0][0] == "candles.repair.task_result"
+    task_payload = telemetry.events[0][1]
+    assert task_payload["symbol"] == "BTC-USDT-SWAP"
+    assert task_payload["timeframe"] == "1m"
+    assert task_payload["task_start_ts"] == 2 * 60_000
+    assert task_payload["task_end_ts"] == 4 * 60_000
+    assert task_payload["requested"] == 2
+    assert task_payload["received"] == 2
+    assert task_payload["written"] == 2
+    assert task_payload["status"] == "ok"
+    assert "fetch_latency_ms" in task_payload
+    assert "db_write_latency_ms" in task_payload
+
+    completed_events = [
+        payload
+        for name, payload in telemetry.events
+        if name == "candles.repair.completed"
+    ]
+    assert len(completed_events) == 1
+    payload = completed_events[0]
     assert payload["requested"] == 2
     assert payload["received"] == 2
     assert payload["written"] == 2

@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from src.candles.application.bootstrap.dto import BootstrapCommand, BootstrapResult
+from src.candles.application.bootstrap.dto import (
+    BootstrapCommand,
+    BootstrapProgress,
+    BootstrapResult,
+)
 from src.candles.application.bootstrap.planning import (
     compute_chunk_window,
     compute_target_window,
 )
-from src.candles.domain.repair import RepairWindow, count_expected_bars
+from src.candles.domain.repair import (
+    RepairWindow,
+    count_expected_bars,
+    sanitize_repair_candle,
+)
 from src.candles.domain.timeframes import TF_TO_MS
 
 if TYPE_CHECKING:
@@ -47,8 +56,7 @@ class RunBootstrapUseCase:
         started = time.monotonic()
         symbol = command.symbol
         timeframe = command.timeframe
-        tf_ms = TF_TO_MS.get(timeframe)
-        if tf_ms is None:
+        if timeframe not in TF_TO_MS:
             raise ValueError(f"unsupported timeframe: {timeframe!r}")
         if command.circuit_break_after < 1:
             raise ValueError("circuit_break_after must be >= 1")
@@ -71,28 +79,64 @@ class RunBootstrapUseCase:
             calendar=self._calendar,
         )
 
-        # Skip if already completed
+        # Load existing state and determine checkpoint
         existing = await self._state.get_bootstrap_state(symbol=symbol, timeframe=timeframe)
+        should_reinitialize = _should_reinitialize_bootstrap(
+            existing=existing,
+            lookback_days=command.lookback_days,
+            target_start_ts=target_start_ts,
+            target_end_ts=target_end_ts,
+        )
+
         if existing is not None and existing.status == "completed":
-            return BootstrapResult(
+            # Reconcile: verify live DB before trusting cached completed state.
+            # swap_ohlcv_p may have lost rows since completion (cleanup, partition drop, etc.).
+            live_rec = await self._coverage.count_valid_candles(
                 symbol=symbol,
                 timeframe=timeframe,
-                status="completed",
-                chunks_fetched=0,
-                rows_written=0,
-                expected_bars=existing.expected_bars,
-                actual_bars=existing.actual_bars if existing.actual_bars is not None else 0,
-                missing_bars=0,
-                coverage_pct=100.0,
-                elapsed_seconds=time.monotonic() - started,
+                start_ts_ms=target_start_ts,
+                end_ts_ms=target_end_ts,
             )
-
-        # Resume checkpoint or start from target_end_ts
-        checkpoint_ts = (
-            existing.checkpoint_ts
-            if existing is not None and existing.checkpoint_ts is not None
-            else target_end_ts
-        )
+            if live_rec.missing_bars == 0 and live_rec.invalid_extra_rows == 0:
+                return BootstrapResult(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    status="completed",
+                    chunks_fetched=0,
+                    rows_written=0,
+                    expected_bars=live_rec.expected_bars,
+                    actual_bars=live_rec.valid_bars,
+                    missing_bars=0,
+                    coverage_pct=100.0,
+                    elapsed_seconds=time.monotonic() - started,
+                )
+            # State diverged from reality — downgrade and re-fetch from scratch.
+            await self._state.upsert_bootstrap_state(
+                symbol=symbol,
+                timeframe=timeframe,
+                lookback_days=command.lookback_days,
+                target_start_ts=target_start_ts,
+                target_end_ts=target_end_ts,
+                expected_bars=live_rec.expected_bars,
+                actual_bars=live_rec.valid_bars,
+                missing_bars=live_rec.missing_bars,
+                coverage_pct=(live_rec.valid_bars / live_rec.expected_bars * 100.0)
+                if live_rec.expected_bars > 0
+                else 0.0,
+                status="incomplete",
+                bootstrap_completed=False,
+                checkpoint_ts=target_end_ts,
+            )
+            checkpoint_ts = target_end_ts
+        elif should_reinitialize:
+            checkpoint_ts = target_end_ts
+        else:
+            # Resume from checkpoint or start from target_end_ts
+            checkpoint_ts = (
+                existing.checkpoint_ts
+                if existing is not None and existing.checkpoint_ts is not None
+                else target_end_ts
+            )
 
         await self._state.upsert_bootstrap_state(
             symbol=symbol,
@@ -103,6 +147,9 @@ class RunBootstrapUseCase:
             expected_bars=expected_bars,
             status="running",
             checkpoint_ts=checkpoint_ts,
+            bootstrap_completed=False,
+            error_streak=0,
+            last_error=None,
         )
 
         chunks_fetched = 0
@@ -114,21 +161,57 @@ class RunBootstrapUseCase:
             chunk_start, chunk_end = compute_chunk_window(
                 checkpoint_ts=checkpoint_ts,
                 chunk_bars=command.chunk_bars,
-                timeframe_ms=tf_ms,
+                timeframe=timeframe,
+                calendar=self._calendar,
             )
             chunk_start = max(chunk_start, target_start_ts)
+            checkpoint_before = checkpoint_ts
+            fetch_latency_ms = 0
+            db_write_latency_ms = 0
+            state_write_latency_ms = 0
+            candles_returned = 0
+            written = 0
+            chunk_oldest_ts: int | None = None
+            chunk_newest_ts: int | None = None
 
+            fetch_started = time.perf_counter()
             try:
-                candles = await self._source.fetch_range(
+                raw_candles = await self._source.fetch_range(
                     symbol=symbol,
                     timeframe=timeframe,
                     start_ts_ms=chunk_start,
                     end_ts_ms=chunk_end,
                 )
             except Exception as exc:
+                fetch_latency_ms = int((time.perf_counter() - fetch_started) * 1000)
                 error_streak += 1
+                if self._telemetry is not None:
+                    self._telemetry.event(
+                        "bootstrap.chunk_failed",
+                        **_chunk_telemetry_payload(
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            chunk_start_ts=chunk_start,
+                            chunk_end_ts=chunk_end,
+                            checkpoint_before_ts=checkpoint_before,
+                            checkpoint_after_ts=None,
+                            candles_returned=0,
+                            rows_written=0,
+                            invalid_rows=0,
+                            empty=True,
+                            fetch_latency_ms=fetch_latency_ms,
+                            db_write_latency_ms=0,
+                            state_write_latency_ms=0,
+                            target_start_ts=target_start_ts,
+                            target_end_ts=target_end_ts,
+                            oldest_ts=None,
+                            newest_ts=None,
+                            status="error",
+                            error=str(exc),
+                        ),
+                    )
                 if error_streak >= command.circuit_break_after:
-                    live_actual = await self._coverage.count_candles(
+                    live_rec = await self._coverage.count_valid_candles(
                         symbol=symbol,
                         timeframe=timeframe,
                         start_ts_ms=target_start_ts,
@@ -152,57 +235,155 @@ class RunBootstrapUseCase:
                         status="stuck",
                         chunks_fetched=chunks_fetched,
                         rows_written=rows_written,
-                        expected_bars=expected_bars,
-                        actual_bars=live_actual,
-                        missing_bars=max(0, expected_bars - live_actual),
-                        coverage_pct=(live_actual / expected_bars * 100.0) if expected_bars > 0 else 0.0,
+                        expected_bars=live_rec.expected_bars,
+                        actual_bars=live_rec.valid_bars,
+                        missing_bars=live_rec.missing_bars,
+                        coverage_pct=(live_rec.valid_bars / live_rec.expected_bars * 100.0)
+                        if live_rec.expected_bars > 0
+                        else 0.0,
                         elapsed_seconds=time.monotonic() - started,
                         error=str(exc),
                     )
                 # Retry the same chunk; do not advance checkpoint until circuit break
                 continue
+            else:
+                fetch_latency_ms = int((time.perf_counter() - fetch_started) * 1000)
 
-            error_streak = 0
-            chunks_fetched += 1
-
-            if candles and not command.dry_run:
-                written = await self._repair_store.selective_upsert_candles(
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    candles=candles,
+            checkpoint_after: int | None = None
+            try:
+                fetched_at = datetime.now(UTC)
+                candles = [
+                    _normalize_bootstrap_candle(candle, fetched_at=fetched_at)
+                    for candle in raw_candles
+                ]
+                candles_returned = len(candles)
+                error_streak = 0
+                chunks_fetched += 1
+                chunk_oldest_ts = (
+                    min(int(candle["timestamp"]) for candle in candles)
+                    if candles
+                    else None
                 )
+                chunk_newest_ts = (
+                    max(int(candle["timestamp"]) for candle in candles)
+                    if candles
+                    else None
+                )
+
+                db_write_started = time.perf_counter()
+                try:
+                    if candles and not command.dry_run:
+                        written = await self._repair_store.selective_upsert_candles(
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            candles=candles,
+                            window=RepairWindow(chunk_start, chunk_end),
+                        )
+                finally:
+                    db_write_latency_ms = int(
+                        (time.perf_counter() - db_write_started) * 1000
+                    )
                 rows_written += written
 
-            # Advance checkpoint backward
-            if candles:
-                min_ts = min(int(c["timestamp"]) for c in candles)
-                checkpoint_ts = min(min_ts, chunk_start)
-            else:
-                checkpoint_ts = chunk_start
+                # Advance checkpoint backward after the write succeeds.
+                if candles:
+                    min_ts = min(int(c["timestamp"]) for c in candles)
+                    checkpoint_after = min(min_ts, chunk_start)
+                else:
+                    checkpoint_after = chunk_start
 
-            await self._state.upsert_bootstrap_state(
-                symbol=symbol,
-                timeframe=timeframe,
-                lookback_days=command.lookback_days,
-                target_start_ts=target_start_ts,
-                target_end_ts=target_end_ts,
-                expected_bars=expected_bars,
-                status="running",
-                checkpoint_ts=checkpoint_ts,
-            )
+                state_write_started = time.perf_counter()
+                try:
+                    await self._state.upsert_bootstrap_state(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        lookback_days=command.lookback_days,
+                        target_start_ts=target_start_ts,
+                        target_end_ts=target_end_ts,
+                        expected_bars=expected_bars,
+                        status="running",
+                        checkpoint_ts=checkpoint_after,
+                    )
+                finally:
+                    state_write_latency_ms = int(
+                        (time.perf_counter() - state_write_started) * 1000
+                    )
+            except Exception as exc:
+                if self._telemetry is not None:
+                    self._telemetry.event(
+                        "bootstrap.chunk_failed",
+                        **_chunk_telemetry_payload(
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            chunk_start_ts=chunk_start,
+                            chunk_end_ts=chunk_end,
+                            checkpoint_before_ts=checkpoint_before,
+                            checkpoint_after_ts=checkpoint_after,
+                            candles_returned=candles_returned,
+                            rows_written=written,
+                            invalid_rows=0,
+                            empty=(candles_returned == 0),
+                            fetch_latency_ms=fetch_latency_ms,
+                            db_write_latency_ms=db_write_latency_ms,
+                            state_write_latency_ms=state_write_latency_ms,
+                            target_start_ts=target_start_ts,
+                            target_end_ts=target_end_ts,
+                            oldest_ts=chunk_oldest_ts,
+                            newest_ts=chunk_newest_ts,
+                            status="error",
+                            error=str(exc),
+                        ),
+                    )
+                raise
+
+            assert checkpoint_after is not None
+            checkpoint_ts = checkpoint_after
+            if self._telemetry is not None:
+                self._telemetry.event(
+                    "bootstrap.chunk_result",
+                    **_chunk_telemetry_payload(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        chunk_start_ts=chunk_start,
+                        chunk_end_ts=chunk_end,
+                        checkpoint_before_ts=checkpoint_before,
+                        checkpoint_after_ts=checkpoint_after,
+                        candles_returned=candles_returned,
+                        rows_written=written,
+                        invalid_rows=0,
+                        empty=(candles_returned == 0),
+                        fetch_latency_ms=fetch_latency_ms,
+                        db_write_latency_ms=db_write_latency_ms,
+                        state_write_latency_ms=state_write_latency_ms,
+                        target_start_ts=target_start_ts,
+                        target_end_ts=target_end_ts,
+                        oldest_ts=chunk_oldest_ts,
+                        newest_ts=chunk_newest_ts,
+                        status="ok",
+                    ),
+                )
 
         # VERIFY
-        live_actual = await self._coverage.count_candles(
+        live_rec = await self._coverage.count_valid_candles(
             symbol=symbol,
             timeframe=timeframe,
             start_ts_ms=target_start_ts,
             end_ts_ms=target_end_ts,
         )
-        live_expected = expected_bars
-        live_missing = max(0, live_expected - live_actual)
+        live_expected = live_rec.expected_bars
+        live_actual = live_rec.valid_bars
+        live_missing = live_rec.missing_bars
         coverage_pct = (live_actual / live_expected * 100.0) if live_expected > 0 else 100.0
 
-        final_status = "completed" if (live_missing == 0 and not command.dry_run) else "incomplete"
+        final_status = (
+            "completed"
+            if (
+                live_missing == 0
+                and live_rec.invalid_extra_rows == 0
+                and not command.dry_run
+            )
+            else "incomplete"
+        )
 
         await self._state.upsert_bootstrap_state(
             symbol=symbol,
@@ -217,6 +398,7 @@ class RunBootstrapUseCase:
             status=final_status,
             bootstrap_completed=(final_status == "completed"),
             completed_at_ms=int(time.time() * 1000) if final_status == "completed" else None,
+            checkpoint_ts=checkpoint_ts,
         )
 
         return BootstrapResult(
@@ -231,3 +413,115 @@ class RunBootstrapUseCase:
             coverage_pct=coverage_pct,
             elapsed_seconds=time.monotonic() - started,
         )
+
+
+def _should_reinitialize_bootstrap(
+    *,
+    existing: BootstrapProgress | None,
+    lookback_days: int,
+    target_start_ts: int,
+    target_end_ts: int,
+) -> bool:
+    if existing is None:
+        return True
+
+    status = existing.status
+    if status not in {"pending", "running", "in_progress", "incomplete"}:
+        return False
+
+    checkpoint_ts = existing.checkpoint_ts
+    return (
+        existing.target_start_ts != target_start_ts
+        or existing.target_end_ts != target_end_ts
+        or existing.lookback_days != lookback_days
+        or checkpoint_ts is None
+        or checkpoint_ts <= target_start_ts
+    )
+
+
+def _normalize_bootstrap_candle(
+    candle: dict[str, object],
+    *,
+    fetched_at: datetime,
+) -> dict[str, object]:
+    if "timestamp" not in candle and "ts" in candle:
+        return sanitize_repair_candle(candle, fetched_at=fetched_at)
+    return {
+        "timestamp": candle["timestamp"],
+        "open": candle["open"],
+        "high": candle["high"],
+        "low": candle["low"],
+        "close": candle["close"],
+        "volume": candle["volume"],
+        "vol_ccy": candle.get("vol_ccy", candle.get("volCcy")),
+        "vol_usd": candle.get("vol_usd", candle.get("volUsd")),
+        "fetched_at": candle.get("fetched_at", fetched_at),
+    }
+
+
+def _chunk_telemetry_payload(
+    *,
+    symbol: str,
+    timeframe: str,
+    chunk_start_ts: int,
+    chunk_end_ts: int,
+    checkpoint_before_ts: int,
+    checkpoint_after_ts: int | None,
+    candles_returned: int,
+    rows_written: int,
+    invalid_rows: int,
+    empty: bool,
+    fetch_latency_ms: int,
+    db_write_latency_ms: int,
+    state_write_latency_ms: int,
+    target_start_ts: int,
+    target_end_ts: int,
+    oldest_ts: int | None,
+    newest_ts: int | None,
+    status: str,
+    error: str | None = None,
+) -> dict[str, object]:
+    progress_checkpoint = (
+        checkpoint_after_ts if checkpoint_after_ts is not None else checkpoint_before_ts
+    )
+    payload: dict[str, object] = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "chunk_start": chunk_start_ts,
+        "chunk_end": chunk_end_ts,
+        "chunk_start_ts": chunk_start_ts,
+        "chunk_end_ts": chunk_end_ts,
+        "checkpoint_before_ts": checkpoint_before_ts,
+        "checkpoint_after_ts": checkpoint_after_ts,
+        "candles_returned": candles_returned,
+        "rows_written": rows_written,
+        "invalid_rows": invalid_rows,
+        "empty": empty,
+        "oldest_ts": oldest_ts,
+        "newest_ts": newest_ts,
+        "fetch_latency_ms": fetch_latency_ms,
+        "db_write_latency_ms": db_write_latency_ms,
+        "state_write_latency_ms": state_write_latency_ms,
+        "progress_pct": _progress_pct(
+            target_start_ts=target_start_ts,
+            target_end_ts=target_end_ts,
+            checkpoint_ts=progress_checkpoint,
+        ),
+        "status": status,
+    }
+    if error is not None:
+        payload["error"] = error
+    return payload
+
+
+def _progress_pct(
+    *,
+    target_start_ts: int,
+    target_end_ts: int,
+    checkpoint_ts: int,
+) -> float:
+    total = target_end_ts - target_start_ts
+    if total <= 0:
+        return 100.0
+    completed = target_end_ts - checkpoint_ts
+    return min(100.0, max(0.0, completed / total * 100.0))

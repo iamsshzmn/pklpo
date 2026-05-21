@@ -6,9 +6,28 @@ from typing import Any
 from sqlalchemy import text
 
 from src.candles.application.repair.ports import ListingAnchorMetadata
-from src.candles.domain.repair_timeframes import expected_next_open, floor_to_timeframe
+from src.candles.domain.candle_validation import (
+    CandleValidationError,
+    validate_chunk_for_write,
+)
+from src.candles.domain.okx_calendar import StorageCalendar
+from src.candles.domain.repair import (
+    CoverageReconciliation,
+    RepairWindow,
+    detect_gap_tasks,
+)
+from src.candles.domain.repair_timeframes import (
+    expected_next_open,
+    floor_to_timeframe,
+    list_expected_timestamps,
+)
 from src.candles.domain.timeframes import TF_TO_MS
-from src.candles.repository import SwapCandlesRepository
+from src.candles.repository import (
+    SwapCandlesRepository,
+    _chunk_window,
+    _log_candle_validation_failure,
+)
+from src.config.settings import get_settings
 from src.utils.session_utils import get_db_session
 
 
@@ -211,6 +230,7 @@ class RepairCandlesRepository(SwapCandlesRepository):
                           AND high > 0
                           AND low > 0
                           AND close > 0
+                          AND volume >= 0
                           AND high >= low
                           AND open >= low
                           AND open <= high
@@ -239,6 +259,7 @@ class RepairCandlesRepository(SwapCandlesRepository):
         start_ts_ms: int,
         end_ts_ms: int,
     ) -> int:
+        """Deprecated raw row count; use count_valid_candles for coverage."""
         async def _operation() -> int:
             async with get_db_session() as session:
                 result = await session.execute(
@@ -263,15 +284,88 @@ class RepairCandlesRepository(SwapCandlesRepository):
 
         return await self._run_with_db_retry(_operation)
 
+    async def count_valid_candles(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> CoverageReconciliation:
+        valid_timestamps = await self.list_existing_valid_timestamps(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_ts_ms=start_ts_ms,
+            end_ts_ms=end_ts_ms,
+        )
+        raw_timestamps = await self.list_timestamps(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_ts_ms=start_ts_ms,
+            end_ts_ms=end_ts_ms,
+        )
+        window = RepairWindow(start_ts_ms=start_ts_ms, end_ts_ms=end_ts_ms)
+        calendar = StorageCalendar()
+        expected_opens = set(
+            list_expected_timestamps(
+                start_ts_ms,
+                end_ts_ms,
+                timeframe,
+                calendar=calendar,
+            )
+        )
+        valid_expected_timestamps = {
+            ts for ts in valid_timestamps if start_ts_ms <= ts < end_ts_ms
+        } & expected_opens
+        gap_tasks = detect_gap_tasks(
+            timestamps=sorted(valid_expected_timestamps),
+            timeframe=timeframe,
+            window=window,
+            calendar=calendar,
+        )
+        return CoverageReconciliation(
+            expected_bars=len(expected_opens),
+            valid_bars=len(valid_expected_timestamps),
+            missing_bars=sum(task.missing_bars for task in gap_tasks),
+            invalid_extra_rows=max(
+                0,
+                len(raw_timestamps) - len(valid_expected_timestamps),
+            ),
+        )
+
     async def selective_upsert_candles(
         self,
         *,
         symbol: str,
         timeframe: str,
         candles: list[dict[str, Any]],
+        window: RepairWindow | None = None,
+        calendar: StorageCalendar | None = None,
     ) -> int:
         if not candles:
             return 0
+        calendar = calendar or StorageCalendar()
+        if get_settings().candles.strict_write_validation:
+            write_window = window or _chunk_window(
+                candles,
+                timeframe=timeframe,
+                calendar=calendar,
+            )
+            try:
+                validate_chunk_for_write(
+                    candles,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    calendar=calendar,
+                    window=write_window,
+                )
+            except CandleValidationError as exc:
+                _log_candle_validation_failure(
+                    exc,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                )
+                raise
 
         rows = [
             {
@@ -483,6 +577,7 @@ class RepairCandlesRepository(SwapCandlesRepository):
                               open IS NULL OR high IS NULL OR low IS NULL
                               OR close IS NULL OR volume IS NULL
                               OR open <= 0 OR high <= 0 OR low <= 0 OR close <= 0
+                              OR volume < 0
                               OR high < low
                               OR open < low OR open > high
                               OR close < low OR close > high

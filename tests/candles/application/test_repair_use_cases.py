@@ -321,7 +321,7 @@ async def test_apply_gap_repair_filters_open_bar_and_emits_telemetry() -> None:
         3 * 60_000,
     ]
     assert coverage.count_calls == []
-    assert telemetry.events[0][0] == "candles.repair.completed"
+    assert telemetry.events[-1][0] == "candles.repair.completed"
 
 
 @pytest.mark.asyncio
@@ -561,7 +561,7 @@ async def test_partial_api_fill_does_not_raise() -> None:
     )
 
     assert result.rows_written == 2
-    _, payload = telemetry.events[0]
+    _, payload = telemetry.events[-1]
     assert payload["outcome"] == "partial"
     assert payload["received"] == 2
     assert payload["requested"] == 5
@@ -591,7 +591,7 @@ async def test_empty_response_without_exception_does_not_raise() -> None:
     )
 
     assert result.rows_written == 0
-    _, payload = telemetry.events[0]
+    _, payload = telemetry.events[-1]
     assert payload["outcome"] == "empty"
     assert payload["received"] == 0
     assert payload["progress"] == 0
@@ -683,7 +683,7 @@ async def test_success_outcome_fields_present_in_result() -> None:
         _command(mode=RepairExecutionMode.APPLY, strategy=RepairStrategy.BACKFILL)
     )
 
-    _, payload = telemetry.events[0]
+    _, payload = telemetry.events[-1]
     expected_keys = {
         "requested",
         "received",

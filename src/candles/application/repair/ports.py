@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from src.candles.ports import TelemetryPort
+
+if TYPE_CHECKING:
+    from src.candles.domain.okx_calendar import StorageCalendar
+    from src.candles.domain.repair import CoverageReconciliation, RepairWindow
 
 
 @dataclass(frozen=True)
@@ -55,7 +59,18 @@ class CandleCoverageQueryPort(Protocol):
         timeframe: str,
         start_ts_ms: int,
         end_ts_ms: int,
-    ) -> int: ...
+    ) -> int:
+        """Deprecated: raw row count; use count_valid_candles for coverage."""
+        ...
+
+    async def count_valid_candles(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> CoverageReconciliation: ...
 
     async def list_missing_timestamps(
         self,
@@ -104,6 +119,8 @@ class RepairCandleStorePort(Protocol):
         symbol: str,
         timeframe: str,
         candles: list[dict[str, Any]],
+        window: RepairWindow | None = None,
+        calendar: StorageCalendar | None = None,
     ) -> int: ...
 
 

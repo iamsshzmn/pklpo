@@ -14,6 +14,7 @@ from src.candles.domain.repair import (
     RepairOutcome,
     RepairStrategy,
     RepairVerificationMethod,
+    RepairWindow,
 )
 
 UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
@@ -107,6 +108,7 @@ class _FakeHistoricalSource:
 class _FakeRepairStore:
     coverage_query: _FakeCoverageQuery
     writes: list[list[dict[str, Any]]] = field(default_factory=list)
+    windows: list[RepairWindow | None] = field(default_factory=list)
 
     async def selective_upsert_candles(
         self,
@@ -114,9 +116,11 @@ class _FakeRepairStore:
         symbol: str,
         timeframe: str,
         candles: list[dict[str, Any]],
+        window: RepairWindow | None = None,
     ) -> int:
         del symbol, timeframe
         self.writes.append(candles)
+        self.windows.append(window)
         self.coverage_query.inserted_timestamps.extend(
             int(candle["timestamp"]) for candle in candles
         )
@@ -295,3 +299,33 @@ async def test_gap_repair_apply_classifies_padding_only_fetch_as_outside_exchang
     assert result.blocked_cause == "outside_exchange_history"
     assert telemetry.events[-1][1]["blocked_cause"] == "outside_exchange_history"
     assert telemetry.events[-1][1]["fetched_rows"] == 2
+
+
+@pytest.mark.asyncio
+async def test_gap_repair_apply_passes_plan_window_to_repair_store() -> None:
+    coverage_query = _FakeCoverageQuery(existing_timestamps=[0, 120_000])
+    historical_source = _FakeHistoricalSource(
+        responses=[
+            [
+                {
+                    "ts": 60_000,
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1.0,
+                }
+            ]
+        ]
+    )
+    repair_store = _FakeRepairStore(coverage_query=coverage_query)
+    use_case = RunGapRepairUseCase(
+        coverage_query=coverage_query,
+        historical_source=historical_source,
+        repair_store=repair_store,
+        calendar=UTC_CAL,
+    )
+
+    await use_case.run(_command(mode=RepairExecutionMode.APPLY))
+
+    assert repair_store.windows == [RepairWindow(0, 180_000)]

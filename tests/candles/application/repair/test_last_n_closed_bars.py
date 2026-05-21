@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from src.candles.domain.okx_calendar import OKXCandleCalendar
+from src.candles.domain.repair import RepairWindow
 from src.core.run_context import RunContext
 
 UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
@@ -159,6 +160,7 @@ async def test_run_repairs_missing_and_corrupted_timestamps_then_verifies_green(
         }
     ]
     assert [row["timestamp"] for row in store.calls[0]["candles"]] == [180_000, 240_000]
+    assert store.calls[0]["window"] == RepairWindow(180_000, 300_000)
 
 
 @pytest.mark.asyncio

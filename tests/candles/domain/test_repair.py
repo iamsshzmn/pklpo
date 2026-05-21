@@ -244,6 +244,7 @@ def test_last_n_closed_bars_outcome_is_separate_from_repair_result_shape() -> No
     ("row", "expected"),
     [
         ({"open": 10, "high": 12, "low": 9, "close": 11, "volume": 5}, True),
+        ({"open": 10, "high": 12, "low": 9, "close": 11, "volume": 0}, True),
         ({"open": None, "high": 12, "low": 9, "close": 11, "volume": 5}, False),
         ({"open": 10, "high": None, "low": 9, "close": 11, "volume": 5}, False),
         ({"open": 10, "high": 12, "low": None, "close": 11, "volume": 5}, False),

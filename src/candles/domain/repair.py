@@ -7,7 +7,7 @@ from enum import StrEnum
 from numbers import Real
 from typing import TYPE_CHECKING, Any, Literal
 
-from .repair_timeframes import floor_to_timeframe_business
+from .repair_timeframes import floor_to_timeframe_business, list_expected_timestamps
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -83,6 +83,14 @@ class RepairWindow:
     @property
     def is_empty(self) -> bool:
         return self.start_ts_ms >= self.end_ts_ms
+
+
+@dataclass(frozen=True)
+class CoverageReconciliation:
+    expected_bars: int
+    valid_bars: int
+    missing_bars: int
+    invalid_extra_rows: int
 
 
 @dataclass(frozen=True)
@@ -298,6 +306,46 @@ def count_expected_bars(
         count += 1
         cursor = calendar.next_open(cursor, timeframe)
     return count
+
+
+def reconcile_coverage(
+    *,
+    timestamps: list[int],
+    timeframe: str,
+    window: RepairWindow,
+    calendar: OKXCandleCalendar,
+) -> CoverageReconciliation:
+    expected_bars = count_expected_bars(
+        window=window,
+        timeframe=timeframe,
+        calendar=calendar,
+    )
+    expected_opens = set(
+        list_expected_timestamps(
+            window.start_ts_ms,
+            window.end_ts_ms,
+            timeframe,
+            calendar=calendar,
+        )
+    )
+    stored_in_window = [
+        ts for ts in timestamps if window.start_ts_ms <= ts < window.end_ts_ms
+    ]
+    valid_bars = len(set(stored_in_window) & expected_opens)
+    gap_tasks = detect_gap_tasks(
+        timestamps=stored_in_window,
+        timeframe=timeframe,
+        window=window,
+        calendar=calendar,
+    )
+    missing_bars = sum(task.missing_bars for task in gap_tasks)
+    invalid_extra_rows = sum(1 for ts in stored_in_window if ts not in expected_opens)
+    return CoverageReconciliation(
+        expected_bars=expected_bars,
+        valid_bars=valid_bars,
+        missing_bars=missing_bars,
+        invalid_extra_rows=invalid_extra_rows,
+    )
 
 
 def summarize_repair_verification(

@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import exc as sa_exc
 
+from ...domain.okx_calendar import StorageCalendar
+from ...domain.repair import RepairWindow
 from ...domain.timeframes import TF_TO_MS
 from ...observability.metrics import ReservoirSampling
 from .dto import SyncJobRequest, SyncJobResult, SyncRun, SyncRunStatus
@@ -349,6 +351,22 @@ class RunCandleSyncUseCase:
             candles = [c for c in candles if int(c["ts"]) > latest_stored_ts]
             if not candles:
                 return 0, last_ts
+        calendar = StorageCalendar()
+        candle_timestamps = [int(candle["ts"]) for candle in candles]
+        window_start = (
+            calendar.next_open(latest_stored_ts, timeframe)
+            if latest_stored_ts is not None
+            else min(candle_timestamps)
+        )
+        window_end = (
+            calendar.floor_open(int(datetime.now(UTC).timestamp() * 1000), timeframe)
+            if latest_stored_ts is not None
+            else calendar.next_open(max(candle_timestamps), timeframe)
+        )
+        window = RepairWindow(
+            window_start,
+            window_end,
+        )
 
         additional_data = {}
         if extra_data_loader is not None:
@@ -361,6 +379,7 @@ class RunCandleSyncUseCase:
                 timeframe=timeframe,
                 candles=candles,
                 additional_data=additional_data,
+                window=window,
             )
         except Exception as exc:
             if self._telemetry is not None:

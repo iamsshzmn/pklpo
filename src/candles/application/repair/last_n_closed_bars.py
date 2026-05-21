@@ -120,6 +120,7 @@ class GuaranteeLastClosedBarsUseCase:
                 symbol=symbol,
                 timeframe=tf,
                 candles=validated,
+                window=RepairWindow(gap_range.start_ts_ms, gap_range.end_ts_ms),
             )
         return repaired
 
