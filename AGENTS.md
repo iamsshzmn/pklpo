@@ -39,6 +39,7 @@ If a command is only mentioned in older prose or requires extra local tools not 
 - Prefer the smallest validation that matches the touched surface before running broad repo checks.
 - Keep edits aligned with current module boundaries: CLI in `src/cli/commands/`, domain/application/infrastructure splits where already present, DAG logic in `ops/airflow/dags/`, DB changes in `src/db/migrations/`.
 - Preserve existing command names, paths, and trading terminology.
+- Store ADR files in `Captains_Logbook/done/YYYY/MM/adr/`, not in `docs/adr/`.
 - Treat the worktree as user-owned. Do not revert unrelated changes.
 - When conventions are unclear from the current tree, choose a small default and leave a concise `TODO` with the missing input.
 

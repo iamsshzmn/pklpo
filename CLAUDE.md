@@ -2,13 +2,26 @@
 
 ## Project Overview
 
-**pklpo** — quantitative trading system: OHLCV candle sync from OKX, feature/indicator calculation pipeline, ML scoring, and trade recommendation.
+**pklpo** — quantitative trading system: OHLCV candle sync from OKX, feature/indicator pipeline, ML scoring, trade recommendation.
 
-- **Runtime**: Python 3.11 (pinned in `.python-version`)
+- **Runtime**: Python 3.11 (`requires-python = "==3.11.*"`, see `.python-version`)
 - **Database**: PostgreSQL 16 (asyncpg)
-- **Orchestration**: Apache Airflow (DAGs in `ops/airflow/dags/`)
-- **Exchange**: OKX (CCXT adapter)
+- **Orchestration**: Apache Airflow (`ops/airflow/dags/`)
+- **Exchange**: OKX (CCXT)
 - **Package config**: `pyproject.toml` (single source of truth for deps)
+
+## Authoritative Docs
+
+Read these before deep work — do not duplicate their content here.
+
+- `docs/ARCHITECTURE.md` — current and target architecture, bounded contexts, layer rules, ADRs
+- `docs/ARCHITECTURE_GUIDE.md` — how to apply architecture in practice
+- `docs/ENGINEERING_GUIDE.md` — engineering conventions, testing, workflow
+- `docs/DATA_FLOW.md` / `docs/DEPENDENCIES.md` — pipeline and module dependencies
+- `docs/ROADMAP.md` — current initiatives and priorities
+- `ops/airflow/dags/README.md` — full DAG catalogue and schedules
+- `AGENTS.md` — shared agent baseline for engineering work
+- `.claude/rules/candles.md` — layer rules specific to the `candles/` module
 
 ## Quick Start
 
@@ -17,137 +30,63 @@
 powershell -File scripts/bootstrap.ps1
 .venv\Scripts\Activate.ps1
 
-# Unix (make available)
-make setup
-source .venv/bin/activate
+# Unix
+make setup && source .venv/bin/activate
 ```
 
-Copy `.env.example` → `.env` and fill secrets before running.
+Copy `.env.example` → `.env` before running.
 
 ## Key Commands
 
 ```bash
-# CLI (all commands)
+# CLI entry point
 python -m src.cli.main --help
-python -m src.cli.main swap-sync --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
-python -m src.cli.main swap-repair --symbols BTC-USDT-SWAP --timeframes 1H 4H
-python -m src.cli.main features --symbols BTC-USDT-SWAP --timeframes 1m 5m 15m
-python -m src.cli.main pipeline           # полный пайплайн обработки
-python -m src.cli.main build-bars         # dollar bars из OHLCV
-python -m src.cli.main load-instruments   # загрузить инструменты из OKX API
-python -m src.cli.main update-list        # обновить список инструментов для синхронизации
-python -m src.cli.main cleanup            # управление очисткой данных
-python -m src.cli.main market-selection   # фильтрация и ранжирование рынков
-python -m src.cli.main label              # triple-barrier labeling (AFML Ch.3)
-python -m src.cli.main train              # MetaLabeler (AFML Ch.10)
-python -m src.cli.main metrics            # вывод и экспорт quant-метрик бэктеста
-python -m src.cli.main indicators-partitions  # обслуживание monthly partitions
 
 # Validation (prefer smallest surface)
-make lint          # ruff check + format check
+make lint          # ruff check + format
 make typecheck     # mypy src
-make test          # fast tests (not slow, not integration)
+make test          # fast tests (excludes slow, integration)
 make check         # all of the above
-
-# Full (slower)
-make test-all      # all tests including integration
+make test-all      # everything, including integration
 ```
 
-## Architecture
-
-```
-src/
-├── candles/              # OHLCV sync from OKX (domain/application/infrastructure/ports)
-│   └── application/repair/  # Gap detection and historical backfill (WIP)
-├── features/             # Indicator calculation pipeline
-├── features_combinations/ # Registry and models for feature combinations
-├── scoring_engine/       # Computes score_raw ∈ [0;1] from indicators, saves to score_results
-├── trade_recommender/    # Trade recommendations: entry/sl/tp/position sizing
-├── mtf/                  # Multi-timeframe pipeline: context/triggers/consensus
-│   ├── context/          # Market regime detection
-│   ├── triggers/         # Signal generation with anti-noise filters
-│   └── consensus/        # Weighted aggregation with veto logic
-├── risk/                 # Risk guards: daily/weekly limits, circuit breaker, SLA
-├── signals/              # Signal models, decision maker, promotion workflow
-├── positions/            # Position calculation (single + MTF)
-├── metrics/              # Quant metrics collection and export
-├── settings/             # User-level settings manager (runtime preferences)
-├── cli/                  # Thin CLI adapters (Typer/Click)
-├── config/               # App config: Pydantic Settings, env loading
-├── core/                 # Shared domain primitives
-├── db/                   # Migrations, partition management
-├── ml/                   # ML scoring engine
-├── backtest/             # Backtesting framework
-├── market_selection/     # Market filtering/ranking
-└── utils/                # Shared utilities
-ops/airflow/dags/         # Airflow DAG definitions
-tests/                    # Repo-level tests by subsystem
-scripts/                  # Dev/ops automation
-```
-
-**Dependency rule**: domain → application → infrastructure. Domain MUST NOT import infrastructure or framework code.
+CLI subcommands (full list via `--help`): `swap-sync`, `swap-repair`, `features`, `pipeline`, `build-bars`, `load-instruments`, `update-list`, `cleanup`, `market-selection`, `label`, `train`, `metrics`, `indicators-partitions`.
 
 ## Module Boundaries
 
-- `src/cli/commands/` — thin adapters only, delegate to application layer
+Dependency rule: **domain → application → infrastructure**. Domain MUST NOT import infrastructure or framework code. Layer map (applies to every bounded context under `src/`):
+
 - `src/*/domain/` — pure business rules, no I/O
-- `src/*/application/` — use cases, orchestration
+- `src/*/application/` — use cases, orchestration via ports
 - `src/*/infrastructure/` — DB, HTTP, filesystem adapters
 - `src/*/ports.py` — protocol/interface definitions
+- `src/cli/commands/` — thin adapters, delegate to application
 
-## Airflow DAGs
-
-| DAG ID | Schedule | Purpose |
-|--------|----------|---------|
-| `okx_swap_ohlcv_sync_v2` | `*/5 * * * *` | Live OHLCV ingest for SWAP instruments; modes: `fast` (1m/5m), `slow` (15m–1M), `ext` (with funding_rate/OI), `bootstrap` |
-| `okx_swap_repair_v1` | manual | Bounded historical backfill and gap repair for OKX SWAP candles (WIP) |
-| `features_calc` | scheduled | Full indicator calculation via `src.cli.main features` |
-| `features_calc_short` | scheduled | Incremental calculation of 24 short features only |
-| `market_selection` | scheduled | Market filtering based on data quality, pair metrics, global regime |
-| `indicators_partition_maintenance` | scheduled | Maintains ready monthly partitions for `indicators_p` |
-
-Full DAG docs: `ops/airflow/dags/README.md`
+Full context map: `docs/ARCHITECTURE.md` §4–§7.
 
 ## Configuration
 
-- **App config**: `src/config/settings.py` — Pydantic Settings, single entry point for all env-backed settings
-- **User settings**: `src/settings/` — runtime user preferences manager (not env-backed)
-- Do NOT scatter `os.getenv()` calls — add new vars to `src/config/settings.py`
-- `.env.example` is the canonical reference for available env vars
+- **App config**: `src/config/settings.py` — Pydantic Settings, single entry point for env-backed settings. Do NOT scatter `os.getenv()`.
+- **User settings**: `src/settings/` — runtime preferences (not env-backed)
+- `.env.example` is the canonical reference for env vars
 
 ## Testing
 
-```
-tests/
-├── candles/        # candles subsystem (unit + repair + observability)
-├── features/       # feature calculation
-├── integration/    # needs DB or external services
-├── db/             # DAG and migration tests
-├── cli/            # CLI command tests
-├── ml/             # ML scoring
-├── backtest/       # backtesting
-├── market_meta/    # market metadata
-├── market_selection/
-├── smoke/          # import checks, CLI loads
-└── unit/           # isolated logic tests
-```
-
+- Layout mirrors `src/` under `tests/` (`candles/`, `features/`, `cli/`, `db/`, `ml/`, `backtest/`, `market_*/`, `integration/`, `smoke/`, `unit/`)
 - Markers: `slow`, `integration`, `unit`, `smoke`, `performance`, `lookahead`
-- Coverage target: 85% (enforced in `pyproject.toml`, relaxed in CI for partial runs)
+- Coverage target: 85% (enforced in `pyproject.toml`)
 
 ## Conventions
 
-- Language: code in English, comments/docs may be Russian
-- Formatting: ruff format (black-compatible, 88 chars)
-- Imports: isort via ruff (first-party: `src`, `features`, `cli`, `core`, `ml`)
+- Code in English; comments/docs may be Russian
+- Formatting: `ruff format` (black-compatible, 88 chars); imports via ruff isort
 - Commits: conventional (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`)
-- Pre-commit: lightweight checks only; heavy validation via `make check`
+- Pre-commit: lightweight only; heavy validation via `make check`
 
 ## What NOT to Do
 
-- Do not add new top-level source directories without discussion
-- Do not bypass `src/config/settings.py` for env var access
+- Do not add new top-level source directories without discussion (see `docs/ARCHITECTURE.md`)
+- Do not bypass `src/config/settings.py` for env access
 - Do not put business logic in CLI commands or DAG files
 - Do not commit `.env`, credentials, or API keys
 - Do not modify existing migration files — add new ones
-- Do not use paths from `src/main*.py` — those are deprecated

@@ -365,6 +365,18 @@ class CacheSettings(BaseSettings):
     max_size_mb: int = 100
 
 
+class CandlesSettings(BaseSettings):
+    """Candle ingestion and storage settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CANDLES_",
+        extra="ignore",
+    )
+
+    strict_write_validation: bool = True
+    db_alignment_trigger_enabled: bool = False
+
+
 class LoggingSettings(BaseSettings):
     """Logging settings."""
 
@@ -539,6 +551,7 @@ class Settings(BaseSettings):
     risk: RiskSettings = Field(default_factory=RiskSettings)
     retry: RetrySettings = Field(default_factory=RetrySettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)
+    candles: CandlesSettings = Field(default_factory=CandlesSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     airflow: AirflowSettings = Field(default_factory=AirflowSettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)

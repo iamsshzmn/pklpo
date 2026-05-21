@@ -222,6 +222,9 @@ One short file per significant decision:
 2. **Decision** — what was chosen
 3. **Consequences** — what becomes easier and harder as a result
 
+ADR files live in `Captains_Logbook/done/YYYY/MM/adr/`.
+Do not create or use `docs/adr/` for ADR storage.
+
 ### Living Documentation
 
 Documentation that drifts from reality is worse than no documentation.
