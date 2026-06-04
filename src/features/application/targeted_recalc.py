@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from src.candles.application.coverage_gate import evaluate_ohlcv_coverage
 from src.features.ports.recalc import RecalcOutcome
 
 if TYPE_CHECKING:
@@ -72,6 +73,14 @@ class RecalcFeaturesInRange:
             ),
         )
         if source is None or len(source) == 0:
+            return self._build_outcome(0, run_context)
+        coverage = evaluate_ohlcv_coverage(
+            timestamps_ms=[int(ts * 1000) for ts in source["ts"].tolist()],
+            timeframe=tf,
+            required_bars=self.warmup_bars,
+            end_ts_ms=end_ts_ms,
+        )
+        if not coverage.passed:
             return self._build_outcome(0, run_context)
         calculated = self.compute_features_fn(source.copy(), self.specs)
         target = _filter_target_range(

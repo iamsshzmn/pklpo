@@ -214,6 +214,7 @@ class MarketSelectionPipeline:
         logger.info("Processing %s...", timeframe)
         quality_results = await self.steps.compute_quality_gate(timeframe, ctx.ts_eval)
         quality_by_symbol = {result.symbol: result for result in quality_results}
+        await self._apply_feature_eligibility_filter(timeframe, quality_results)
         state.quality_results[timeframe] = quality_by_symbol
 
         eligible = [result for result in quality_results if result.eligible]
@@ -257,6 +258,27 @@ class MarketSelectionPipeline:
             window_days=self.config.windows_days.get(timeframe, 30),
         )
         await self.session.commit()
+
+    async def _apply_feature_eligibility_filter(
+        self,
+        timeframe: str,
+        quality_results: list[QualityResult],
+    ) -> None:
+        from src.candles.interfaces import eligibility as eligibility_interface
+
+        for result in quality_results:
+            if not result.eligible:
+                continue
+            eligibility = await eligibility_interface.get_state(result.symbol, timeframe)
+            if eligibility is None or eligibility.can_score:
+                continue
+            result.eligible = False
+            logger.info(
+                "Market selection eligibility blocked %s/%s: state=%s",
+                result.symbol,
+                timeframe,
+                eligibility.state,
+            )
 
     def _apply_volatile_filter(
         self,

@@ -333,6 +333,138 @@ def push_swap_smoke_metrics(smoke: dict[str, Any]) -> bool:
         return False
 
 
+def push_feature_eligibility_metrics(snapshot: dict[str, Any]) -> bool:
+    """Push feature eligibility materialized-state metrics."""
+    if not snapshot:
+        return False
+
+    try:
+        registry = CollectorRegistry()
+        state_counts_gauge = Gauge(
+            "pklpo_feature_eligibility_symbols",
+            "Feature eligibility symbols by timeframe and state",
+            ["timeframe", "state"],
+            registry=registry,
+        )
+        eligible_total_gauge = Gauge(
+            "pklpo_feature_eligible_total",
+            "Feature-eligible symbols by timeframe",
+            ["timeframe"],
+            registry=registry,
+        )
+        transitions_total = Counter(
+            "pklpo_feature_eligibility_transitions_total",
+            "Feature eligibility state transitions",
+            ["from_state", "to_state"],
+            registry=registry,
+        )
+        lost_gauge = Gauge(
+            "pklpo_feature_eligibility_lost",
+            "Symbols that lost eligibility by timeframe",
+            ["timeframe"],
+            registry=registry,
+        )
+        invalid_total_gauge = Gauge(
+            "pklpo_feature_eligibility_invalid_total",
+            "Feature eligibility invalid_history count",
+            registry=registry,
+        )
+        stale_seconds_gauge = Gauge(
+            "pklpo_feature_eligibility_stale_seconds",
+            "Seconds since the latest feature eligibility evaluation",
+            registry=registry,
+        )
+
+        for (timeframe, state), count in (snapshot.get("state_counts") or {}).items():
+            state_counts_gauge.labels(str(timeframe), str(state)).set(float(count))
+        for timeframe, count in (snapshot.get("eligible_counts") or {}).items():
+            eligible_total_gauge.labels(str(timeframe)).set(float(count))
+
+        lost_counts: dict[str, int] = {}
+        for transition in snapshot.get("transitions") or []:
+            from_state = str(transition.get("from_state") or "none")
+            to_state = str(transition.get("to_state") or "none")
+            timeframe = str(transition.get("timeframe") or "")
+            transitions_total.labels(from_state, to_state).inc()
+            if from_state == "eligible" and to_state in {
+                "incomplete_history",
+                "invalid_history",
+            }:
+                lost_counts[timeframe] = lost_counts.get(timeframe, 0) + 1
+        for timeframe, count in lost_counts.items():
+            lost_gauge.labels(timeframe).set(float(count))
+
+        invalid_total_gauge.set(float(snapshot.get("invalid_total", 0)))
+        stale_seconds_gauge.set(float(snapshot.get("stale_seconds", 0.0)))
+        pushed = _push_registry(registry, job_name="feature_eligibility")
+        if pushed:
+            logger.info("Feature eligibility metrics pushed")
+        return pushed
+    except Exception:
+        logger.warning("Failed to push feature eligibility metrics", exc_info=True)
+        return False
+
+
+def push_pipeline_monitoring_metrics(snapshot: dict[str, Any]) -> bool:
+    """Push read-only pipeline monitoring snapshot metrics."""
+    if not snapshot:
+        return False
+
+    try:
+        registry = CollectorRegistry()
+        candle_lag_gauge = Gauge(
+            "pklpo_pipeline_candle_lag_seconds",
+            "Lag in seconds between now and latest candle by timeframe",
+            ["timeframe"],
+            registry=registry,
+        )
+        recalc_queue_gauge = Gauge(
+            "pklpo_pipeline_recalc_queue_rows",
+            "Indicator recalculation queue rows by status",
+            ["status"],
+            registry=registry,
+        )
+        bootstrap_state_gauge = Gauge(
+            "pklpo_pipeline_bootstrap_state_rows",
+            "Bootstrap state rows by status",
+            ["status"],
+            registry=registry,
+        )
+        eligibility_state_gauge = Gauge(
+            "pklpo_pipeline_eligibility_state_rows",
+            "Feature eligibility rows by timeframe and state",
+            ["timeframe", "state"],
+            registry=registry,
+        )
+        alerts_gauge = Gauge(
+            "pklpo_pipeline_alerts",
+            "Read-only monitoring alerts by severity",
+            ["severity"],
+            registry=registry,
+        )
+
+        for timeframe, lag in (snapshot.get("candle_lag_seconds") or {}).items():
+            candle_lag_gauge.labels(str(timeframe)).set(float(lag))
+        for status, count in (snapshot.get("recalc_queue") or {}).items():
+            recalc_queue_gauge.labels(str(status)).set(float(count))
+        for status, count in (snapshot.get("bootstrap_state") or {}).items():
+            bootstrap_state_gauge.labels(str(status)).set(float(count))
+        for (timeframe, state), count in (
+            snapshot.get("eligibility_state") or {}
+        ).items():
+            eligibility_state_gauge.labels(str(timeframe), str(state)).set(float(count))
+        for severity, count in (snapshot.get("alerts") or {}).items():
+            alerts_gauge.labels(str(severity)).set(float(count))
+
+        pushed = _push_registry(registry, job_name="pipeline_monitoring")
+        if pushed:
+            logger.info("Pipeline monitoring metrics pushed")
+        return pushed
+    except Exception:
+        logger.warning("Failed to push pipeline monitoring metrics", exc_info=True)
+        return False
+
+
 def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) -> bool:
     """Push validated swap repair results to Prometheus Pushgateway."""
     if not payloads:
