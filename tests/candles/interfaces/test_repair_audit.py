@@ -281,7 +281,7 @@ async def test_write_guard_repair_audit_writes_one_record_per_payload(
     validated_conf = {
         "trigger": "last-200-guard",
         "repair_strategy": "last_n_closed_bars",
-        "bars": 200,
+        "bars": 500,
     }
     captured: list[dict[str, Any]] = []
 

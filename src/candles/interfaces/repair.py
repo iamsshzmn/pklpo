@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import math
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
+from sqlalchemy import text
 
 from src.candles.application.repair import (
     GuaranteeLastClosedBarsUseCase,
@@ -31,13 +34,6 @@ from src.candles.interfaces.swap_sync import (
 )
 from src.config import get_settings
 from src.core.run_context import RunContext
-from src.features.api import (
-    FEATURE_SPECS,
-    compute_features,
-    create_feature_application_bootstrap,
-)
-from src.features.application import RecalcFeaturesInRange
-from src.features.application.save import save_batch
 from src.utils.session_utils import get_db_session
 
 if TYPE_CHECKING:
@@ -92,10 +88,6 @@ class _NoopHistoricalRangeSource:
         end_ts_ms: int,
     ) -> list[dict[str, Any]]:
         return []
-
-
-def _default_recalc_specs(specs: list[str] | None) -> list[str]:
-    return specs if specs else list(FEATURE_SPECS)
 
 
 def _build_calendar() -> StorageCalendar:
@@ -607,54 +599,75 @@ async def enqueue_indicator_recalc(
     start_ts_ms: int,
     end_ts_ms: int,
     specs: list[str] | None = None,
+    source_dag: str | None = None,
 ) -> dict[str, Any]:
-    bootstrap = create_feature_application_bootstrap()
-    run_context = RunContext.create(
+    warmup_bars = int(get_settings().features.recommended_warmup_bars)
+    detail = json.dumps(
         {
-            "use_case": "recalc_features_in_range",
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "start_ts_ms": start_ts_ms,
-            "end_ts_ms": end_ts_ms,
             "specs": specs or [],
         }
     )
-    async with get_db_session() as session:
-        deps = bootstrap.save_dependencies_factory(session)
-
-        async def _fetch_ohlcv_df(**kwargs: Any) -> Any:
-            return await bootstrap.storage_gateway.fetch_ohlcv_df(session, **kwargs)
-
-        async def _save_features_df(df: Any, item_symbol: str, tf: str) -> int:
-            result = await save_batch(
-                session,
-                df,
-                item_symbol,
-                tf,
-                repository=deps.repository,
-                observer=deps.observer,
-                commit=False,
-            )
-            return int(result["rows_saved"])
-
-        use_case = RecalcFeaturesInRange(
-            fetch_ohlcv_df=_fetch_ohlcv_df,
-            save_features_df=_save_features_df,
-            compute_features_fn=lambda df, selected: compute_features(
-                df,
-                specs=selected,
-                symbol=symbol,
-                timeframe=timeframe,
-            ),
-            specs=_default_recalc_specs(specs),
-            warmup_bars=get_settings().features.max_lookback,
+    statement = text(
+        """
+        INSERT INTO ops.indicator_recalc_queue (
+            symbol,
+            timeframe,
+            range_start_ts,
+            range_end_ts,
+            warmup_bars,
+            status,
+            source_dag,
+            detail
         )
-        outcome = await use_case.run(
-            symbol=symbol,
-            tf=timeframe,
-            start_ts_ms=start_ts_ms,
-            end_ts_ms=end_ts_ms,
-            run_context=run_context,
+        VALUES (
+            :symbol,
+            :timeframe,
+            :range_start_ts,
+            :range_end_ts,
+            :warmup_bars,
+            'queued',
+            :source_dag,
+            CAST(:detail AS jsonb)
+        )
+        ON CONFLICT (symbol, timeframe, range_start_ts, range_end_ts)
+        DO UPDATE SET
+            warmup_bars = EXCLUDED.warmup_bars,
+            status = CASE
+                WHEN ops.indicator_recalc_queue.status IN ('completed', 'failed')
+                    THEN 'queued'
+                ELSE ops.indicator_recalc_queue.status
+            END,
+            source_dag = EXCLUDED.source_dag,
+            detail = EXCLUDED.detail,
+            enqueued_at = CASE
+                WHEN ops.indicator_recalc_queue.status IN ('completed', 'failed')
+                    THEN now()
+                ELSE ops.indicator_recalc_queue.enqueued_at
+            END,
+            claimed_at = CASE
+                WHEN ops.indicator_recalc_queue.status IN ('completed', 'failed')
+                    THEN NULL
+                ELSE ops.indicator_recalc_queue.claimed_at
+            END,
+            completed_at = CASE
+                WHEN ops.indicator_recalc_queue.status IN ('completed', 'failed')
+                    THEN NULL
+                ELSE ops.indicator_recalc_queue.completed_at
+            END
+        """
+    )
+    async with get_db_session() as session:
+        await session.execute(
+            statement,
+            {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "range_start_ts": start_ts_ms,
+                "range_end_ts": end_ts_ms,
+                "warmup_bars": warmup_bars,
+                "source_dag": source_dag or "repair_interface",
+                "detail": detail,
+            },
         )
     return {
         "status": "queued",
@@ -662,8 +675,7 @@ async def enqueue_indicator_recalc(
         "timeframe": timeframe,
         "start_ts_ms": start_ts_ms,
         "end_ts_ms": end_ts_ms,
-        "rows_written": outcome.rows_written,
-        "run_id": outcome.run_id,
-        "algo_version": outcome.algo_version,
-        "params_hash": outcome.params_hash,
+        "rows_written": 0,
+        "queue_status": "queued",
+        "warmup_bars": warmup_bars,
     }
