@@ -14,6 +14,7 @@ from src.candles.domain.candle_validation import (
 from src.candles.domain.okx_calendar import StorageCalendar
 from src.candles.domain.repair import RepairWindow
 from src.candles.domain.timeframes import TF_TO_MS
+from src.candles.infrastructure.ohlcv_write_lock import ohlcv_symbol_write_lock
 from src.config.settings import get_settings
 from src.models import Instrument
 from src.utils.retry import get_db_retry
@@ -185,7 +186,12 @@ class SwapCandlesRepository:
         async def _operation() -> int:
             async with get_db_session() as session:
                 try:
-                    result = await session.execute(stmt, rows)
+                    async with ohlcv_symbol_write_lock(
+                        session,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                    ):
+                        result = await session.execute(stmt, rows)
                     await session.commit()
                 except Exception:
                     await session.rollback()

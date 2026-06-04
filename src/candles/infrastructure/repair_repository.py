@@ -22,6 +22,7 @@ from src.candles.domain.repair_timeframes import (
     list_expected_timestamps,
 )
 from src.candles.domain.timeframes import TF_TO_MS
+from src.candles.infrastructure.ohlcv_write_lock import ohlcv_symbol_write_lock
 from src.candles.repository import (
     SwapCandlesRepository,
     _chunk_window,
@@ -428,7 +429,12 @@ class RepairCandlesRepository(SwapCandlesRepository):
         async def _operation() -> int:
             async with get_db_session() as session:
                 try:
-                    result = await session.execute(stmt, rows)
+                    async with ohlcv_symbol_write_lock(
+                        session,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                    ):
+                        result = await session.execute(stmt, rows)
                     await session.commit()
                 except Exception:
                     await session.rollback()
