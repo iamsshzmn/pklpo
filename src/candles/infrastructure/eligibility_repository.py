@@ -6,7 +6,13 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import text
 
 from src.candles.application.eligibility.ports import EligibilitySnapshot
-from src.candles.domain.eligibility import CoverageFacts, EligibilityState
+from src.candles.domain.eligibility import (
+    TIMEFRAME_POLICIES,
+    CoverageFacts,
+    EligibilityState,
+    TimeframeEligibilityPolicy,
+)
+from src.features.domain.timeframe import timeframe_to_seconds
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,34 +23,143 @@ RESEARCH_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
 
 
 class EligibilitySqlRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        policies: dict[str, TimeframeEligibilityPolicy] | None = None,
+    ) -> None:
         self._session = session
+        self._policies = policies or TIMEFRAME_POLICIES
 
     async def read_coverage_facts(self) -> list[CoverageFacts]:
+        policy_sql, policy_params = _policy_cte(self._policies)
         result = await self._session.execute(
             text(
-                """
+                f"""
+                WITH policy(timeframe, step_ms, required_bars) AS (
+                    {policy_sql}
+                ),
+                raw AS (
+                    SELECT
+                        o.symbol,
+                        o.timeframe,
+                        o.timestamp,
+                        p.step_ms,
+                        p.required_bars
+                    FROM swap_ohlcv_p o
+                    JOIN policy p ON p.timeframe = o.timeframe
+                ),
+                raw_integrity AS (
+                    SELECT
+                        symbol,
+                        timeframe,
+                        COUNT(*) AS total_bars,
+                        COUNT(*) - COUNT(DISTINCT timestamp) AS duplicate_count,
+                        COUNT(*) FILTER (WHERE timestamp % step_ms <> 0) AS misaligned_count
+                    FROM raw
+                    GROUP BY symbol, timeframe
+                ),
+                last_aligned AS (
+                    SELECT
+                        symbol,
+                        timeframe,
+                        MAX(timestamp) AS last_ts
+                    FROM raw
+                    WHERE timestamp % step_ms = 0
+                    GROUP BY symbol, timeframe
+                ),
+                window_bounds AS (
+                    SELECT
+                        l.symbol,
+                        l.timeframe,
+                        l.last_ts,
+                        p.step_ms,
+                        p.required_bars,
+                        CASE
+                            WHEN p.required_bars > 0
+                            THEN l.last_ts - ((p.required_bars - 1) * p.step_ms)
+                            ELSE l.last_ts
+                        END AS window_start_ts
+                    FROM last_aligned l
+                    JOIN policy p ON p.timeframe = l.timeframe
+                ),
+                actual_window AS (
+                    SELECT
+                        w.symbol,
+                        w.timeframe,
+                        COUNT(DISTINCT r.timestamp) AS actual_window_bars,
+                        MIN(r.timestamp) AS first_ts,
+                        MAX(r.timestamp) AS last_ts
+                    FROM window_bounds w
+                    LEFT JOIN raw r
+                      ON r.symbol = w.symbol
+                     AND r.timeframe = w.timeframe
+                     AND r.timestamp BETWEEN w.window_start_ts AND w.last_ts
+                    GROUP BY w.symbol, w.timeframe
+                ),
+                expected_window AS (
+                    SELECT
+                        w.symbol,
+                        w.timeframe,
+                        expected_ts
+                    FROM window_bounds w
+                    CROSS JOIN LATERAL generate_series(
+                        w.window_start_ts,
+                        w.last_ts,
+                        w.step_ms
+                    ) AS expected_series(expected_ts)
+                    WHERE w.required_bars > 0
+                ),
+                missing_window AS (
+                    SELECT
+                        e.symbol,
+                        e.timeframe,
+                        COUNT(*) AS missing_count
+                    FROM expected_window e
+                    LEFT JOIN raw r
+                      ON r.symbol = e.symbol
+                     AND r.timeframe = e.timeframe
+                     AND r.timestamp = e.expected_ts
+                    WHERE r.timestamp IS NULL
+                    GROUP BY e.symbol, e.timeframe
+                )
                 SELECT
-                    symbol,
-                    timeframe,
-                    COUNT(*) AS actual_bars,
-                    MIN(timestamp) AS first_ts,
-                    MAX(timestamp) AS last_ts,
-                    100.0::float AS coverage_pct
-                FROM swap_ohlcv_p
-                WHERE timeframe = ANY(:timeframes)
-                GROUP BY symbol, timeframe
-                ORDER BY symbol, timeframe
+                    w.symbol,
+                    w.timeframe,
+                    COALESCE(a.actual_window_bars, 0) AS actual_window_bars,
+                    ri.total_bars,
+                    a.first_ts,
+                    a.last_ts,
+                    CASE
+                        WHEN w.required_bars > 0
+                        THEN ROUND(
+                            100.0 * COALESCE(a.actual_window_bars, 0)
+                            / NULLIF(w.required_bars, 0),
+                            2
+                        )
+                        ELSE 100.0
+                    END AS coverage_pct,
+                    COALESCE(m.missing_count, 0) AS missing_count,
+                    COALESCE(ri.duplicate_count, 0) AS duplicate_count,
+                    COALESCE(ri.misaligned_count, 0) AS misaligned_count
+                FROM window_bounds w
+                LEFT JOIN actual_window a
+                  ON a.symbol = w.symbol AND a.timeframe = w.timeframe
+                LEFT JOIN raw_integrity ri
+                  ON ri.symbol = w.symbol AND ri.timeframe = w.timeframe
+                LEFT JOIN missing_window m
+                  ON m.symbol = w.symbol AND m.timeframe = w.timeframe
+                ORDER BY w.symbol, w.timeframe
                 """
             ),
-            {"timeframes": list(RESEARCH_TIMEFRAMES)},
+            policy_params,
         )
         rows = result.mappings().all()
         return [
             CoverageFacts(
                 symbol=str(row["symbol"]),
                 timeframe=str(row["timeframe"]),
-                actual_bars=int(row["actual_bars"]),
+                actual_bars=int(row["actual_window_bars"]),
                 coverage_pct=(
                     float(row["coverage_pct"])
                     if row.get("coverage_pct") is not None
@@ -52,6 +167,17 @@ class EligibilitySqlRepository:
                 ),
                 first_ts=int(row["first_ts"]) if row.get("first_ts") is not None else None,
                 last_ts=int(row["last_ts"]) if row.get("last_ts") is not None else None,
+                has_interior_gap=int(row.get("missing_count") or 0) > 0,
+                integrity_ok=(
+                    int(row.get("duplicate_count") or 0) == 0
+                    and int(row.get("misaligned_count") or 0) == 0
+                ),
+                detail={
+                    "total_bars": int(row.get("total_bars") or 0),
+                    "missing_count": int(row.get("missing_count") or 0),
+                    "duplicate_count": int(row.get("duplicate_count") or 0),
+                    "misaligned_count": int(row.get("misaligned_count") or 0),
+                },
             )
             for row in rows
         ]
@@ -220,3 +346,30 @@ def _verdict_params(
         "detail": json.dumps(verdict.detail),
         "evaluator_run_id": evaluator_run_id,
     }
+
+
+def _policy_cte(
+    policies: dict[str, TimeframeEligibilityPolicy],
+) -> tuple[str, dict[str, Any]]:
+    entries = [
+        (timeframe, policy)
+        for timeframe, policy in policies.items()
+        if timeframe in RESEARCH_TIMEFRAMES
+    ]
+    if not entries:
+        raise ValueError("at least one research timeframe policy is required")
+
+    selects: list[str] = []
+    params: dict[str, Any] = {}
+    for index, (timeframe, policy) in enumerate(entries):
+        tf_key = f"tf_{index}"
+        step_key = f"step_ms_{index}"
+        bars_key = f"required_bars_{index}"
+        selects.append(
+            f"SELECT :{tf_key} AS timeframe, :{step_key} AS step_ms, "
+            f":{bars_key} AS required_bars"
+        )
+        params[tf_key] = timeframe
+        params[step_key] = timeframe_to_seconds(timeframe) * 1000
+        params[bars_key] = int(policy.required_bars)
+    return "\n                    UNION ALL\n                    ".join(selects), params

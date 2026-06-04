@@ -7,8 +7,10 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from src.candles.application.eligibility import RefreshEligibilityUseCase
+from src.candles.domain.eligibility import build_timeframe_policies
 from src.candles.infrastructure.eligibility_repository import EligibilitySqlRepository
 from src.candles.observability.prometheus import push_feature_eligibility_metrics
+from src.config.settings import get_settings
 from src.utils.session_utils import get_db_session
 
 
@@ -30,11 +32,13 @@ class EligibilityRecord:
 
 async def refresh_eligibility(*, evaluator_run_id: str | None = None) -> dict[str, int]:
     run_id = evaluator_run_id or f"feature-eligibility-{uuid4()}"
+    policies = build_timeframe_policies(get_settings().features.warmup_bars_by_timeframe)
     async with get_db_session() as session:
-        repository = EligibilitySqlRepository(session)
+        repository = EligibilitySqlRepository(session, policies=policies)
         summary = await RefreshEligibilityUseCase(
             coverage_reader=repository,
             repository=repository,
+            policies=policies,
         ).run(evaluator_run_id=run_id)
         await _push_refresh_metrics(session)
     return {"evaluated": summary.evaluated, "transitions": summary.transitions}

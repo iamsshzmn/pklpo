@@ -82,6 +82,25 @@ TIMEFRAME_POLICIES: dict[str, TimeframeEligibilityPolicy] = {
 }
 
 
+def build_timeframe_policies(
+    warmup_bars_by_timeframe: dict[str, int],
+) -> dict[str, TimeframeEligibilityPolicy]:
+    role_by_timeframe = {
+        "1H": TimeframeRole.FULL,
+        "4H": TimeframeRole.FULL,
+        "1D": TimeframeRole.FULL,
+        "1W": TimeframeRole.CONTEXT,
+        "1M": TimeframeRole.INFORMATIONAL,
+    }
+    return {
+        timeframe: TimeframeEligibilityPolicy(
+            role=role_by_timeframe.get(timeframe, TimeframeRole.INACTIVE),
+            required_bars=int(required_bars),
+        )
+        for timeframe, required_bars in warmup_bars_by_timeframe.items()
+    }
+
+
 def evaluate_feature_eligibility(
     facts: CoverageFacts,
     *,

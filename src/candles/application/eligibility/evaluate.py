@@ -10,6 +10,7 @@ if TYPE_CHECKING:
         CoverageReader,
         EligibilityRepository,
     )
+    from src.candles.domain.eligibility import TimeframeEligibilityPolicy
 
 
 @dataclass(frozen=True)
@@ -22,12 +23,13 @@ class EligibilityRefreshSummary:
 class RefreshEligibilityUseCase:
     coverage_reader: CoverageReader
     repository: EligibilityRepository
+    policies: dict[str, TimeframeEligibilityPolicy] | None = None
 
     async def run(self, *, evaluator_run_id: str) -> EligibilityRefreshSummary:
         facts_rows = await self.coverage_reader.read_coverage_facts()
         transition_count = 0
         for facts in facts_rows:
-            verdict = evaluate_feature_eligibility(facts)
+            verdict = evaluate_feature_eligibility(facts, policies=self.policies)
             current = await self.repository.get_current(
                 symbol=verdict.symbol,
                 timeframe=verdict.timeframe,
