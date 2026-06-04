@@ -211,6 +211,26 @@ class FeaturesSettings(BaseSettings):
         le=500,
         description="Minimum warm-up rows",
     )
+    operational_warmup_bars: int = Field(
+        default=280,
+        ge=1,
+        description="Minimum bars required before feature/scoring eligibility.",
+    )
+    recommended_warmup_bars: int = Field(
+        default=500,
+        ge=1,
+        description="Recommended warm-up bars for production feature recalculation.",
+    )
+    warmup_bars_by_timeframe: dict[str, int] = Field(
+        default={
+            "1H": 500,
+            "4H": 500,
+            "1D": 500,
+            "1W": 280,
+            "1M": 0,
+        },
+        description="Per-timeframe warm-up contract; 1M is informational-only.",
+    )
 
     # Price change validation
     min_price_change: float = Field(
