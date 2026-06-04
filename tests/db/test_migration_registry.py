@@ -24,7 +24,8 @@ def test_swap_ohlcv_protection_migrations_are_registered_after_350() -> None:
         "380_swap_ohlcv_alignment_trigger",
     ]
 
-    assert ids[-3:] == expected
+    start = ids.index("360_swap_ohlcv_constraints")
+    assert ids[start : start + len(expected)] == expected
     assert ids.index("360_swap_ohlcv_constraints") > ids.index(
         "350_ops_swap_ohlcv_bootstrap_state"
     )

@@ -62,6 +62,15 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_create_ops_data_quality_metrics import (
         migrate_create_ops_data_quality_metrics,
     )
+    from src.db.migrations.migrate_create_ops_feature_eligibility import (
+        migrate_create_ops_feature_eligibility,
+    )
+    from src.db.migrations.migrate_create_ops_feature_eligibility_transitions import (
+        migrate_create_ops_feature_eligibility_transitions,
+    )
+    from src.db.migrations.migrate_create_ops_indicator_recalc_queue import (
+        migrate_create_ops_indicator_recalc_queue,
+    )
     from src.db.migrations.migrate_create_ops_swap_ohlcv_bootstrap_state import (
         migrate_create_ops_swap_ohlcv_bootstrap_state,
     )
@@ -82,6 +91,9 @@ def get_migrations() -> list[Migration]:
         migrate_create_trade_recommendations,
     )
     from src.db.migrations.migrate_data_cleanup import migrate_data_cleanup
+    from src.db.migrations.migrate_drop_redundant_swap_ohlcv_indexes import (
+        migrate_drop_redundant_swap_ohlcv_indexes,
+    )
     from src.db.migrations.migrate_expand_indicators_precision import (
         migrate_expand_indicators_precision,
     )
@@ -95,6 +107,12 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_monitoring_metrics import migrate_monitoring_metrics
     from src.db.migrations.migrate_recreate_swap_ohlcv_partitioned import (
         migrate_recreate_swap_ohlcv_partitioned,
+    )
+    from src.db.migrations.migrate_retention_horizon_guard import (
+        migrate_retention_horizon_guard,
+    )
+    from src.db.migrations.migrate_set_research_tf_infinite_retention import (
+        migrate_set_research_tf_infinite_retention,
     )
     from src.db.migrations.migrate_swap_ohlcv_retention_policy import (
         migrate_swap_ohlcv_retention_policy,
@@ -267,5 +285,35 @@ def get_migrations() -> list[Migration]:
             "380_swap_ohlcv_alignment_trigger",
             "create disabled swap OHLCV alignment trigger",
             migrate_add_swap_ohlcv_alignment_trigger,
+        ),
+        Migration(
+            "390_research_tf_infinite_retention",
+            "set research timeframes to infinite retention",
+            migrate_set_research_tf_infinite_retention,
+        ),
+        Migration(
+            "400_drop_redundant_swap_ohlcv_indexes",
+            "drop redundant swap OHLCV lookup indexes",
+            migrate_drop_redundant_swap_ohlcv_indexes,
+        ),
+        Migration(
+            "410_retention_horizon_guard",
+            "clamp swap OHLCV retention outside warm-up horizon",
+            migrate_retention_horizon_guard,
+        ),
+        Migration(
+            "420_ops_feature_eligibility",
+            "create ops feature eligibility state table",
+            migrate_create_ops_feature_eligibility,
+        ),
+        Migration(
+            "430_ops_feature_eligibility_transitions",
+            "create ops feature eligibility transition audit table",
+            migrate_create_ops_feature_eligibility_transitions,
+        ),
+        Migration(
+            "440_ops_indicator_recalc_queue",
+            "create ops indicator recalculation queue",
+            migrate_create_ops_indicator_recalc_queue,
         ),
     ]
