@@ -92,6 +92,7 @@ ops/airflow/logs/
 .claude/
 .codex/
 .codex-pre-commit-cache
+.pre-commit-cache/
 agent_workspace/
 
 # Archives & backups
