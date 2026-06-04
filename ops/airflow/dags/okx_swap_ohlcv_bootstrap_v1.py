@@ -5,14 +5,14 @@ Manual trigger only. Trigger via Airflow UI with conf::
     {
         "lookback_days": 730,
         "symbols": ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
-        "timeframes": ["1H", "4H"],
+        "timeframes": ["1H", "4H", "1D", "1W", "1M"],
         "chunk_bars": 500,
         "circuit_break_after": 3,
         "skip_recalc": false,
         "dry_run": false
     }
 
-Tip: symbols and timeframes also accept comma-separated strings, e.g. "1H,4H".
+Tip: symbols and timeframes also accept comma-separated strings, e.g. "1H,4H,1D".
 
 Ops prerequisite — create bootstrap_pool before first run::
 
@@ -47,6 +47,7 @@ from src.candles.instruments_service import (
 )
 from src.candles.interfaces import (
     bootstrap as bootstrap_interface,
+    eligibility as eligibility_interface,
     repair as repair_interface,
 )
 
@@ -55,10 +56,12 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import asyncio
 
-SUPPORTED_TIMEFRAMES = ("1H", "4H")
+SUPPORTED_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
 DEFAULT_LOOKBACK_DAYS = 730
+PROVIDER_MAX_LOOKBACK_DAYS = 36_500
 DEFAULT_CHUNK_BARS = 500
 DEFAULT_CIRCUIT_BREAK_AFTER = 3
+FEATURE_RECALC_EXCLUDED_TIMEFRAMES = {"1M"}
 
 
 def _normalize_string_list(raw: object, field: str) -> list[str] | None:
@@ -122,6 +125,12 @@ def _get_validated_conf(context: dict[str, Any]) -> dict[str, Any]:
         if isinstance(payload, dict):
             return payload
     return _get_run_conf(context)
+
+
+def _lookback_days_for_timeframe(timeframe: str, default_lookback_days: int) -> int:
+    if timeframe in {"1W", "1M"}:
+        return PROVIDER_MAX_LOOKBACK_DAYS
+    return default_lookback_days
 
 
 # ---------------------------------------------------------------------------
@@ -198,14 +207,20 @@ def task_init_bootstrap_state(**context: Any) -> dict[str, Any]:
     env = get_dag_env()
     setup_env(env)
     validated = _get_validated_conf(context)
-    result = _get_loop().run_until_complete(
-        bootstrap_interface.init_bootstrap_state(
-            symbols=validated["symbols"],
-            timeframes=validated["timeframes"],
-            lookback_days=validated["lookback_days"],
-            chunk_bars=validated["chunk_bars"],
+    result = {"pending": [], "skipped": []}
+    for timeframe in validated["timeframes"]:
+        timeframe_result = _get_loop().run_until_complete(
+            bootstrap_interface.init_bootstrap_state(
+                symbols=validated["symbols"],
+                timeframes=[timeframe],
+                lookback_days=_lookback_days_for_timeframe(
+                    timeframe, validated["lookback_days"]
+                ),
+                chunk_bars=validated["chunk_bars"],
+            )
         )
-    )
+        result["pending"].extend(timeframe_result["pending"])
+        result["skipped"].extend(timeframe_result["skipped"])
     logger.info(
         "init_bootstrap_state: %d pending, %d skipped",
         len(result["pending"]),
@@ -263,7 +278,9 @@ def task_bootstrap_symbol_tf(**context: Any) -> list[dict[str, Any]]:
         command = BootstrapCommand(
             symbol=symbol,
             timeframe=timeframe,
-            lookback_days=validated["lookback_days"],
+            lookback_days=_lookback_days_for_timeframe(
+                timeframe, validated["lookback_days"]
+            ),
             chunk_bars=validated["chunk_bars"],
             circuit_break_after=validated["circuit_break_after"],
             dry_run=bool(validated.get("dry_run", False)),
@@ -318,8 +335,6 @@ def task_enqueue_indicator_recalc(**context: Any) -> None:
 
     now_ms = int(_time_mod.time() * 1000)
     day_ms = 86_400_000
-    lookback_days = validated.get("lookback_days", 730)
-    start_ts_ms = now_ms - int(lookback_days) * day_ms
 
     seen: set[tuple[str, str]] = set()
     for r in results:
@@ -329,13 +344,23 @@ def task_enqueue_indicator_recalc(**context: Any) -> None:
         timeframe = str(r.get("timeframe", "")).strip()
         if not symbol or not timeframe or (symbol, timeframe) in seen:
             continue
+        if timeframe in FEATURE_RECALC_EXCLUDED_TIMEFRAMES:
+            logger.info(
+                "skipping indicator recalc for %s/%s: informational_only timeframe",
+                symbol,
+                timeframe,
+            )
+            continue
         seen.add((symbol, timeframe))
         try:
+            lookback_days = _lookback_days_for_timeframe(
+                timeframe, int(validated.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
+            )
             _get_loop().run_until_complete(
                 repair_interface.enqueue_indicator_recalc(
                     symbol=symbol,
                     timeframe=timeframe,
-                    start_ts_ms=start_ts_ms,
+                    start_ts_ms=now_ms - lookback_days * day_ms,
                     end_ts_ms=now_ms,
                 )
             )
@@ -391,6 +416,16 @@ def task_publish_bootstrap_ops(**context: Any) -> None:
     )
 
 
+def task_refresh_eligibility(**context: Any) -> dict[str, int]:
+    env = get_dag_env()
+    setup_env(env)
+    dag_run = context.get("dag_run")
+    run_id = getattr(dag_run, "run_id", None) or "okx_swap_ohlcv_bootstrap_v1"
+    return _get_loop().run_until_complete(
+        eligibility_interface.refresh_eligibility(evaluator_run_id=run_id)
+    )
+
+
 # ---------------------------------------------------------------------------
 # DAG definition
 # ---------------------------------------------------------------------------
@@ -405,6 +440,7 @@ with DAG(
     default_args={
         "retries": 0,
         "retry_delay": timedelta(minutes=5),
+        "execution_timeout": timedelta(hours=4),
     },
     on_failure_callback=DAG_FAILURE_CALLBACK,
     on_success_callback=DAG_SUCCESS_CALLBACK,
@@ -420,7 +456,7 @@ with DAG(
         "timeframes": Param(
             None,
             type=["null", "array", "string"],
-            description="Timeframes list or comma-separated string. Supported: 1H, 4H, 1D, 1W, 1M. Default when null: 1H and 4H.",
+            description="Timeframes list or comma-separated string. Supported/default research TFs: 1H, 4H, 1D, 1W, 1M. 1W/1M use provider-max depth; 1M skips standard feature recalc.",
         ),
         "chunk_bars": Param(500, type="integer"),
         "circuit_break_after": Param(3, type="integer"),
@@ -441,7 +477,7 @@ Airflow UI tip: you can pass arrays **or** comma-separated strings for symbols a
 ```json
 {
   "symbols": "BTC-USDT-SWAP,ETH-USDT-SWAP,BNB-USDT-SWAP",
-  "timeframes": "1H,4H",
+  "timeframes": "1H,4H,1D",
   "lookback_days": 200,
   "dry_run": true
 }
@@ -451,7 +487,7 @@ Airflow UI tip: you can pass arrays **or** comma-separated strings for symbols a
 ```json
 {
   "symbols": null,
-  "timeframes": ["1H", "4H"],
+  "timeframes": ["1H", "4H", "1D", "1W", "1M"],
   "lookback_days": 730,
   "chunk_bars": 500,
   "circuit_break_after": 3,
@@ -485,7 +521,7 @@ Airflow UI tip: you can pass arrays **or** comma-separated strings for symbols a
     t_bootstrap = PythonOperator(
         task_id="bootstrap_symbol_tf",
         python_callable=task_bootstrap_symbol_tf,
-        pool="bootstrap_pool",
+        pool="ohlcv_write_pool",
         pool_slots=1,
     )
     t_validate_xcom = PythonOperator(
@@ -504,6 +540,10 @@ Airflow UI tip: you can pass arrays **or** comma-separated strings for symbols a
         task_id="publish_bootstrap_ops",
         python_callable=task_publish_bootstrap_ops,
     )
+    t_refresh_eligibility = PythonOperator(
+        task_id="refresh_eligibility",
+        python_callable=task_refresh_eligibility,
+    )
 
     (
         t_validate_conf
@@ -515,4 +555,5 @@ Airflow UI tip: you can pass arrays **or** comma-separated strings for symbols a
         >> t_recalc
         >> t_report
         >> t_ops
+        >> t_refresh_eligibility
     )

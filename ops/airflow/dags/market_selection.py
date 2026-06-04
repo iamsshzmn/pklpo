@@ -17,19 +17,22 @@ DAG: market_selection
 - market_regime_history: global regime history
 """
 
-import asyncio
+from __future__ import annotations
+
 import logging
-import os
 import sys
-from collections.abc import Mapping
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 # Add project to path for imports (same as features_calc DAG)
 if "/opt/airflow/project" not in sys.path:
     sys.path.insert(0, "/opt/airflow/project")
 
+from _common import (  # type: ignore[import-not-found]
+    get_dag_env as _get_common_dag_env,
+    get_or_create_event_loop,
+    setup_env as _setup_common_env,
+)
 from airflow import DAG
 from airflow.operators.python import BranchPythonOperator, PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
@@ -38,9 +41,14 @@ from airflow.sensors.external_task import ExternalTaskSensor
 try:
     from airflow.operators.empty import EmptyOperator
 except ImportError:
-    from airflow.operators.dummy import DummyOperator as EmptyOperator
+    from airflow.operators.dummy import DummyOperator
+
+    EmptyOperator = DummyOperator  # type: ignore[misc]
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import asyncio
 
 # Default args
 default_args = {
@@ -50,6 +58,7 @@ default_args = {
     "email_on_retry": False,
     "retries": 2,
     "retry_delay": timedelta(minutes=5),
+    "execution_timeout": timedelta(hours=2),
 }
 
 
@@ -61,9 +70,7 @@ def _build_log_context(context: dict[str, Any]) -> str:
     ti = context.get("ti")
     try_number = getattr(ti, "try_number", "unknown")
     return (
-        f"dag_run_id={dag_run_id} "
-        f"logical_date={logical_date} "
-        f"try_number={try_number}"
+        f"dag_run_id={dag_run_id} logical_date={logical_date} try_number={try_number}"
     )
 
 
@@ -77,68 +84,28 @@ def _safe_execution_time(value: Any) -> str:
         return "n/a"
 
 
-def get_or_create_event_loop():
-    """Gets existing event loop or creates new one."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError("Event loop is closed")
-        return loop
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop
+def _get_loop() -> asyncio.AbstractEventLoop:
+    return cast("asyncio.AbstractEventLoop", get_or_create_event_loop())
 
 
 def get_dag_env() -> dict[str, str]:
-    """Get environment from Airflow Connections/Variables."""
-    from airflow.hooks.base import BaseHook
-    from airflow.models import Variable
-
-    env = {}
-
-    # DATABASE_URL from Airflow Connection
-    try:
-        conn = BaseHook.get_connection("pklpo_db")
-        if not conn:
-            raise RuntimeError("Airflow connection 'pklpo_db' is not configured")
-
-        uri = conn.get_uri()
-        if uri.startswith("postgres://"):
-            uri = uri.replace("postgres://", "postgresql+asyncpg://", 1)
-        env["DATABASE_URL"] = uri
-    except Exception as e:
-        raise RuntimeError(
-            "DATABASE_URL not configured. Set Airflow Connection 'pklpo_db'"
-        ) from e
-
-    env["DATABASE_SSL"] = Variable.get("pklpo_database_ssl", default_var="disable")
-
-    return env
+    return cast(
+        "dict[str, str]", _get_common_dag_env(job_name_default="market_selection")
+    )
 
 
-def setup_env(env: Mapping[str, str | None]) -> None:
-    """Set environment variables."""
-    for key, value in env.items():
-        if value is not None:
-            os.environ[key] = value
-
-    Path("/tmp/pklpo").mkdir(parents=True, exist_ok=True)  # noqa: S108
+def setup_env(env: dict[str, str]) -> None:
+    _setup_common_env(env)
 
 
-async def _run_migrations_async(database_url: str) -> bool:
+async def _run_migrations_async() -> bool:
     """Run market_selection migrations."""
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-
     from src.market_selection.migrations import run_market_selection_migrations
+    from src.utils.session_utils import get_db_session
 
-    engine = create_async_engine(database_url, echo=False)
-    try:
-        async with AsyncSession(engine) as session:
-            await run_market_selection_migrations(session)
-            return True
-    finally:
-        await engine.dispose()
+    async with get_db_session() as session:
+        await run_market_selection_migrations(session)
+        return True
 
 
 def run_migrations_task(**context) -> dict[str, Any]:
@@ -149,8 +116,7 @@ def run_migrations_task(**context) -> dict[str, Any]:
     setup_env(env)
 
     try:
-        loop = get_or_create_event_loop()
-        result = loop.run_until_complete(_run_migrations_async(env["DATABASE_URL"]))
+        result = _get_loop().run_until_complete(_run_migrations_async())
     except Exception:
         logger.exception("run_migrations failed %s", log_ctx)
         raise
@@ -160,42 +126,34 @@ def run_migrations_task(**context) -> dict[str, Any]:
     return {"migrations_ok": result}
 
 
-async def _run_pipeline_async(
-    database_url: str, params: dict[str, Any]
-) -> dict[str, Any]:
+async def _run_pipeline_async(params: dict[str, Any]) -> dict[str, Any]:
     """Run market selection pipeline."""
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-
     from src.market_selection.config import MarketSelectionConfig
     from src.market_selection.infrastructure.factory import (
         build_market_selection_pipeline,
     )
+    from src.utils.session_utils import get_db_session
 
-    engine = create_async_engine(database_url, echo=False)
-    try:
-        # Build config with overrides from params
-        config = MarketSelectionConfig()
-        if params.get("top_n") is not None:
-            config.universe.top_n = int(params["top_n"])
+    config = MarketSelectionConfig()
+    if params.get("top_n") is not None:
+        config.universe.top_n = int(params["top_n"])
 
-        async with AsyncSession(engine) as session:
-            pipeline = build_market_selection_pipeline(session, config)
-            result = await pipeline.run()
+    async with get_db_session() as session:
+        pipeline = build_market_selection_pipeline(session, config)
+        result = await pipeline.run()
 
-        return {
-            "success": result.success,
-            "ts_version": result.ts_version,
-            "ts_eval": result.ts_eval,
-            "universe_size": result.universe_size,
-            "status": result.status.value,
-            "global_regime": result.global_regime.value if result.global_regime else None,
-            "eligible_counts": result.eligible_counts,
-            "execution_time_seconds": result.execution_time_seconds,
-            "config_hash": result.config_hash,
-            "error_message": result.error_message,
-        }
-    finally:
-        await engine.dispose()
+    return {
+        "success": result.success,
+        "ts_version": result.ts_version,
+        "ts_eval": result.ts_eval,
+        "universe_size": result.universe_size,
+        "status": result.status.value,
+        "global_regime": result.global_regime.value if result.global_regime else None,
+        "eligible_counts": result.eligible_counts,
+        "execution_time_seconds": result.execution_time_seconds,
+        "config_hash": result.config_hash,
+        "error_message": result.error_message,
+    }
 
 
 def run_pipeline_task(**context) -> dict[str, Any]:
@@ -211,10 +169,9 @@ def run_pipeline_task(**context) -> dict[str, Any]:
     dag_run_conf = getattr(dag_run, "conf", None) or {}
     params.update(dag_run_conf)
 
-    loop = get_or_create_event_loop()
     result = cast(
         "dict[str, Any]",
-        loop.run_until_complete(_run_pipeline_async(env["DATABASE_URL"], params)),
+        _get_loop().run_until_complete(_run_pipeline_async(params)),
     )
 
     if not result["success"]:
@@ -235,76 +192,93 @@ def run_pipeline_task(**context) -> dict[str, Any]:
     return result
 
 
-async def _validate_universe_async(database_url: str) -> dict[str, Any]:
+async def _table_exists(session: Any, table_name: str) -> bool:
+    from sqlalchemy import text
+
+    result = await session.execute(
+        text("SELECT to_regclass(:table_name) IS NOT NULL"),
+        {"table_name": f"public.{table_name}"},
+    )
+    return bool(result.scalar())
+
+
+async def _validate_universe_async() -> dict[str, Any]:
     """Validate the published universe."""
     from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-    engine = create_async_engine(database_url, echo=False)
-    try:
-        async with AsyncSession(engine) as session:
-            # Check latest version
-            result = await session.execute(
-                text(
-                    """
+    from src.utils.session_utils import get_db_session
+
+    async with get_db_session() as session:
+        if not await _table_exists(session, "market_universe_versions"):
+            logger.warning("market_universe_versions table missing")
+            return {
+                "valid": False,
+                "reason": "market_universe_versions table missing",
+            }
+        if not await _table_exists(session, "market_universe"):
+            logger.warning("market_universe table missing")
+            return {"valid": False, "reason": "market_universe table missing"}
+
+        # Check latest version
+        result = await session.execute(
+            text(
+                """
                 SELECT ts_version, status, universe_size, global_regime, config_hash
                 FROM market_universe_versions
                 ORDER BY ts_version DESC
                 LIMIT 1
             """
-                )
             )
-            row = result.fetchone()
+        )
+        row = result.fetchone()
 
-            if not row:
-                return {"valid": False, "reason": "No universe version found"}
+        if not row:
+            return {"valid": False, "reason": "No universe version found"}
 
-            ts_version, status, universe_size, regime, config_hash = row
+        ts_version, status, universe_size, regime, config_hash = row
 
-            if status not in ("published", "fallback_prev"):
-                return {
-                    "valid": False,
-                    "reason": f"Latest version status is {status}",
-                    "ts_version": ts_version,
-                }
+        if status not in ("published", "fallback_prev"):
+            return {
+                "valid": False,
+                "reason": f"Latest version status is {status}",
+                "ts_version": ts_version,
+            }
 
-            if universe_size < 5:
-                return {
-                    "valid": False,
-                    "reason": f"Universe too small: {universe_size}",
-                    "ts_version": ts_version,
-                }
+        if universe_size < 5:
+            return {
+                "valid": False,
+                "reason": f"Universe too small: {universe_size}",
+                "ts_version": ts_version,
+            }
 
-            # Get symbols
-            symbols_result = await session.execute(
-                text(
-                    """
+        # Get symbols
+        symbols_result = await session.execute(
+            text(
+                """
                 SELECT symbol, final_score, rank
                 FROM market_universe
                 WHERE ts_version = :ts_version
                 ORDER BY rank
                 LIMIT 10
             """
-                ),
-                {"ts_version": ts_version},
-            )
+            ),
+            {"ts_version": ts_version},
+        )
 
-            top_symbols = [
-                {"symbol": r[0], "score": r[1], "rank": r[2]}
-                for r in symbols_result.fetchall()
-            ]
+        top_symbols = [
+            {"symbol": r[0], "score": r[1], "rank": r[2]}
+            for r in symbols_result.fetchall()
+        ]
 
-            return {
-                "valid": True,
-                "ts_version": ts_version,
-                "status": status,
-                "universe_size": universe_size,
-                "global_regime": regime,
-                "config_hash": config_hash,
-                "top_symbols": top_symbols,
-            }
-    finally:
-        await engine.dispose()
+        return {
+            "valid": True,
+            "ts_version": ts_version,
+            "status": status,
+            "universe_size": universe_size,
+            "global_regime": regime,
+            "config_hash": config_hash,
+            "top_symbols": top_symbols,
+        }
 
 
 def validate_universe_task(**context) -> dict[str, Any]:
@@ -315,10 +289,9 @@ def validate_universe_task(**context) -> dict[str, Any]:
     env = get_dag_env()
     setup_env(env)
 
-    loop = get_or_create_event_loop()
     result = cast(
         "dict[str, Any]",
-        loop.run_until_complete(_validate_universe_async(env["DATABASE_URL"])),
+        _get_loop().run_until_complete(_validate_universe_async()),
     )
 
     if not result["valid"]:
@@ -336,75 +309,73 @@ def validate_universe_task(**context) -> dict[str, Any]:
     return result
 
 
-async def _cleanup_old_data_async(database_url: str) -> dict[str, Any]:
+async def _cleanup_old_market_selection_data_async() -> dict[str, Any]:
     """Cleanup old market selection data."""
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-
     from src.market_selection.config import MarketSelectionConfig
     from src.market_selection.infrastructure.persistence import (
         MarketSelectionPersistence,
     )
+    from src.utils.session_utils import get_db_session
 
-    engine = create_async_engine(database_url, echo=False)
     config = MarketSelectionConfig()
-    try:
-        async with AsyncSession(engine) as session:
-            persistence = MarketSelectionPersistence(session)
-            scores_deleted, universe_deleted = await persistence.cleanup_old_data(
-                scores_retention_days=config.universe.scores_retention_days,
-                universe_retention_days=config.universe.universe_retention_days,
-            )
-            await session.commit()
+    async with get_db_session() as session:
+        persistence = MarketSelectionPersistence(session)
+        scores_deleted, universe_deleted = await persistence.cleanup_old_data(
+            scores_retention_days=config.universe.scores_retention_days,
+            universe_retention_days=config.universe.universe_retention_days,
+        )
 
-        return {
-            "scores_deleted": scores_deleted,
-            "universe_deleted": universe_deleted,
-        }
-    finally:
-        await engine.dispose()
+    return {
+        "scores_deleted": scores_deleted,
+        "universe_deleted": universe_deleted,
+    }
 
 
-async def _get_universe_symbols_async(database_url: str) -> list[str]:
+async def _get_universe_symbols_async() -> list[str]:
     """Get symbols from current universe for features_calc_full."""
     from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-    engine = create_async_engine(database_url, echo=False)
-    try:
-        async with AsyncSession(engine) as session:
-            # Get latest published universe
-            result = await session.execute(
-                text(
-                    """
+    from src.utils.session_utils import get_db_session
+
+    async with get_db_session() as session:
+        if not await _table_exists(session, "market_universe_versions"):
+            logger.warning("market_universe_versions table missing")
+            return []
+        if not await _table_exists(session, "market_universe"):
+            logger.warning("market_universe table missing")
+            return []
+
+        # Get latest published universe
+        result = await session.execute(
+            text(
+                """
                 SELECT ts_version FROM market_universe_versions
                 WHERE status IN ('published', 'fallback_prev')
                 ORDER BY ts_version DESC
                 LIMIT 1
             """
-                )
             )
-            row = result.fetchone()
+        )
+        row = result.fetchone()
 
-            if not row:
-                return []
+        if not row:
+            return []
 
-            ts_version = row[0]
+        ts_version = row[0]
 
-            # Get symbols
-            symbols_result = await session.execute(
-                text(
-                    """
+        # Get symbols
+        symbols_result = await session.execute(
+            text(
+                """
                 SELECT symbol FROM market_universe
                 WHERE ts_version = :ts_version
                 ORDER BY rank
             """
-                ),
-                {"ts_version": ts_version},
-            )
+            ),
+            {"ts_version": ts_version},
+        )
 
-            return [r[0] for r in symbols_result.fetchall()]
-    finally:
-        await engine.dispose()
+        return [r[0] for r in symbols_result.fetchall()]
 
 
 def prepare_features_calc_config(**context) -> dict[str, Any]:
@@ -412,8 +383,7 @@ def prepare_features_calc_config(**context) -> dict[str, Any]:
     env = get_dag_env()
     setup_env(env)
 
-    loop = get_or_create_event_loop()
-    symbols = loop.run_until_complete(_get_universe_symbols_async(env["DATABASE_URL"]))
+    symbols = _get_loop().run_until_complete(_get_universe_symbols_async())
 
     if not symbols:
         logger.warning("No symbols in universe, skipping features_calc trigger")
@@ -449,22 +419,21 @@ def branch_skip_or_trigger(**context) -> str:
     return "trigger_features_calc"
 
 
-def cleanup_old_data_task(**context) -> dict[str, Any]:
+def cleanup_old_market_selection_data_task(**context) -> dict[str, Any]:
     """Airflow task: cleanup old market selection data."""
     log_ctx = _build_log_context(context)
-    logger.info("cleanup_old_data start %s", log_ctx)
+    logger.info("cleanup_old_market_selection_data start %s", log_ctx)
 
     env = get_dag_env()
     setup_env(env)
 
-    loop = get_or_create_event_loop()
     result = cast(
         "dict[str, Any]",
-        loop.run_until_complete(_cleanup_old_data_async(env["DATABASE_URL"])),
+        _get_loop().run_until_complete(_cleanup_old_market_selection_data_async()),
     )
 
     logger.info(
-        "cleanup_old_data finish %s scores_deleted=%s universe_deleted=%s",
+        "cleanup_old_market_selection_data finish %s scores_deleted=%s universe_deleted=%s",
         log_ctx,
         result["scores_deleted"],
         result["universe_deleted"],
@@ -477,7 +446,9 @@ def branch_cleanup_daily(**context) -> str:
     """Branch: run cleanup only once per day at 00:00 schedule slot."""
     logical_date = context.get("logical_date")
     selected_branch = (
-        "cleanup_old_data" if logical_date and logical_date.hour == 0 else "skip_cleanup_old_data"
+        "cleanup_old_market_selection_data"
+        if logical_date and logical_date.hour == 0
+        else "skip_cleanup_old_market_selection_data"
     )
     logger.info(
         "branch_cleanup_daily decision %s selected_branch=%s",
@@ -485,8 +456,8 @@ def branch_cleanup_daily(**context) -> str:
         selected_branch,
     )
     if logical_date and logical_date.hour == 0:
-        return "cleanup_old_data"
-    return "skip_cleanup_old_data"
+        return "cleanup_old_market_selection_data"
+    return "skip_cleanup_old_market_selection_data"
 
 
 def branch_wait_for_features(**context) -> str:
@@ -526,7 +497,6 @@ with DAG(
         "force_run": False,
     },
 ) as dag:
-
     branch_wait_for_features_task = BranchPythonOperator(
         task_id="branch_wait_for_features",
         python_callable=branch_wait_for_features,
@@ -566,9 +536,9 @@ with DAG(
     )
 
     # Cleanup old data (runs daily, not every 4 hours)
-    cleanup_old_data = PythonOperator(
-        task_id="cleanup_old_data",
-        python_callable=cleanup_old_data_task,
+    cleanup_old_market_selection_data = PythonOperator(
+        task_id="cleanup_old_market_selection_data",
+        python_callable=cleanup_old_market_selection_data_task,
     )
 
     branch_cleanup = BranchPythonOperator(
@@ -576,8 +546,8 @@ with DAG(
         python_callable=branch_cleanup_daily,
     )
 
-    skip_cleanup_old_data = EmptyOperator(
-        task_id="skip_cleanup_old_data",
+    skip_cleanup_old_market_selection_data = EmptyOperator(
+        task_id="skip_cleanup_old_market_selection_data",
     )
 
     # Prepare config for features_calc trigger
@@ -622,4 +592,7 @@ with DAG(
 
     # Cleanup runs once a day (00:00 slot) to reduce background load
     validate_universe >> branch_cleanup
-    branch_cleanup >> [cleanup_old_data, skip_cleanup_old_data]
+    branch_cleanup >> [
+        cleanup_old_market_selection_data,
+        skip_cleanup_old_market_selection_data,
+    ]

@@ -35,7 +35,10 @@ from src.candles.instruments_service import (
     load_symbols_from_file,
     resolve_repo_instruments_file,
 )
-from src.candles.interfaces import repair as repair_interface
+from src.candles.interfaces import (
+    eligibility as eligibility_interface,
+    repair as repair_interface,
+)
 from src.candles.interfaces.repair_audit import (
     write_guard_repair_audit,
     write_swap_repair_audit,
@@ -76,7 +79,7 @@ REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
         "timeframes": list(LAST_200_GUARD_TIMEFRAMES),
         "mode": RepairExecutionMode.APPLY.value,
         "repair_strategy": "last_n_closed_bars",
-        "bars": 200,
+        "bars": 500,
         "publish_on_statuses": ["partial", "blocked", "deferred", "not_matured"],
         "recalc_specs": [],
         "critical_timeframes": ["1H"],
@@ -778,6 +781,20 @@ def publish_swap_repair_ops_task(**context) -> dict[str, Any]:
     return result
 
 
+def refresh_eligibility_task(**context) -> dict[str, int]:
+    log_ctx = _build_log_context(context)
+    logger.info("refresh_eligibility start %s", log_ctx)
+    env = get_dag_env()
+    setup_env(env)
+    dag_run = context.get("dag_run")
+    run_id = getattr(dag_run, "run_id", None) or "okx_swap_repair_v1"
+    result = _get_loop().run_until_complete(
+        eligibility_interface.refresh_eligibility(evaluator_run_id=run_id)
+    )
+    logger.info("refresh_eligibility finish %s result=%s", log_ctx, result)
+    return result
+
+
 default_args = {
     "owner": "okx_swap_repair",
     "retries": 2,
@@ -828,6 +845,8 @@ swap_repair = PythonOperator(
     task_id="swap_repair",
     python_callable=swap_repair_task,
     dag=dag,
+    pool="ohlcv_write_pool",
+    pool_slots=1,
 )
 
 swap_repair_preview = PythonOperator(
@@ -846,6 +865,8 @@ enqueue_indicator_recalc = PythonOperator(
     task_id="enqueue_indicator_recalc",
     python_callable=enqueue_indicator_recalc_task,
     dag=dag,
+    pool="compute_pool",
+    pool_slots=1,
 )
 
 publish_report = PythonOperator(
@@ -860,6 +881,12 @@ publish_swap_repair_ops = PythonOperator(
     dag=dag,
 )
 
+refresh_eligibility = PythonOperator(
+    task_id="refresh_eligibility",
+    python_callable=refresh_eligibility_task,
+    dag=dag,
+)
+
 (
     validate_swap_repair_conf
     >> ensure_instruments_loaded
@@ -870,4 +897,5 @@ publish_swap_repair_ops = PythonOperator(
     >> enqueue_indicator_recalc
     >> publish_report
     >> publish_swap_repair_ops
+    >> refresh_eligibility
 )

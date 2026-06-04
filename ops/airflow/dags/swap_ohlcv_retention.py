@@ -16,10 +16,12 @@ from _common import (  # type: ignore[import-not-found]
     setup_env as _setup_common_env,
 )
 from airflow import DAG
+from airflow.exceptions import AirflowSkipException
 from airflow.operators.python import PythonOperator
 from sqlalchemy import text
 
 from src.candles.bootstrap import create_candles_airflow_callbacks
+from src.candles.infrastructure.ohlcv_write_lock import ohlcv_retention_write_lock
 from src.utils.session_utils import get_db_session
 
 logger = logging.getLogger(__name__)
@@ -51,10 +53,11 @@ def setup_env(env: dict[str, str]) -> None:
 
 async def _run_cleanup(triggered_by: str, run_id: str | None) -> list[dict[str, Any]]:
     async with get_db_session() as session:
-        result = await session.execute(
-            text("SELECT * FROM cleanup_old_swap_data(:triggered_by, :run_id)"),
-            {"triggered_by": triggered_by, "run_id": run_id},
-        )
+        async with ohlcv_retention_write_lock(session):
+            result = await session.execute(
+                text("SELECT * FROM cleanup_old_swap_data(:triggered_by, :run_id)"),
+                {"triggered_by": triggered_by, "run_id": run_id},
+            )
         rows = result.fetchall()
         await session.commit()
 
@@ -70,11 +73,36 @@ async def _run_cleanup(triggered_by: str, run_id: str | None) -> list[dict[str, 
     ]
 
 
+async def _bootstrap_cleanup_is_safe() -> bool:
+    try:
+        async with get_db_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM ops.swap_ohlcv_bootstrap_state
+                    WHERE status NOT IN ('completed', 'skipped')
+                    """
+                )
+            )
+            active_count = int(result.scalar() or 0)
+            await session.commit()
+            return active_count == 0
+    except Exception:
+        logger.exception(
+            "could not inspect ops.swap_ohlcv_bootstrap_state; skipping cleanup"
+        )
+        return False
+
+
 def cleanup_swap_ohlcv_task(**context) -> dict[str, Any]:
     env = get_dag_env()
     setup_env(env)
     dag_run = context.get("dag_run")
     run_id = getattr(dag_run, "run_id", None)
+
+    if not _get_loop().run_until_complete(_bootstrap_cleanup_is_safe()):
+        raise AirflowSkipException("bootstrap in progress; skipping retention cleanup")
 
     rows = _get_loop().run_until_complete(
         _run_cleanup(triggered_by="airflow:swap_ohlcv_retention", run_id=run_id)
@@ -110,7 +138,7 @@ default_args = {
 dag = DAG(
     dag_id="swap_ohlcv_retention",
     start_date=datetime(2025, 1, 1),
-    schedule="17 * * * *",
+    schedule="0 4 * * *",
     catchup=False,
     max_active_runs=1,
     default_args=default_args,
@@ -121,4 +149,6 @@ cleanup_swap_ohlcv = PythonOperator(
     task_id="cleanup_swap_ohlcv",
     python_callable=cleanup_swap_ohlcv_task,
     dag=dag,
+    pool="ohlcv_write_pool",
+    pool_slots=1,
 )

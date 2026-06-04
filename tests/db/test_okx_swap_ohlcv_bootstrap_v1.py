@@ -127,6 +127,7 @@ def test_bootstrap_dag_loads_without_error(
         "enqueue_indicator_recalc",
         "publish_bootstrap_report",
         "publish_bootstrap_ops",
+        "refresh_eligibility",
     }
     assert expected.issubset(task_ids), f"missing tasks: {expected - task_ids}"
 
@@ -461,3 +462,63 @@ def test_validate_conf_accepts_1w_1m_timeframes(
         },
     )
     assert result["timeframes"] == ["1W", "1M"]
+
+
+@pytest.mark.unit
+def test_validate_conf_defaults_to_all_research_timeframes(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """No timeframes in conf must select the full research TF set."""
+    result = _call_validate_conf(
+        bootstrap_dag_module,
+        {"symbols": ["BTC-USDT-SWAP"], "lookback_days": 730, "dry_run": True},
+    )
+    assert result["timeframes"] == ["1H", "4H", "1D", "1W", "1M"]
+
+
+@pytest.mark.unit
+def test_bootstrap_dag_has_four_hour_execution_timeout(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """Bootstrap task defaults must cap hung manual runs."""
+    dag = getattr(bootstrap_dag_module, "dag", None)
+    assert dag is not None
+    assert dag.kwargs["default_args"]["execution_timeout"].total_seconds() == 4 * 3600
+
+
+@pytest.mark.unit
+def test_enqueue_indicator_recalc_skips_1m_timeframe(
+    bootstrap_dag_module: types.ModuleType,
+) -> None:
+    """1M is informational-only OHLCV and must not enqueue standard features."""
+    import unittest.mock as mock
+
+    validated = {
+        "lookback_days": 730,
+        "symbols": ["BTC-USDT-SWAP"],
+        "timeframes": ["1M", "1H"],
+        "skip_recalc": False,
+        "dry_run": False,
+    }
+    results = [
+        {"symbol": "BTC-USDT-SWAP", "timeframe": "1M", "status": "completed"},
+        {"symbol": "BTC-USDT-SWAP", "timeframe": "1H", "status": "completed"},
+    ]
+    ti_stub = SimpleNamespace(
+        xcom_pull=lambda task_ids, key: results
+        if task_ids == "validate_bootstrap_xcom"
+        else None
+    )
+    context = {"ti": ti_stub, "params": {}, "dag_run": SimpleNamespace(conf={})}
+
+    bootstrap_dag_module.get_dag_env = lambda: {}
+    bootstrap_dag_module.setup_env = lambda env: None
+    bootstrap_dag_module._get_validated_conf = lambda ctx: validated
+
+    with mock.patch(
+        "src.candles.interfaces.repair.enqueue_indicator_recalc"
+    ) as mock_enqueue:
+        bootstrap_dag_module.task_enqueue_indicator_recalc(**context)
+
+    called_timeframes = [call.kwargs["timeframe"] for call in mock_enqueue.call_args_list]
+    assert called_timeframes == ["1H"]

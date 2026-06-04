@@ -108,6 +108,18 @@ def test_repair_dag_default_args_include_alert_callbacks(
     assert repair_dag_module.default_args["on_retry_callback"] == "retry_cb"
 
 
+def test_repair_dag_appends_refresh_eligibility_task(
+    repair_dag_module: types.ModuleType,
+) -> None:
+    assert repair_dag_module.refresh_eligibility.kwargs["task_id"] == (
+        "refresh_eligibility"
+    )
+    assert (
+        repair_dag_module.refresh_eligibility.kwargs["python_callable"]
+        is repair_dag_module.refresh_eligibility_task
+    )
+
+
 def test_repair_dag_params_contract_snapshot(
     repair_dag_module: types.ModuleType,
 ) -> None:
@@ -164,7 +176,7 @@ def test_validate_swap_repair_conf_builds_last_200_guard_preset(
     assert result["symbols"] == ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
     assert result["timeframes"] == ["1H", "4H", "1D", "1W", "1M"]
     assert "1m" not in result["critical_timeframes"]
-    assert result["bars"] == 200
+    assert result["bars"] == 500
     assert result["mode"] == "apply"
     assert result["repair_strategy"] == "last_n_closed_bars"
     assert result["publish_on_statuses"] == [
@@ -458,7 +470,7 @@ def test_swap_repair_task_uses_last_n_guard_interface_for_guard_trigger(
                 "trigger": "last-200-guard",
                 "symbols": ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
                 "timeframes": ["1H"],
-                "bars": 200,
+                "bars": 500,
                 "mode": "apply",
                 "repair_strategy": "last_n_closed_bars",
             }
@@ -466,8 +478,8 @@ def test_swap_repair_task_uses_last_n_guard_interface_for_guard_trigger(
     )
 
     assert calls == [
-        {"symbol": "BTC-USDT-SWAP", "timeframe": "1H", "bars": 200},
-        {"symbol": "ETH-USDT-SWAP", "timeframe": "1H", "bars": 200},
+        {"symbol": "BTC-USDT-SWAP", "timeframe": "1H", "bars": 500},
+        {"symbol": "ETH-USDT-SWAP", "timeframe": "1H", "bars": 500},
     ]
     assert result == [
         {
