@@ -114,6 +114,8 @@ registry, Protocol-контракты, coverage-таргеты) без *прак
 | A5 | Параметризовать SQL в `scoring_engine/processor.py:440/445` (symbol/timeframe). Allowlist для `ema_col` в `market_selection`. | P1 |
 | A6 | Запустить `make check`, зафиксировать baseline, починить до зелёного. | P0 |
 | A7 | Ручной тест repair: вырезать сутки данных → repair → проверить hole-rate. Заодно зафиксировать политику fail-loud. | P1 |
+| A8 | **CI/CD: GitHub Actions.** Pipeline на каждый push/PR: `ruff check` + `ruff format --check` + `mypy src` + `pytest` (fast-маркеры). Smoke-тест import на staging-конфиге. Блокирует merge при падении. | P0 |
+| A9 | **Structured JSON logging.** Единый `src/platform/logging.py` с JSON-форматтером. Обязательные поля: `timestamp`, `level`, `component`, `symbol`, `timeframe`, `run_id`, `error_type`. Заменяет plaintext-логи во всех компонентах (repair, ingest, features, signals). | P0 |
 
 **Гейт A (= Success Gate 1 + 2):**
 - [ ] Бэкап восстановлен из облака в чистое окружение хотя бы раз.
@@ -122,6 +124,8 @@ registry, Protocol-контракты, coverage-таргеты) без *прак
 - [ ] `make check` зелёный; coverage `candles`/`ml`/`signals` ≥ 80%.
 - [ ] Все DAG: double-run тест зелёный.
 - [ ] Repair прогнан против реального gap-сценария.
+- [ ] GitHub Actions pipeline зелёный на `main`.
+- [ ] Structured JSON logging подключён; `run_id` + `symbol` прослеживается в логах repair/ingest.
 
 ### Фаза B — Research Loop (4–5 недель) — ядро продукта
 
@@ -147,6 +151,7 @@ registry, Protocol-контракты, coverage-таргеты) без *прак
 - [ ] Сигнал генерируется → пишется в `signals` → уходит в Telegram.
 - [ ] Решения логируются в `signal_decisions`; signal-to-trade conversion считается.
 - [ ] Эксперимент воспроизводим: повторный запуск даёт те же features/labels/metrics.
+- [ ] Modern Data Stack track воспроизводим: `dbt build` зелёный, Parquet/DuckDB validation зелёный, pipeline events публикуются с версионированной схемой.
 
 ### Фаза C — Shadow & First Trade (открытый период)
 
@@ -176,6 +181,21 @@ registry, Protocol-контракты, coverage-таргеты) без *прак
 
 ## Параллельные треки (идут вдоль фаз)
 
+### Observability & Reliability Track
+
+Цель: сделать отладку воспроизводимой вместо `grep`. Идёт параллельно фазам, начиная с A.
+
+| ID | Задача | Фаза | Приоритет |
+|----|--------|------|-----------|
+| OB1 | Structured JSON logging → **см. A9** (перенесено в Phase A как P0). | A | P0 |
+| OB2 | **Loki + Grafana Logs.** Поднять Loki в `docker-compose`, настроить Promtail/Alloy для сбора structured logs из Airflow, CLI, cron. Запросы по `symbol`, `run_id`, `error_type` за секунды вместо `grep`. Требует OB1. | B | P1 |
+| OB3 | **Redis: distributed locks + cache.** Locks для repair/sync (исключают параллельные запуски одного job'а — дополняет A4). Cache: exchange metadata, instrument list, last ingested timestamps. Один новый сервис в `docker-compose`. | B | P1 |
+| OB4 | **OpenTelemetry traces.** Сквозная трассировка: Airflow DAG → repair → API request → DB insert → feature calc. Требует стабильного OB1–OB2. | v2 | P2 |
+
+> **Важно:** Prometheus + Grafana metrics dashboard остаётся в v2 (см. раздел «Отложено в v2»). OB2 (Loki) добавляет только log aggregation поверх уже работающего Grafana из docker-compose, не требует полного metrics stack.
+
+---
+
 ### Tech-debt Prune Track
 
 Over-engineering сам не уйдёт — нужен явный запланированный проход.
@@ -190,12 +210,34 @@ Over-engineering сам не уйдёт — нужен явный заплани
 - Проверить все чтения из БД, влияющие на features/signals, на явный `ORDER BY`.
 - Зафиксировать политику: data quality anomaly = terminal (fail-loud).
 
+### Modern Data Stack Track
+
+Цель: встроить dbt, lakehouse export и event streaming как реальные рабочие контуры проекта,
+а не учебные демо. PostgreSQL остаётся system of record; новые инструменты добавляются как
+проверяемые слои поверх текущего pipeline.
+
+| ID | Задача | Приоритет |
+|----|--------|-----------|
+| DE1 | dbt analytics layer поверх PostgreSQL: sources для `swap_ohlcv_p`, `indicators_p`, `market_universe`, ops/audit таблиц; staging-модели; marts для OHLCV quality, feature freshness, market universe readiness; dbt tests и lineage docs. | P0 |
+| DE2 | Data quality gates через dbt: uniqueness/not-null/range/freshness tests; команда `dbt build` как отдельный validation gate рядом с `make check`, без замены Python-тестов. | P0 |
+| DE3 | Parquet/DuckDB export layer: выгрузка trusted market-data и dbt marts в partitioned Parquet; DuckDB validation row-count/min-max timestamp/duplicate keys; read path для research без нагрузки на Postgres. | P1 |
+| DE4 | MinIO/Iceberg lakehouse layer: перенести стабильный Parquet export в object storage и оформить Iceberg tables только после стабилизации DE3. | P2 |
+| DE5 | Redpanda/Kafka event bus: публиковать события после успешных pipeline actions (`ohlcv.synced`, `features.calculated`, `quality.checked`, `market_universe.refreshed`) как audit/notification/event-consumer слой, не как замену PostgreSQL ingest. | P1 |
+
 ### Learning Track (явно отделён от critical path)
 
 Делается ради обучения, не ради продукта — не путать learning value с business
-value. Сюда относятся: Airflow (для 5 DAG достаточно cron — оставлен как
-DE-навык), DDD-слои. Эти решения легитимны как обучение, но не должны
-обосновываться продуктовой необходимостью.
+value. Эти решения легитимны как обучение, но не должны обосновываться
+продуктовой необходимостью.
+
+| Тема | Зачем учить | Когда |
+|------|-------------|-------|
+| Airflow | Для 5 DAG достаточно cron — оставлен как DE-навык | уже используется |
+| DDD-слои | Архитектурный паттерн, реализован в `src/` | уже реализован |
+| FastAPI internal service | `GET /health`, `/signals`, `/dq/status`, `/repair/status` — превращает скрипты в platform-сервис; навык востребован в DE/backend | Phase B+ |
+| Pydantic v2 data contracts | Жёсткая схема для OHLCV / API-ответов OKX / feature-векторов; уменьшает silent corruption | Phase B+ |
+
+> `Great Expectations` / `Soda` как отдельный инструмент Data Quality не нужен: DE2 (dbt tests) покрывает uniqueness/not-null/range/freshness. Если dbt окажется недостаточным — вернуться к вопросу в v2.
 
 ---
 
@@ -207,8 +249,8 @@ DE-навык), DDD-слои. Эти решения легитимны как о
   В v1 не нужно: исполнение ручное, достаточно `simulate_fill()`-функции.
 - Risk & OMS maturity: portfolio limits, partial-fill/timeout/cancel-all сценарии, stress-tests.
 - ML metalabeling iteration — после накопления decision-log и 200+ сделок.
-- Deployment: CI/CD canary, rollback strategy, version pinning.
-- Observability stack: Grafana / Prometheus (в v1 — Telegram-алертов достаточно).
+- Deployment: CI/CD canary deploy, rollback strategy, version pinning. *(Базовый CI/CD pipeline перенесён в Phase A как A8.)*
+- Observability stack: Prometheus + Grafana metrics dashboard (в v1 — Telegram-алертов достаточно; structured logging + Loki добавляются через OB1–OB2 трек; OpenTelemetry traces — v2).
 - Auto-execution, multi-exchange, рост капитала (см. Non-goals).
 
 ### Library Backlog (v2)
@@ -314,4 +356,4 @@ paper/live разделение; cancel-all / revoke процедура пров
 | ⚪ | Запланировано / заморожено |
 
 ---
-*Roadmap 3.0 — результат discovery-аудита. Последнее обновление: 2026-05-20.*
+*Roadmap 3.0 — результат discovery-аудита. Последнее обновление: 2026-06-03 (интегрированы рекомендации по observability, CI/CD, Redis, structured logging).*
