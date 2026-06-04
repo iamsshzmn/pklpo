@@ -352,6 +352,11 @@ class RunCandleSyncUseCase:
             if not candles:
                 return 0, last_ts
         calendar = StorageCalendar()
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        open_bar_start = calendar.floor_open(now_ms, timeframe)
+        candles = [c for c in candles if int(c["ts"]) < open_bar_start]
+        if not candles:
+            return 0, last_ts
         candle_timestamps = [int(candle["ts"]) for candle in candles]
         window_start = (
             calendar.next_open(latest_stored_ts, timeframe)
@@ -359,7 +364,7 @@ class RunCandleSyncUseCase:
             else min(candle_timestamps)
         )
         window_end = (
-            calendar.floor_open(int(datetime.now(UTC).timestamp() * 1000), timeframe)
+            open_bar_start
             if latest_stored_ts is not None
             else calendar.next_open(max(candle_timestamps), timeframe)
         )

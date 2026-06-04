@@ -195,3 +195,76 @@ async def test_sync_bar_incremental_window_end_uses_current_closed_bar(
     )
 
     assert store.calls[0]["window"] == RepairWindow(60_000, 180_000)
+
+
+@pytest.mark.asyncio
+async def test_sync_bar_drops_open_candle_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the only new candle is the currently-open bar, nothing is written."""
+    import src.candles.application.sync.use_cases as use_cases
+
+    class _FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            return datetime(1970, 1, 1, 0, 3, 30, tzinfo=UTC)
+
+    monkeypatch.setattr(use_cases, "datetime", _FixedDateTime)
+    store = _CandleStoreStub()
+    use_case = _use_case(
+        market_data=_MarketDataStub(
+            candles=[
+                {"ts": 180_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
+            ]
+        ),
+        candle_store=store,
+    )
+
+    count, _ = await use_case._sync_bar(
+        symbol="BTC-USDT-SWAP",
+        timeframe="1m",
+        before=None,
+        latest_stored_ts=120_000,
+        extra_data_loader=None,
+        stats=_SyncStats(),
+    )
+
+    assert count == 0
+    assert store.calls == []
+
+
+@pytest.mark.asyncio
+async def test_sync_bar_drops_open_candle_saves_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Closed candles are written; the currently-open bar is silently dropped."""
+    import src.candles.application.sync.use_cases as use_cases
+
+    class _FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            return datetime(1970, 1, 1, 0, 3, 30, tzinfo=UTC)
+
+    monkeypatch.setattr(use_cases, "datetime", _FixedDateTime)
+    store = _CandleStoreStub()
+    use_case = _use_case(
+        market_data=_MarketDataStub(
+            candles=[
+                {"ts": 120_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
+                {"ts": 180_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
+            ]
+        ),
+        candle_store=store,
+    )
+
+    await use_case._sync_bar(
+        symbol="BTC-USDT-SWAP",
+        timeframe="1m",
+        before=None,
+        latest_stored_ts=60_000,
+        extra_data_loader=None,
+        stats=_SyncStats(),
+    )
+
+    assert [int(c["ts"]) for c in store.calls[0]["candles"]] == [120_000]
+    assert store.calls[0]["window"] == RepairWindow(120_000, 180_000)
