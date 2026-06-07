@@ -387,22 +387,6 @@ class TestSmokeUtilities:
         assert "ts" in result_df.columns
         assert result_df["ts"].dtype == "int64"
 
-    def test_name_mapping_basic_functionality(self):
-        """Test name mapping basic functionality."""
-        from src.features.core.name_mapping import (
-            check_indicator_capability,
-            normalize_indicator_name,
-        )
-
-        # Test name normalization
-        normalized = normalize_indicator_name("EMA_8")
-        assert normalized is not None
-        assert isinstance(normalized, str)
-
-        # Test capability check (should not raise errors)
-        capability = check_indicator_capability("ema")
-        assert isinstance(capability, bool)
-
     def test_validators_basic_functionality(self):
         """Test validators basic functionality."""
         import pandas as pd

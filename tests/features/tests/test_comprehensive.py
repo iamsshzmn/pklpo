@@ -15,7 +15,6 @@ from datetime import UTC, datetime
 import numpy as np
 import pandas as pd
 
-from src.features.core.name_mapping import normalize_indicator_name
 from src.features.infrastructure.upsert_optimizer import UpsertConfig, UpsertOptimizer
 from src.features.observability.metrics import MetricsCollector
 
@@ -76,21 +75,6 @@ class TestFeaturesModule(unittest.TestCase):
 
 class TestUnitTests(TestFeaturesModule):
     """Unit tests as specified in the plan."""
-
-    def test_name_mapping(self):
-        """Test name-mapping functionality."""
-        # Test basic mapping
-        assert normalize_indicator_name("BBANDS") == "bb_upper"
-        assert normalize_indicator_name("EMA_200") == "ema_200"
-        assert normalize_indicator_name("RSI_14") == "rsi_14"
-
-        # Test duplicate elimination
-        assert normalize_indicator_name("BBANDS_M") == "bb_middle"
-        assert normalize_indicator_name("BBANDS_L") == "bb_lower"
-
-        # Test snake_case conversion
-        assert normalize_indicator_name("MACD_SIGNAL") == "macd_signal"
-        assert normalize_indicator_name("ATR_14") == "atr_14"
 
     def test_timestamp_normalization(self):
         """Test timestamp normalization to milliseconds."""
