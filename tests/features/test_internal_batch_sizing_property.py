@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from hypothesis import given, settings, strategies as st
 
-from src.features.infrastructure.upsert_builder import (
+from src.features.infrastructure.upsert import (
     DEFAULT_MAX_BATCH_SIZE,
     DEFAULT_MIN_BATCH_SIZE,
     TARGET_SQL_PARAMS,

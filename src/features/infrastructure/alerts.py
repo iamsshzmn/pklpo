@@ -16,7 +16,7 @@ Features:
 import json
 import os
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -738,20 +738,6 @@ def send_telegram_alert(
         return False
 
 
-def telegram_failure_callback(context: dict[str, Any]) -> None:
-    """Telegram callback for task failures."""
-    alert_ctx = extract_alert_context(context)
-    send_telegram_alert(alert_ctx)
-
-
-def telegram_sla_miss_callback(context: dict[str, Any]) -> None:
-    """Telegram callback for SLA misses."""
-    alert_ctx = extract_alert_context(context)
-    alert_ctx.level = AlertLevel.WARNING
-    alert_ctx.error_message = "Task exceeded SLA threshold"
-    send_telegram_alert(alert_ctx)
-
-
 # ===============================================================================
 # Combined Callbacks
 # ===============================================================================
@@ -830,78 +816,3 @@ def success_callback(context: dict[str, Any]) -> None:
     if os.getenv("SLACK_SUCCESS_NOTIFICATIONS", "false").lower() == "true":
         send_slack_alert(alert_ctx)
 
-
-# ===============================================================================
-# Utility Functions
-# ===============================================================================
-
-
-def test_email_alert() -> None:
-    """Test email alerting configuration."""
-    test_context = {
-        "dag": type("obj", (object,), {"dag_id": "test_dag"}),
-        "task": {"task_id": "test_task"},
-        "execution_date": datetime.now(),
-        "run_id": "test_run",
-        "task_instance": type(
-            "obj",
-            (object,),
-            {
-                "try_number": 1,
-                "start_date": datetime.now() - timedelta(seconds=10),
-                "end_date": datetime.now(),
-                "log_url": "http://localhost:8080/log",
-            },
-        )(),
-        "exception": Exception("Test error message"),
-    }
-
-    print("🧪 Testing email alert...")
-    email_failure_callback(test_context)
-
-
-def test_slack_alert() -> None:
-    """Test Slack alerting configuration."""
-    test_alert_ctx = AlertContext(
-        dag_id="test_dag",
-        task_id="test_task",
-        execution_date=str(datetime.now()),
-        run_id="test_run",
-        try_number=1,
-        log_url="http://localhost:8080/log",
-        duration_seconds=10.5,
-        error_message="Test error message",
-        level=AlertLevel.ERROR,
-    )
-
-    print("🧪 Testing Slack alert...")
-    success = send_slack_alert(test_alert_ctx)
-    if success:
-        print("✅ Slack test successful")
-    else:
-        print("❌ Slack test failed")
-
-
-if __name__ == "__main__":
-    # Test alerting when run directly
-    print("=" * 80)
-    print("FEAT-002: Airflow Alerting Module Test")
-    print("=" * 80)
-    print()
-
-    print("📧 Email Configuration:")
-    print(f"   AIRFLOW_ALERT_EMAIL: {os.getenv('AIRFLOW_ALERT_EMAIL', 'NOT SET')}")
-    print()
-
-    print("📱 Slack Configuration:")
-    print(
-        f"   SLACK_WEBHOOK_URL: {'SET' if os.getenv('SLACK_WEBHOOK_URL') else 'NOT SET'}"
-    )
-    print(
-        f"   SLACK_SUCCESS_NOTIFICATIONS: {os.getenv('SLACK_SUCCESS_NOTIFICATIONS', 'false')}"
-    )
-    print()
-
-    # Uncomment to test
-    # test_slack_alert()
-    # test_email_alert()
