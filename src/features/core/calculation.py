@@ -26,7 +26,7 @@ from ..specs import FEATURE_SPECS, FeatureSpec
 from ..utils.dependency_resolver import resolve_dependencies
 from ..utils.time_utils import validate_timestamp_consistency
 from .debug_utils import _debug_log_dataframe_info
-from .group_calculation import GroupCalculationConfig, compute_features_grouped
+from .group_orchestrator import GroupCalculationConfig, compute_features_grouped
 from .merging import merge_indicator_results
 from .normalization import normalize_and_finalize_result
 from .pipeline import (

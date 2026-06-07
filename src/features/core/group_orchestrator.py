@@ -39,9 +39,25 @@ if TYPE_CHECKING:
     import pandas as pd
 
 __all__ = [
+    "CALCULATION_ORDER",
     "GroupCalculationConfig",
     "GroupCalculationOrchestrator",
     "compute_features_grouped",
+]
+
+# Standard calculation order for all indicator groups.
+# Moved here from the deprecated group_calculation.py facade.
+CALCULATION_ORDER = [
+    "overlap",      # Basic price calculations (hlc3, hl2, etc) — no dependencies
+    "ma",           # Moving averages — depends on OHLC
+    "oscillators",  # RSI, MACD, Stochastic — depends on close, MA
+    "volatility",   # ATR, Bollinger Bands — depends on OHLC, MA
+    "volume",       # OBV, CMF, VWAP — depends on volume
+    "trend",        # ADX, Aroon, Supertrend — depends on OHLC, ATR
+    "candles",      # Candlestick patterns — depends on OHLC
+    "squeeze",      # Squeeze Momentum — depends on BB, KC
+    "statistics",   # Statistical measures — depends on price data
+    "performance",  # Performance metrics — depends on close
 ]
 
 

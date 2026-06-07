@@ -3,8 +3,8 @@ import pandas as pd
 import pytest
 
 from src.features.api import compute_features
-from src.features.core.group_calculation import CALCULATION_ORDER
 from src.features.core.group_calculator import GroupFeatureCalculator
+from src.features.core.group_orchestrator import CALCULATION_ORDER
 
 WARMUP = 250
 GROUP_FEATURES = {
