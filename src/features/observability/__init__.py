@@ -1,4 +1,10 @@
-"""Observability module - logging, metrics, tracing, errors."""
+"""Observability module - logging, metrics, tracing.
+
+Single facade: import from here rather than from submodules.
+  from src.features.observability import get_metrics, MetricsCollector
+  from src.features.observability import PipelineMetrics, reset_metrics
+  from src.features.observability import FeatureTracer, get_global_tracer
+"""
 
 from src.logging import (
     LogAggregator,
@@ -15,13 +21,21 @@ from src.logging import (
     should_log,
 )
 
-from .error_handling import CalculationError, FeaturesError
 from .metrics import MetricsCollector
-from .prometheus import PipelineMetrics, get_metrics
+from .prometheus import PipelineMetrics, get_metrics, reset_metrics
+from .traceability import (
+    FeatureMetadata,
+    FeatureTracer,
+    disable_tracing,
+    enable_tracing,
+    get_feature_metadata,
+    get_global_tracer,
+    track_feature,
+)
 
 __all__ = [
-    "CalculationError",
-    "FeaturesError",
+    "FeatureMetadata",
+    "FeatureTracer",
     "LogAggregator",
     "LogCategory",
     "MetricsCollector",
@@ -29,12 +43,18 @@ __all__ = [
     "RunSummary",
     "Verbosity",
     "create_run_summary",
+    "disable_tracing",
+    "enable_tracing",
     "get_category_logger",
     "get_current_run_id",
+    "get_feature_metadata",
     "get_features_logger",
+    "get_global_tracer",
     "get_metrics",
     "get_verbosity",
+    "reset_metrics",
     "set_log_context",
     "set_verbosity",
     "should_log",
+    "track_feature",
 ]
