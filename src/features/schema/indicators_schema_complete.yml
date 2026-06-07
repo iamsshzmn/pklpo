@@ -1,5 +1,8 @@
+# FROZEN INPUT — не редактировать.
+# Этот файл используется только как входной артефакт миграции:
+#   src/db/migrations/migrate_expand_indicators_precision.py
+# Живой источник истины для схемы БД — indicators_schema.yml (в этой же папке).
 # Единый реестр колонок для таблицы indicators
-# Это единственный источник истины для схемы БД
 # ПОЛНАЯ ВЕРСИЯ со всеми 180+ индикаторами
 
 version: "2.0.0"
@@ -1036,14 +1039,3 @@ name_mapping:
   "ema50": "ema_50"
   "ema200": "ema_200"
   "sma200": "sma_200"
-  "sma34": "sma_34"
-  "sma50": "sma_50"
-  "cci_14": "cci_14"
-  "mfi_14": "mfi_14"
-
-# Валидация
-validation:
-  required_fields: ["symbol", "timeframe", "timestamp", "calculated_at"]
-  max_string_length: 50
-  max_decimal_precision: 20
-  max_decimal_scale: 8
