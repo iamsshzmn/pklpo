@@ -1,0 +1,212 @@
+# feature_registry.yaml
+#
+# Human-readable documentation registry of computed features stored in the DB.
+# Purpose: cross-reference for analysts, DAG authors, and ML engineers.
+#
+# NOTE: This is NOT the runtime registry.
+# The runtime registry (GroupRegistry + group definitions) lives in:
+#   src/features/indicator_groups/registry.py
+# That file controls which features are computed and in what order.
+# This file documents the DB columns that result from that computation.
+#
+# Schema per entry:
+#   name               — exact DB column name with timeframe suffix
+#   group              — canonical GroupRegistry group name
+#   timeframe          — one of: 1h, 4h, 1d, 1w
+#   grain              — always (instrument, open_time)
+#   source_table       — DB table containing this feature column
+#   description        — brief description (Russian)
+#   gotchas            — known edge cases (NaN conditions, caveats)
+#   predictive_horizon — short_term | medium_term | regime
+
+features:
+
+  # ── oscillators ───────────────────────────────────────────────────────────
+
+  - name: rsi_14_1h
+    group: oscillators
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "RSI 14 периодов на 1h"
+    gotchas: "NaN при < 14 барах"
+    predictive_horizon: short_term
+
+  - name: rsi_14_4h
+    group: oscillators
+    timeframe: 4h
+    grain: instrument_candle
+    source_table: features_4h
+    description: "RSI 14 периодов на 4h"
+    gotchas: "NaN при < 14 барах"
+    predictive_horizon: short_term
+
+  - name: macd_1h
+    group: oscillators
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "MACD линия (EMA12 − EMA26) на 1h"
+    gotchas: "NaN при < 26 барах (использует EMA26 внутри)"
+    predictive_horizon: short_term
+
+  - name: macd_histogram_1h
+    group: oscillators
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "MACD гистограмма (MACD − сигнал) на 1h"
+    gotchas: "NaN при < 26 барах; зависит от macd_signal_1h"
+    predictive_horizon: short_term
+
+  - name: macd_signal_4h
+    group: oscillators
+    timeframe: 4h
+    grain: instrument_candle
+    source_table: features_4h
+    description: "MACD сигнальная линия (EMA9 от MACD) на 4h"
+    gotchas: "NaN при < 26 барах + 9 барах сигнальной EMA"
+    predictive_horizon: short_term
+
+  - name: stoch_k_1h
+    group: oscillators
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "Stochastic %K (быстрая линия) на 1h"
+    gotchas: "NaN при < 9 барах (период по умолчанию)"
+    predictive_horizon: short_term
+
+  - name: stoch_d_4h
+    group: oscillators
+    timeframe: 4h
+    grain: instrument_candle
+    source_table: features_4h
+    description: "Stochastic %D (сглаженная %K) на 4h"
+    gotchas: "NaN при < 9 барах; производная от stoch_k_4h"
+    predictive_horizon: short_term
+
+  - name: mfi_1h
+    group: oscillators
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "Money Flow Index 14 периодов на 1h"
+    gotchas: "NaN при < 14 барах; требует объём — не работает на инструментах без volume"
+    predictive_horizon: short_term
+
+  # ── ma ────────────────────────────────────────────────────────────────────
+
+  - name: ema_21_1h
+    group: ma
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "EMA 21 периода на 1h"
+    gotchas: "NaN при < 21 барах"
+    predictive_horizon: short_term
+
+  - name: ema_55_4h
+    group: ma
+    timeframe: 4h
+    grain: instrument_candle
+    source_table: features_4h
+    description: "EMA 55 периодов на 4h"
+    gotchas: "NaN при < 55 барах"
+    predictive_horizon: regime
+
+  - name: ema_55_1d
+    group: ma
+    timeframe: 1d
+    grain: instrument_candle
+    source_table: features_1d
+    description: "EMA 55 периодов на 1d — долгосрочный тренд"
+    gotchas: "NaN при < 55 барах; на новых инструментах может отсутствовать долго"
+    predictive_horizon: regime
+
+  # ── trend ─────────────────────────────────────────────────────────────────
+
+  - name: supertrend_direction_1h
+    group: trend
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "Направление Supertrend (1 = бычий, -1 = медвежий) на 1h"
+    gotchas: "NaN при < 7 барах (использует ATR внутри); бинарное значение"
+    predictive_horizon: medium_term
+
+  - name: adx_14_4h
+    group: trend
+    timeframe: 4h
+    grain: instrument_candle
+    source_table: features_4h
+    description: "ADX 14 периодов — сила тренда на 4h"
+    gotchas: "NaN при < 14 барах; не показывает направление, только силу"
+    predictive_horizon: medium_term
+
+  - name: adx_14_1d
+    group: trend
+    timeframe: 1d
+    grain: instrument_candle
+    source_table: features_1d
+    description: "ADX 14 периодов — сила тренда на 1d"
+    gotchas: "NaN при < 14 барах; значение > 25 считается трендовым рынком"
+    predictive_horizon: regime
+
+  - name: chop_1h
+    group: trend
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "Choppiness Index на 1h — мера хаотичности рынка"
+    gotchas: "NaN при < 14 барах; значение > 61.8 — боковик, < 38.2 — тренд"
+    predictive_horizon: regime
+
+  # ── volatility ────────────────────────────────────────────────────────────
+
+  - name: atr_14_1h
+    group: volatility
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "ATR 14 периодов (абсолютный) на 1h"
+    gotchas: "NaN при < 14 барах; в единицах цены — не нормализован"
+    predictive_horizon: medium_term
+
+  - name: natr_14_4h
+    group: volatility
+    timeframe: 4h
+    grain: instrument_candle
+    source_table: features_4h
+    description: "Normalised ATR 14 периодов (% от цены) на 4h"
+    gotchas: "NaN при < 14 барах; нормализован, сравним между инструментами"
+    predictive_horizon: medium_term
+
+  - name: dc_upper_1d
+    group: volatility
+    timeframe: 1d
+    grain: instrument_candle
+    source_table: features_1d
+    description: "Верхняя граница канала Дончиана (20 периодов) на 1d"
+    gotchas: "NaN при < 20 барах; используется в паре с dc_lower_1d"
+    predictive_horizon: medium_term
+
+  - name: kc_upper_4h
+    group: volatility
+    timeframe: 4h
+    grain: instrument_candle
+    source_table: features_4h
+    description: "Верхняя граница канала Келтнера на 4h"
+    gotchas: "NaN при < 20 барах; зависит от EMA и ATR внутри"
+    predictive_horizon: medium_term
+
+  # ── volume ────────────────────────────────────────────────────────────────
+
+  - name: cmf_1h
+    group: volume
+    timeframe: 1h
+    grain: instrument_candle
+    source_table: features_1h
+    description: "Chaikin Money Flow на 1h — давление покупки/продажи по объёму"
+    gotchas: "Требует ненулевой volume; значение в диапазоне [-1, 1]"
+    predictive_horizon: short_term
