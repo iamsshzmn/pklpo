@@ -249,4 +249,13 @@ def _log_feature_summary(
             )
             logger.debug(
                 "FEATURE SUMMARY (best 10):  "
-                + ", ".join([f"{k}:{v
+                + ", ".join([f"{k}:{v*100:.0f}%" for k, v in best.items()])
+            )
+        except Exception as e:
+            logger.debug(f"Failed to log feature summary: {e}")
+
+
+def _is_verbose(debug: bool | None = None) -> bool:
+    if debug is not None:
+        return debug
+    return os.getenv("FEATURES_VERBOSE", "false").lower() == "true"

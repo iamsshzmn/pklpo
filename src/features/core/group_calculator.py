@@ -1,4 +1,12 @@
 """
+group_calculator — KEEP (features-prune-v2 A5).
+
+Responsibility: calculate indicator groups from OHLCV data. No persistence, no metrics.
+Imported by: group_orchestrator.py only.
+Decision: kept separate from group_orchestrator and group_metrics per SRP.
+Merging would collapse three distinct concerns (calc / metrics / orchestration)
+into one file with no architectural gain.
+
 Group Feature Calculator (SRP: calculation only).
 
 This module handles calculation of indicator groups without persistence

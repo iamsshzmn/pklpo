@@ -1,13 +1,23 @@
 """
+ta_safe — PRODUCTION TA-Lib backend facade. KEEP/FREEZE (features-prune-v2 A3).
+
+This is the LIVE production path for all indicator calculations.
+Imported by: indicator_groups/ma, oscillators, squeeze, trend, volatility, volume,
+             and application/feature_service.
+
+Do NOT merge with core/normalization.py or validation/ — the parallel
+normalization.py and validation.py here are intentional specialisations
+(lesson from prune v1: parallelism ≠ duplication).
+
 Universal facade for technical indicators with explicit backend chain.
 
-Backend priority ( 3.1):
+Backend priority (§3.1):
     1. TA-Lib  — primary backend (fast, C-compiled)
     2. pandas_ta — compatibility layer
     3. Python fallback — rare/emergency cases only
 
 Use safe_ta_with_status() to get explicit CalculationStatus instead of
-silent NaN-masking of errors ( 3.3).
+silent NaN-masking of errors (§3.3).
 """
 
 from __future__ import annotations

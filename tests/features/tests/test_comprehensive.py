@@ -2,9 +2,12 @@
 Comprehensive test suite for features module as specified in the plan.
 
 This module implements:
-- Unit tests: name-mapping, normalization ts, filtering NaN/inf, UPSERT constructor
-- Integration tests: small fixture DF (200-300 bars), idempotent UPSERT, correct types
-- Load tests: batches 100k rows, upsert timing, absence of deadlock
+- Unit tests: name-mapping, normalization ts, filtering NaN/inf
+- Integration tests: small fixture DF (200-300 bars), correct types
+- Load tests: batches 100k rows, timestamp validation performance
+
+Note: UpsertOptimizer (legacy simulation scaffolding) removed in features-prune-v2 A1.
+Production persistence path: application/save.py → persistence/inserter.py → upsert_executor.py
 """
 
 import logging
@@ -15,7 +18,6 @@ from datetime import UTC, datetime
 import numpy as np
 import pandas as pd
 
-from src.features.infrastructure.upsert_optimizer import UpsertConfig, UpsertOptimizer
 from src.features.observability.metrics import MetricsCollector
 
 # Import our modules
@@ -127,20 +129,6 @@ class TestUnitTests(TestFeaturesModule):
         assert not is_valid
         assert any("infinite values" in error for error in result["errors"])
 
-    def test_upsert_constructor(self):
-        """Test UPSERT constructor functionality."""
-        optimizer = UpsertOptimizer(UpsertConfig())
-
-        # Test configuration
-        assert optimizer.config.batch_size_min == 5000
-        assert optimizer.config.batch_size_max == 10000
-        assert optimizer.config.max_retries == 3
-
-        # Test statistics tracking
-        stats = optimizer.get_statistics()
-        assert stats["total_rows_written"] == 0
-        assert stats["total_upsert_failures"] == 0
-        assert stats["total_retries"] == 0
 
 
 class TestIntegrationTests(TestFeaturesModule):
@@ -161,7 +149,7 @@ class TestIntegrationTests(TestFeaturesModule):
         # Test gate validation
         feature_groups = {"overlap": ["hlc3"], "moving_averages": ["ema_8"]}
 
-        is_valid, result = validate_data_gate(df_200, feature_groups)
+        is_valid, _result = validate_data_gate(df_200, feature_groups)
         assert is_valid
 
         # Test with 300 bars
@@ -172,26 +160,6 @@ class TestIntegrationTests(TestFeaturesModule):
         validation_result = strict_timestamp_validation(df_300)
         assert validation_result["valid"]
         assert validation_result["stats"]["count"] == 300
-
-    def test_idempotent_upsert(self):
-        """Test idempotent UPSERT operations."""
-        optimizer = UpsertOptimizer(UpsertConfig())
-
-        # Create test data
-        df = self.test_data_200.copy()
-        df["hlc3"] = (df["high"] + df["low"] + df["close"]) / 3
-
-        # First upsert
-        success1 = optimizer.upsert_batch(df, "test_group")
-        assert success1
-
-        # Second upsert (should be idempotent)
-        success2 = optimizer.upsert_batch(df, "test_group")
-        assert success2
-
-        # Check statistics
-        stats = optimizer.get_statistics()
-        assert stats["total_rows_written"] > 0
 
     def test_correct_types(self):
         """Test correct data types."""
@@ -237,65 +205,6 @@ class TestLoadTests(TestFeaturesModule):
         assert elapsed < 1.0  # Should complete within 1 second
 
         print(f"Timestamp validation for 100k rows: {elapsed:.3f}s")
-
-    def test_upsert_timing(self):
-        """Test upsert timing performance."""
-        optimizer = UpsertOptimizer(UpsertConfig())
-
-        # Test with different batch sizes
-        batch_sizes = [5000, 10000, 50000, 100000]
-
-        for batch_size in batch_sizes:
-            df_batch = self.test_data_100k.head(batch_size).copy()
-            df_batch["hlc3"] = (
-                df_batch["high"] + df_batch["low"] + df_batch["close"]
-            ) / 3
-
-            start_time = time.perf_counter()
-            success = optimizer.upsert_batch(df_batch, f"load_test_{batch_size}")
-            elapsed = time.perf_counter() - start_time
-
-            assert success
-
-            # Calculate rows per second
-            rows_per_second = batch_size / elapsed
-            print(
-                f"Batch size {batch_size}: {elapsed:.3f}s ({rows_per_second:.0f} rows/sec)"
-            )
-
-            # Should handle at least 10k rows per second
-            assert rows_per_second > 10000
-
-    def test_no_deadlock(self):
-        """Test absence of deadlock in concurrent operations."""
-        optimizer = UpsertOptimizer(UpsertConfig())
-
-        # Create multiple batches
-        batches = []
-        for i in range(5):
-            df_batch = self.test_data_100k.iloc[i * 20000 : (i + 1) * 20000].copy()
-            df_batch["hlc3"] = (
-                df_batch["high"] + df_batch["low"] + df_batch["close"]
-            ) / 3
-            batches.append(df_batch)
-
-        # Process batches sequentially (simulating concurrent processing)
-        start_time = time.perf_counter()
-
-        for i, batch in enumerate(batches):
-            success = optimizer.upsert_batch(batch, f"concurrent_test_{i}")
-            assert success
-
-        elapsed = time.perf_counter() - start_time
-
-        # Should complete without hanging
-        assert elapsed < 10.0  # Should complete within 10 seconds
-
-        print(f"Concurrent processing of 5 batches: {elapsed:.3f}s")
-
-        # Check statistics
-        stats = optimizer.get_statistics()
-        assert stats["total_rows_written"] == 100000
 
 
 class TestCodeValidations(TestFeaturesModule):

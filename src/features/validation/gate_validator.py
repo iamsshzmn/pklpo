@@ -1,9 +1,21 @@
 """
+gate_validator — KEEP (features-prune-v2 A4b).
+
+Responsibility: HARD quality gates before database write operations.
+Signature: validate_data_gate(df, feature_groups, config) → (bool, dict[errors, warnings])
+           GateConfig controls: min_rows, min_fill_rate, max_nan_ratio thresholds.
+Zone: pre-DB-write terminal check. A gate FAILURE terminates the pipeline —
+      this is the last line of defence before writing to indicators_p.
+Distinct from neighbours:
+  - data_validator  : data quality BEFORE calculation (non-terminal, reports issues)
+  - code_validator  : statistical checks on calculated output (non-terminal, warnings)
+  - feature_validator: validates input specs and params (non-terminal)
+  - chain.py        : composes validators via Chain of Responsibility (OCP)
+
 Gate validation module for features calculation.
 
-This module implements strict quality gates before database operations
-as specified in the plan: " ,  len(df)<min_rows
-nan_ratio(feature_group) > threshold  fill_rate<min_fill".
+This module implements strict quality gates before database operations.
+Gates: len(df) < min_rows, nan_ratio(feature_group) > threshold, fill_rate < min_fill.
 """
 
 from dataclasses import dataclass

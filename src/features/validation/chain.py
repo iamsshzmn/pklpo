@@ -1,4 +1,15 @@
 """
+chain — KEEP (features-prune-v2 A4b).
+
+Responsibility: Chain of Responsibility compositor for validators (OCP compliance).
+Signature: ValidationChain.add(validator) → self
+           ValidationChain.validate(df) → ValidationResult (aggregate of all validators)
+Zone: orchestration only — delegates to code_validator, data_validator, etc.
+      Does NOT contain validation logic itself.
+Distinct from neighbours:
+  - code_validator, data_validator, feature_validator, gate_validator: concrete validators
+  This module only composes them; adding a new validator requires zero changes here.
+
 ValidationChain - Chain of Responsibility pattern for validators.
 
 Task 12: OCP-compliant validation pipeline.

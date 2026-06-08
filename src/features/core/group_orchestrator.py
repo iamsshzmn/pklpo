@@ -1,9 +1,12 @@
 """
 Group Calculation Orchestrator (SRP: coordination only).
 
-This module coordinates the calculation, persistence, and metrics
-recording for indicator groups. It follows the Single Responsibility
-Principle by focusing solely on orchestration logic.
+This module coordinates the calculation and metrics recording for
+indicator groups. It follows the Single Responsibility Principle by
+focusing solely on orchestration logic.
+
+Persistence is NOT done here — production writes go through:
+  application/save.py → infrastructure/persistence/inserter.py → upsert_executor.py
 
 Part of Phase 1.2 refactoring: Split GroupCalculator into SRP components.
 """
@@ -26,7 +29,6 @@ from ..domain.models import FeatureError
 from ..validation.code_validator import CodeValidator, ValidationConfig
 from .group_calculator import GroupFeatureCalculator
 from .group_metrics import GroupMetricsRecorder
-from .group_persister import GroupPersister
 from .pipeline import (
     PipelineContext,
     run_post_calculation,
@@ -80,11 +82,6 @@ class GroupCalculationConfig:
     # registry metadata, not from a hardcoded config list.
     calculation_order: list[str] = field(default_factory=_default_group_order)
 
-    # Batch persistence settings
-    batch_size: int = 5000
-    max_retries: int = 3
-    retry_delay_base: float = 1.0
-
     # Quality gates
     min_rows: int = 20
     min_fill_rate: float = 0.5
@@ -111,9 +108,11 @@ class GroupCalculationOrchestrator:
 
     This class coordinates:
     - GroupFeatureCalculator for calculation
-    - GroupPersister for persistence
     - GroupMetricsRecorder for metrics
     - CodeValidator for additional validations
+
+    Persistence is NOT a concern here — production writes happen in
+    application/save.py via infrastructure/persistence/inserter.py.
 
     It follows the Single Responsibility Principle by focusing
     solely on orchestration, delegating actual work to components.
@@ -123,7 +122,6 @@ class GroupCalculationOrchestrator:
         self,
         config: GroupCalculationConfig | None = None,
         calculator: GroupFeatureCalculator | None = None,
-        persister: GroupPersister | None = None,
         metrics_recorder: GroupMetricsRecorder | None = None,
         code_validator: CodeValidator | None = None,
         calc_timer: Callable | None = None,
@@ -134,7 +132,6 @@ class GroupCalculationOrchestrator:
         Args:
             config: Configuration for calculation
             calculator: Feature calculator (created if None)
-            persister: Data persister (created if None)
             metrics_recorder: Metrics recorder (created if None)
             code_validator: Code validator (created if None)
             calc_timer: Context manager factory for timing calculations.
@@ -146,22 +143,19 @@ class GroupCalculationOrchestrator:
 
         # Dependency injection for components (DIP compliance)
         self._calculator = calculator or GroupFeatureCalculator()
-        self._persister = persister or GroupPersister()
         self._metrics = metrics_recorder or GroupMetricsRecorder()
         self._validator = code_validator or CodeValidator(ValidationConfig())
 
     def calculate_all_groups(
         self,
         df_ohlcv: pd.DataFrame,
-        persist: bool = True,
         **kwargs,
     ) -> pd.DataFrame:
         """
-        Calculate all groups with optional persistence.
+        Calculate all groups.
 
         Args:
             df_ohlcv: DataFrame with OHLCV data
-            persist: Whether to persist results to database
             **kwargs: Additional parameters (symbol, timeframe, etc.)
 
         Returns:
@@ -190,7 +184,6 @@ class GroupCalculationOrchestrator:
                     result_df,
                     ordered_groups,
                     available,
-                    persist,
                     ctx,
                     agg,
                     **run_kwargs,
@@ -206,12 +199,11 @@ class GroupCalculationOrchestrator:
         result_df: pd.DataFrame,
         ordered_groups: list,
         available: set,
-        persist: bool,
         ctx: PipelineContext,
         agg: LogAggregator,
         **kwargs,
     ) -> pd.DataFrame:
-        """Calculate each group, persist, and record metrics."""
+        """Calculate each group and record metrics."""
         for group_entry in ordered_groups:
             group_name = group_entry.name
             try:
@@ -220,13 +212,6 @@ class GroupCalculationOrchestrator:
                 )
                 for indicator_name, series in group_result.items():
                     result_df[indicator_name] = series
-
-                if persist:
-                    success = self._persister.persist_batch(
-                        result_df, group_name, **kwargs
-                    )
-                    if not success:
-                        agg.add_warning(f"Failed to persist {group_name}")
 
                 fill_rate = self._metrics.record_group_metrics(
                     result_df, group_name, group_result

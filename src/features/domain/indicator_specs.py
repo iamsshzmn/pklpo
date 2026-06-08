@@ -1,24 +1,8 @@
-"""
-Domain facade for feature specifications.
-
-Экспортирует спецификации из specs.py как стабильную точку доступа
-для доменного слоя и валидаторов.
-"""
-
-from __future__ import annotations
-
-from ..specs import (
-    FEATURE_GROUPS,
-    FEATURE_SPECS,
-    get_features_by_type,
-    get_required_features,
-    validate_feature_specs,
+# REMOVED: features-prune-v2 A4a (2026-06-08)
+# This module was a thin re-export from specs/ with no importers (dead per detector).
+# All exports are available directly from src.features.specs.
+# Decision record: Captains_Logbook/planning/features-prune/decisions.md
+raise ImportError(
+    "domain/indicator_specs.py has been removed. "
+    "Import directly from src.features.specs instead."
 )
-
-__all__ = [
-    "FEATURE_GROUPS",
-    "FEATURE_SPECS",
-    "get_features_by_type",
-    "get_required_features",
-    "validate_feature_specs",
-]

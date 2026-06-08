@@ -1,9 +1,22 @@
 """
+code_validator — KEEP (features-prune-v2 A4b).
+
+Responsibility: statistical code-level checks on calculated indicator data.
+Signature: CodeValidator.validate_all(df, feature_periods) → (bool, dict[errors, warnings])
+           CodeValidator.validate_price_outliers(df) → (bool, dict)
+           CodeValidator.validate_volume_outliers(df) → (bool, dict)
+           CodeValidator.validate_warmup_window(df, feature_periods) → (bool, dict)
+Distinct from neighbours:
+  - data_validator  : pre-calculation data quality (NaN, ranges, timestamps)
+  - feature_validator: input spec/param validation before pipeline starts
+  - gate_validator  : hard gates before DB write — TERMINATES pipeline on failure
+  - chain.py        : composes validators via Chain of Responsibility (OCP)
+
 Additional code validations as specified in the plan.
 
 This module implements additional validations:
-- fraction_outliers  /
--  ""   MA/ATR
+- fraction_outliers (price/volume outlier detection)
+- warm-up window validation for MA/ATR indicators
 """
 
 from typing import Any
