@@ -5,7 +5,7 @@ PYTHON ?= python
 SRC := src
 TESTS := tests
 
-.PHONY: help setup lint typecheck test test-all check format smoke clean
+.PHONY: help setup lint typecheck test test-all check format smoke clean lookahead
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -36,7 +36,10 @@ test-all: ## Run all tests
 smoke: ## CLI smoke check
 	$(PYTHON) -m src.cli.main --help
 
-check: lint typecheck test smoke ## Run full validation suite
+lookahead: ## Run look-ahead bias gate (mandatory: must pass before shipping)
+	pytest -m lookahead --override-ini addopts="" -q --tb=short
+
+check: lint typecheck test lookahead smoke ## Run full validation suite
 
 clean: ## Remove build artifacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage coverage.xml

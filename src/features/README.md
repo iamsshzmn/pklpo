@@ -21,7 +21,7 @@ Technical indicators calculation and persistence module. Takes OHLCV candle data
 
 ## Role in the System
 
-```
+```text
 Exchange (OKX)
     |
     v
@@ -278,7 +278,7 @@ TA backend selection: `FEATURES_TA_BACKEND` env var (default: auto-detect).
 
 ## Directory Structure
 
-```
+```text
 src/features/
     __init__.py              # Public exports
     api.py                   # Public API facade

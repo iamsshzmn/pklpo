@@ -459,6 +459,26 @@ Instead of storing current state, store the **sequence of events** that produced
 - Use `--apply` flag to execute actual changes.
 - Always print the execution plan before any destructive action.
 
+### Data Quality — Fail-Loud Policy
+
+*(Added: features-prune-v2 V1, 2026-06-08)*
+
+- **Data quality anomalies are terminal, not silent.** Conditions listed below must raise
+  an exception or return a hard failure — never silently zero-fill, replace with NaN, or
+  continue with degraded data.
+- **Terminal conditions** (gate_validator is the enforcement point):
+  - `len(df) < GateConfig.min_rows` before DB write
+  - `nan_ratio(feature_group) > GateConfig.max_nan_ratio` before DB write
+  - `fill_rate < GateConfig.min_fill_rate` before DB write
+  - `coverage_pct < 99.5` (check `candle_eligibility`, do not join features)
+- **NaN outside bootstrap period** is a bug, not expected output. Log as ERROR.
+- **Ambiguous anomalies** (partial data, unknown instrument): log as WARNING and skip
+  that instrument — do not write partial rows to `indicators_p`.
+- **ORDER BY requirement**: every SQL read from `indicators_p`, `candles_swap_1h`, or
+  `features_*` tables that feeds calculation must ORDER BY `(open_time, instrument_id)`
+  or equivalent stable key. Reads without ORDER BY must include an explicit comment
+  explaining why order is irrelevant (e.g., scalar aggregates).
+
 ---
 
 ## 13. Current Tasks
