@@ -129,7 +129,19 @@ async def process_symbol_features(
             from src.candles.interfaces import eligibility as eligibility_interface
 
             eligibility = await eligibility_interface.get_state(symbol, timeframe)
-            if eligibility is not None and not eligibility.can_compute_features:
+            if eligibility is None:
+                results[timeframe] = {
+                    "status": "skipped",
+                    "reason": "feature_eligibility_missing",
+                    "compute_time_seconds": round(time.time() - tf_start, 2),
+                }
+                logger.info(
+                    "Feature eligibility missing %s/%s",
+                    symbol,
+                    timeframe,
+                )
+                continue
+            if not eligibility.can_compute_features:
                 results[timeframe] = {
                     "status": "skipped",
                     "reason": "feature_eligibility_blocked",

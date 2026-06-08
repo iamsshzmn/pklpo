@@ -449,10 +449,19 @@ def push_pipeline_monitoring_metrics(snapshot: dict[str, Any]) -> bool:
             recalc_queue_gauge.labels(str(status)).set(float(count))
         for status, count in (snapshot.get("bootstrap_state") or {}).items():
             bootstrap_state_gauge.labels(str(status)).set(float(count))
-        for (timeframe, state), count in (
-            snapshot.get("eligibility_state") or {}
-        ).items():
-            eligibility_state_gauge.labels(str(timeframe), str(state)).set(float(count))
+        eligibility_state = snapshot.get("eligibility_state") or []
+        if isinstance(eligibility_state, dict):
+            eligibility_state_rows: list[dict[str, Any]] = [
+                {"timeframe": timeframe, "state": state, "count": count}
+                for (timeframe, state), count in eligibility_state.items()
+            ]
+        else:
+            eligibility_state_rows = list(eligibility_state)
+        for row in eligibility_state_rows:
+            eligibility_state_gauge.labels(
+                str(row["timeframe"]),
+                str(row["state"]),
+            ).set(float(row["count"]))
         for severity, count in (snapshot.get("alerts") or {}).items():
             alerts_gauge.labels(str(severity)).set(float(count))
 

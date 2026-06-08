@@ -270,14 +270,15 @@ class MarketSelectionPipeline:
             if not result.eligible:
                 continue
             eligibility = await eligibility_interface.get_state(result.symbol, timeframe)
-            if eligibility is None or eligibility.can_score:
+            if eligibility is not None and eligibility.can_score:
                 continue
             result.eligible = False
+            state = "missing" if eligibility is None else eligibility.state
             logger.info(
                 "Market selection eligibility blocked %s/%s: state=%s",
                 result.symbol,
                 timeframe,
-                eligibility.state,
+                state,
             )
 
     def _apply_volatile_filter(

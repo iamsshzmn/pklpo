@@ -6,8 +6,11 @@ import pytest
 
 from src.candles.application.eligibility.evaluate import RefreshEligibilityUseCase
 from src.candles.application.eligibility.ports import EligibilitySnapshot
-from src.candles.domain.eligibility import CoverageFacts, EligibilityState
-from src.candles.domain.eligibility import build_timeframe_policies
+from src.candles.domain.eligibility import (
+    CoverageFacts,
+    EligibilityState,
+    build_timeframe_policies,
+)
 
 
 @dataclass

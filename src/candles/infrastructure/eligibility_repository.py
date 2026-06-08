@@ -95,6 +95,7 @@ class EligibilitySqlRepository:
                       ON r.symbol = w.symbol
                      AND r.timeframe = w.timeframe
                      AND r.timestamp BETWEEN w.window_start_ts AND w.last_ts
+                     AND r.timestamp % w.step_ms = 0
                     GROUP BY w.symbol, w.timeframe
                 ),
                 expected_window AS (
@@ -366,8 +367,9 @@ def _policy_cte(
         step_key = f"step_ms_{index}"
         bars_key = f"required_bars_{index}"
         selects.append(
-            f"SELECT :{tf_key} AS timeframe, :{step_key} AS step_ms, "
-            f":{bars_key} AS required_bars"
+            f"SELECT CAST(:{tf_key} AS TEXT) AS timeframe, "
+            f"CAST(:{step_key} AS BIGINT) AS step_ms, "
+            f"CAST(:{bars_key} AS INTEGER) AS required_bars"
         )
         params[tf_key] = timeframe
         params[step_key] = timeframe_to_seconds(timeframe) * 1000

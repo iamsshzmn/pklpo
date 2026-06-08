@@ -96,7 +96,7 @@ async def _collect_pipeline_monitoring_snapshot() -> dict[str, Any]:
             """,
             key_fields=("status",),
         )
-        eligibility_state = await _fetch_keyed_counts(
+        eligibility_state_counts = await _fetch_keyed_counts(
             session,
             """
             SELECT timeframe, state, COUNT(*) AS count
@@ -105,6 +105,10 @@ async def _collect_pipeline_monitoring_snapshot() -> dict[str, Any]:
             """,
             key_fields=("timeframe", "state"),
         )
+        eligibility_state = [
+            {"timeframe": timeframe, "state": state, "count": count}
+            for (timeframe, state), count in eligibility_state_counts.items()
+        ]
 
     alerts = {
         "critical": int(recalc_queue.get("failed", 0))

@@ -377,6 +377,16 @@ class MarketSelectionDB:
         ts_start = ts_eval - (window_days * 24 * 60 * 60 * 1000)
         ema_col = self.config.regime.ema_slope_source
 
+        # Allowlist: ema_col is a column identifier (not a bind param),
+        # so we validate it here before interpolating into the SQL template.
+        _EMA_COL_ALLOWLIST = frozenset({"ema_21", "ema_55"})
+        if ema_col not in _EMA_COL_ALLOWLIST:
+            raise ValueError(
+                f"ema_slope_source '{ema_col}' is not in the allowed set "
+                f"{sorted(_EMA_COL_ALLOWLIST)}. Update the allowlist if a new "
+                "EMA column is added to the schema."
+            )
+
         query = text(PAIR_METRICS_DATA_SQL_TEMPLATE.format(ema_col=ema_col))
 
         result = await self.session.execute(
@@ -458,6 +468,16 @@ class MarketSelectionDB:
         ts_start = ts_eval - (window_days * 24 * 60 * 60 * 1000)
         ema_col = self.config.regime.ema_slope_source
         slope_lookback = self.config.regime.slope_lookback_bars
+
+        # Allowlist: ema_col is a column identifier (not a bind param),
+        # so we validate it here before interpolating into the SQL template.
+        _EMA_COL_ALLOWLIST = frozenset({"ema_21", "ema_55"})
+        if ema_col not in _EMA_COL_ALLOWLIST:
+            raise ValueError(
+                f"ema_slope_source '{ema_col}' is not in the allowed set "
+                f"{sorted(_EMA_COL_ALLOWLIST)}. Update the allowlist if a new "
+                "EMA column is added to the schema."
+            )
 
         # Fetch all bars for slope calculation
         query = text(REGIME_METRICS_SQL_TEMPLATE.format(ema_col=ema_col))

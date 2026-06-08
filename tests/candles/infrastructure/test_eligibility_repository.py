@@ -94,6 +94,23 @@ async def test_repository_reads_coverage_facts_from_swap_ohlcv() -> None:
 
 
 @pytest.mark.asyncio
+async def test_repository_policy_cte_casts_bind_params_for_postgres_math() -> None:
+    from src.candles.infrastructure.eligibility_repository import (
+        EligibilitySqlRepository,
+    )
+
+    session = _Session()
+    repo = EligibilitySqlRepository(session)
+
+    await repo.read_coverage_facts()
+
+    query = session.calls[0][0]
+    assert "CAST(:tf_0 AS TEXT) AS timeframe" in query
+    assert "CAST(:step_ms_0 AS BIGINT) AS step_ms" in query
+    assert "CAST(:required_bars_0 AS INTEGER) AS required_bars" in query
+
+
+@pytest.mark.asyncio
 async def test_repository_upserts_verdict_and_appends_transition() -> None:
     from src.candles.infrastructure.eligibility_repository import (
         EligibilitySqlRepository,

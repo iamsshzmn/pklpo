@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -35,6 +36,42 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         "airflow.operators.python",
         airflow_operators_python,
     )
+
+    sqlalchemy = types.ModuleType("sqlalchemy")
+    sqlalchemy.text = lambda sql: sql  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "sqlalchemy", sqlalchemy)
+
+    src_module = types.ModuleType("src")
+    src_module.__path__ = []  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src", src_module)
+
+    candles_module = types.ModuleType("src.candles")
+    candles_module.__path__ = []  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src.candles", candles_module)
+
+    observability_module = types.ModuleType("src.candles.observability")
+    observability_module.__path__ = []  # type: ignore[attr-defined]
+    monkeypatch.setitem(
+        sys.modules,
+        "src.candles.observability",
+        observability_module,
+    )
+
+    prometheus_module = types.ModuleType("src.candles.observability.prometheus")
+    prometheus_module.push_pipeline_monitoring_metrics = lambda snapshot: True  # type: ignore[attr-defined]
+    monkeypatch.setitem(
+        sys.modules,
+        "src.candles.observability.prometheus",
+        prometheus_module,
+    )
+
+    utils_module = types.ModuleType("src.utils")
+    utils_module.__path__ = []  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src.utils", utils_module)
+
+    session_utils_module = types.ModuleType("src.utils.session_utils")
+    session_utils_module.get_db_session = lambda: None  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src.utils.session_utils", session_utils_module)
 
     common = types.ModuleType("_common")
     common.get_dag_env = lambda job_name_default=None: {  # type: ignore[attr-defined]
@@ -95,7 +132,7 @@ def test_collect_pipeline_monitoring_task_pushes_snapshot(
         "candle_lag_seconds": {"1H": 120.0},
         "recalc_queue": {"queued": 1},
         "bootstrap_state": {"completed": 2},
-        "eligibility_state": {("1H", "eligible"): 3},
+        "eligibility_state": [{"timeframe": "1H", "state": "eligible", "count": 3}],
         "alerts": {"critical": 0},
     }
 
@@ -112,4 +149,5 @@ def test_collect_pipeline_monitoring_task_pushes_snapshot(
     result = module.collect_pipeline_monitoring_task()
 
     assert result == {**snapshot, "metrics_pushed": True}
+    json.dumps(result)
     assert pushed == [snapshot]

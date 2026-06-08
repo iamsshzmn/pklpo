@@ -437,15 +437,17 @@ class ScoringProcessor:
                         i.symbol = s.symbol AND
                         i.timeframe = s.timeframe AND
                         i.timestamp = s.ts
-                    WHERE i.symbol = '{symbol}' AND s.id IS NULL
+                    WHERE i.symbol = :symbol AND s.id IS NULL
                 """
 
+                params: dict[str, str] = {"symbol": symbol}
                 if timeframe:
-                    base_query += f" AND i.timeframe = '{timeframe}'"
+                    base_query += " AND i.timeframe = :timeframe"
+                    params["timeframe"] = timeframe
 
                 base_query += " ORDER BY i.timestamp DESC"
 
-                result = await session.execute(text(base_query))
+                result = await session.execute(text(base_query), params)
                 records = result.fetchall()
 
                 if not records:
