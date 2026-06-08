@@ -24,6 +24,7 @@
 - [Границы ответственности](#границы-ответственности)
 - [Этап 1: Ingest](#этап-1-ingest)
 - [Этап 2: Features](#этап-2-features)
+- [Feature Lineage](#feature-lineage)
 - [Timestamp Contract](#timestamp-contract)
 - [Временные зависимости и DAGs](#временные-зависимости-и-dags)
 - [Known Inconsistencies / Technical Debt](#known-inconsistencies--technical-debt)
@@ -38,6 +39,7 @@
 |----------------|--------|
 | Как данные идут от OKX до PostgreSQL | [Этап 1: Ingest](#этап-1-ingest) |
 | Как сейчас считаются признаки | [Этап 2: Features](#этап-2-features) |
+| Путь от свечей до market_selection через группы | [Feature Lineage](#feature-lineage) |
 | Какие DAG-и реально есть | [Временные зависимости и DAGs](#временные-зависимости-и-dags) |
 | Где сейчас технический долг | [Known Inconsistencies / Technical Debt](#known-inconsistencies--technical-debt) |
 | Какой поток целевой | [Целевой поток (Target)](#целевой-поток-target) |
@@ -307,6 +309,81 @@ swap_ohlcv_p
 
 - scheduled DAG для features сейчас `features_calc_short`, а не `features_calc`;
 - `features_calc_short` работает по preset-списку, а не по полному набору фич.
+
+---
+
+## Feature Lineage
+
+**Цель:** показать, как OHLCV данные из `candles_swap_1h` проходят через группы признаков и попадают в `market_selection_results`.
+
+Этот раздел описывает **As-Is** путь от сырых свечей до результатов отбора рынка. Он дополняет раздел [Этап 2: Features](#этап-2-features), фокусируясь на конкретных группах и таблицах назначения.
+
+### Схема Feature Lineage
+
+```text
+┌─────────────────────────────────┐
+│  candles_swap_1h  (OHLCV)       │
+│  grain: instrument × open_time  │
+└────────────────┬────────────────┘
+                 │  eligibility gate
+                 │  (только eligible инструменты)
+                 ▼
+     features_calc_short_service.py
+                 │
+     ┌───────────┴───────────┐
+     │  GroupRegistry order  │
+     ├───────────────────────┤
+     │  1. overlap           │
+     │  2. ma                │
+     │  3. oscillators       │
+     │  4. volatility        │
+     │  5. volume            │
+     │  6. trend             │
+     │  7. squeeze           │
+     │  8. candles           │
+     │  9. statistics        │
+     │ 10. performance       │
+     └───────────┬───────────┘
+                 │  UPSERT
+                 ▼
+┌────────────────────────────────────┐
+│  features_1h / features_4h /       │
+│  features_1d                       │
+│  (= indicators_p в текущем коде)   │
+└────────────────┬───────────────────┘
+                 │  read features + quality scores
+                 ▼
+┌─────────────────────────────────┐
+│  market_selection_results       │
+│  (pipeline.py)                  │
+└─────────────────────────────────┘
+```
+
+### Short preset (features_calc_short_v1)
+
+Scheduled DAG `features_calc_short` считает не все группы, а preset-подмножество:
+
+| Порядок | Группа      | Примеры признаков                     |
+|---------|-------------|---------------------------------------|
+| 1       | `ma`        | `ema_21_1h`, `ema_55_4h`, `ema_55_1d` |
+| 2       | `oscillators` | `rsi_14_1h`, `macd_1h`, `stoch_k_1h` |
+| 3       | `volatility` | `atr_14_1h`, `natr_14_4h`, `dc_upper_1d` |
+| 4       | `volume`    | `cmf_1h`                              |
+| 5       | `trend`     | `supertrend_direction_1h`, `adx_14_4h`, `chop_1h` |
+
+Полный список групп и их порядок задается в `src/features/indicator_groups/registry.py` (GroupRegistry).
+
+### Роль eligibility gate
+
+Перед расчетом признаков запускается **eligibility gate** (реализован в `src/candles/application/eligibility/`). Он проверяет покрытие свечей по каждому инструменту и таймфрейму. Инструменты, не прошедшие gate (недостаточно истории или большие пропуски), **не получают признаков** на данном цикле. Это предотвращает расчет индикаторов на неполных окнах.
+
+### От признаков к отбору рынка
+
+`market_selection_results` формируется в `src/market_selection/application/pipeline.py`. Pipeline читает признаки из таблиц `features_*` и применяет quality scores для ранжирования инструментов. Таким образом, корректность feature lineage напрямую влияет на состав торгуемого universe.
+
+### Примечание по именованию таблиц
+
+В `feature_registry.yaml` целевые таблицы называются `features_1h`, `features_4h`, `features_1d`. В текущем runtime коде используется единое имя `indicators_p` (через `INDICATORS_TABLE_NAME`). Это transitional inconsistency, зафиксированная в разделе [Known Inconsistencies](#known-inconsistencies--technical-debt).
 
 ---
 

@@ -34,6 +34,12 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_add_swap_fields_to_instruments import (
         migrate_add_swap_fields_to_instruments,
     )
+    from src.db.migrations.migrate_add_swap_ohlcv_alignment_trigger import (
+        migrate_add_swap_ohlcv_alignment_trigger,
+    )
+    from src.db.migrations.migrate_add_swap_ohlcv_constraints import (
+        migrate_add_swap_ohlcv_constraints,
+    )
     from src.db.migrations.migrate_create_combination_features import (
         migrate_create_combination_features,
     )
@@ -56,6 +62,18 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_create_ops_data_quality_metrics import (
         migrate_create_ops_data_quality_metrics,
     )
+    from src.db.migrations.migrate_create_ops_feature_eligibility import (
+        migrate_create_ops_feature_eligibility,
+    )
+    from src.db.migrations.migrate_create_ops_feature_eligibility_transitions import (
+        migrate_create_ops_feature_eligibility_transitions,
+    )
+    from src.db.migrations.migrate_create_ops_indicator_recalc_queue import (
+        migrate_create_ops_indicator_recalc_queue,
+    )
+    from src.db.migrations.migrate_create_ops_swap_ohlcv_bootstrap_state import (
+        migrate_create_ops_swap_ohlcv_bootstrap_state,
+    )
     from src.db.migrations.migrate_create_ops_swap_repair_audit import (
         migrate_create_ops_swap_repair_audit,
     )
@@ -73,8 +91,14 @@ def get_migrations() -> list[Migration]:
         migrate_create_trade_recommendations,
     )
     from src.db.migrations.migrate_data_cleanup import migrate_data_cleanup
+    from src.db.migrations.migrate_drop_redundant_swap_ohlcv_indexes import (
+        migrate_drop_redundant_swap_ohlcv_indexes,
+    )
     from src.db.migrations.migrate_expand_indicators_precision import (
         migrate_expand_indicators_precision,
+    )
+    from src.db.migrations.migrate_extend_ops_swap_repair_audit_semantics import (
+        migrate_extend_ops_swap_repair_audit_semantics,
     )
     from src.db.migrations.migrate_fix_score_results_precision import (
         migrate_fix_score_results_precision,
@@ -84,8 +108,20 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_recreate_swap_ohlcv_partitioned import (
         migrate_recreate_swap_ohlcv_partitioned,
     )
+    from src.db.migrations.migrate_retention_horizon_guard import (
+        migrate_retention_horizon_guard,
+    )
+    from src.db.migrations.migrate_set_research_tf_infinite_retention import (
+        migrate_set_research_tf_infinite_retention,
+    )
+    from src.db.migrations.migrate_swap_ohlcv_retention_policy import (
+        migrate_swap_ohlcv_retention_policy,
+    )
     from src.db.migrations.migrate_swap_ohlcv_timestamps_timestamptz import (
         migrate_swap_ohlcv_timestamps_timestamptz,
+    )
+    from src.db.migrations.migrate_validate_swap_ohlcv_constraints import (
+        migrate_validate_swap_ohlcv_constraints,
     )
     from src.migrate_create_instruments import run_migrations as mig_instruments
 
@@ -219,5 +255,65 @@ def get_migrations() -> list[Migration]:
             "320_instruments_metadata_refreshed_at_ms",
             "add instruments metadata_refreshed_at_ms",
             migrate_add_instruments_metadata_refreshed_at_ms,
+        ),
+        Migration(
+            "330_ops_swap_repair_audit_semantics",
+            "extend ops.swap_repair_audit with outcome + progress fields",
+            migrate_extend_ops_swap_repair_audit_semantics,
+        ),
+        Migration(
+            "340_swap_ohlcv_retention_policy",
+            "replace swap OHLCV insert-trigger cleanup with per-timeframe retention",
+            migrate_swap_ohlcv_retention_policy,
+        ),
+        Migration(
+            "350_ops_swap_ohlcv_bootstrap_state",
+            "create ops.swap_ohlcv_bootstrap_state table",
+            migrate_create_ops_swap_ohlcv_bootstrap_state,
+        ),
+        Migration(
+            "360_swap_ohlcv_constraints",
+            "add swap OHLCV DB protection constraints",
+            migrate_add_swap_ohlcv_constraints,
+        ),
+        Migration(
+            "370_validate_swap_ohlcv_constraints",
+            "validate swap OHLCV DB protection constraints",
+            migrate_validate_swap_ohlcv_constraints,
+        ),
+        Migration(
+            "380_swap_ohlcv_alignment_trigger",
+            "create disabled swap OHLCV alignment trigger",
+            migrate_add_swap_ohlcv_alignment_trigger,
+        ),
+        Migration(
+            "390_research_tf_infinite_retention",
+            "set research timeframes to infinite retention",
+            migrate_set_research_tf_infinite_retention,
+        ),
+        Migration(
+            "400_drop_redundant_swap_ohlcv_indexes",
+            "drop redundant swap OHLCV lookup indexes",
+            migrate_drop_redundant_swap_ohlcv_indexes,
+        ),
+        Migration(
+            "410_retention_horizon_guard",
+            "clamp swap OHLCV retention outside warm-up horizon",
+            migrate_retention_horizon_guard,
+        ),
+        Migration(
+            "420_ops_feature_eligibility",
+            "create ops feature eligibility state table",
+            migrate_create_ops_feature_eligibility,
+        ),
+        Migration(
+            "430_ops_feature_eligibility_transitions",
+            "create ops feature eligibility transition audit table",
+            migrate_create_ops_feature_eligibility_transitions,
+        ),
+        Migration(
+            "440_ops_indicator_recalc_queue",
+            "create ops indicator recalculation queue",
+            migrate_create_ops_indicator_recalc_queue,
         ),
     ]

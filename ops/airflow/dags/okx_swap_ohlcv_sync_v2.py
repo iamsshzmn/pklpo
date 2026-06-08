@@ -336,11 +336,15 @@ with DAG(
     refresh_okx = PythonOperator(
         task_id="refresh_okx_meta",
         python_callable=refresh_okx_meta_task,
+        pool="okx_api_pool",
+        pool_slots=1,
     )
 
     swap_sync = PythonOperator(
         task_id="swap_sync",
         python_callable=swap_sync_task,
+        pool="ohlcv_write_pool",
+        pool_slots=1,
     )
 
     validate_swap_sync_xcom = PythonOperator(

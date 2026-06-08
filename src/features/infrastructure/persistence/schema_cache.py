@@ -18,6 +18,7 @@ logger = get_logger(__name__)
 @dataclass
 class SchemaInfo:
     """Cached schema information."""
+
     db_columns: set[str] = field(default_factory=set)
     indicators_table: Any = None
     numeric_columns: set[str] = field(default_factory=set)

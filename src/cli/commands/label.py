@@ -137,13 +137,15 @@ async def _load_ohlcv(
     try:
         async with get_db_session() as session:
             limit_clause = f"LIMIT {limit}" if limit else ""
-            query = text(f"""
+            query = text(
+                f"""
                 SELECT timestamp, open, high, low, close, volume
                 FROM swap_ohlcv_p
                 WHERE symbol = :symbol AND timeframe = :timeframe
                 ORDER BY timestamp ASC
                 {limit_clause}
-            """)
+            """
+            )
             result = await session.execute(
                 query, {"symbol": symbol, "timeframe": timeframe}
             )
@@ -190,9 +192,12 @@ def _log_label_summary(
         symbol,
         timeframe,
         n,
-        n_pt, 100.0 * n_pt / n,
-        n_sl, 100.0 * n_sl / n,
-        n_vert, 100.0 * n_vert / n,
+        n_pt,
+        100.0 * n_pt / n,
+        n_sl,
+        100.0 * n_sl / n,
+        n_vert,
+        100.0 * n_vert / n,
         avg_weight,
         config.profit_take,
         config.stop_loss,
@@ -205,7 +210,9 @@ def _show_plan(args) -> None:  # type: ignore[no-untyped-def]
     logger.info("label dry-run:")
     logger.info("  Symbols:      %s", args.symbols)
     logger.info("  Timeframe:    %s", args.timeframe)
-    logger.info("  Profit take:  %.3f (%.1f%%)", args.profit_take, args.profit_take * 100)
+    logger.info(
+        "  Profit take:  %.3f (%.1f%%)", args.profit_take, args.profit_take * 100
+    )
     logger.info("  Stop loss:    %.3f (%.1f%%)", args.stop_loss, args.stop_loss * 100)
     logger.info("  Max horizon:  %d bars", args.max_horizon)
     logger.info("  Time decay:   %.2f", args.decay)

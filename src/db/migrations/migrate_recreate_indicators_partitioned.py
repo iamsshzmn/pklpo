@@ -122,4 +122,6 @@ async def run(dry_run: bool = True) -> None:
             await session.commit()
             logger.info("migrate_recreate_indicators_partitioned: done")
         else:
-            logger.info("migrate_recreate_indicators_partitioned: dry-run complete, no changes made")
+            logger.info(
+                "migrate_recreate_indicators_partitioned: dry-run complete, no changes made"
+            )

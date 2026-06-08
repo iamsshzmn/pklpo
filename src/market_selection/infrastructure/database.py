@@ -352,7 +352,14 @@ class MarketSelectionDB:
 
         return pd.DataFrame(
             rows,
-            columns=["symbol", "valid_bars", "gaps_count", "max_ts", "feature_bars", "has_volume"],
+            columns=[
+                "symbol",
+                "valid_bars",
+                "gaps_count",
+                "max_ts",
+                "feature_bars",
+                "has_volume",
+            ],
         )
 
     async def fetch_pair_metrics_data(
@@ -370,6 +377,16 @@ class MarketSelectionDB:
         ts_start = ts_eval - (window_days * 24 * 60 * 60 * 1000)
         ema_col = self.config.regime.ema_slope_source
 
+        # Allowlist: ema_col is a column identifier (not a bind param),
+        # so we validate it here before interpolating into the SQL template.
+        _EMA_COL_ALLOWLIST = frozenset({"ema_21", "ema_55"})
+        if ema_col not in _EMA_COL_ALLOWLIST:
+            raise ValueError(
+                f"ema_slope_source '{ema_col}' is not in the allowed set "
+                f"{sorted(_EMA_COL_ALLOWLIST)}. Update the allowlist if a new "
+                "EMA column is added to the schema."
+            )
+
         query = text(PAIR_METRICS_DATA_SQL_TEMPLATE.format(ema_col=ema_col))
 
         result = await self.session.execute(
@@ -383,7 +400,16 @@ class MarketSelectionDB:
 
         df = pd.DataFrame(
             rows,
-            columns=["symbol", "timestamp", "close", "volume", "prev_close", "atr_14", "adx_14", "ema"],
+            columns=[
+                "symbol",
+                "timestamp",
+                "close",
+                "volume",
+                "prev_close",
+                "atr_14",
+                "adx_14",
+                "ema",
+            ],
         )
         numeric_cols = ["close", "volume", "prev_close", "atr_14", "adx_14", "ema"]
         for col in numeric_cols:
@@ -409,7 +435,12 @@ class MarketSelectionDB:
 
         result = await self.session.execute(
             query,
-            {"tf": timeframe, "ts_start": ts_start, "ts_eval": ts_eval, "min_bars": min_bars},
+            {
+                "tf": timeframe,
+                "ts_start": ts_start,
+                "ts_eval": ts_eval,
+                "min_bars": min_bars,
+            },
         )
 
         rows = result.fetchall()
@@ -438,12 +469,27 @@ class MarketSelectionDB:
         ema_col = self.config.regime.ema_slope_source
         slope_lookback = self.config.regime.slope_lookback_bars
 
+        # Allowlist: ema_col is a column identifier (not a bind param),
+        # so we validate it here before interpolating into the SQL template.
+        _EMA_COL_ALLOWLIST = frozenset({"ema_21", "ema_55"})
+        if ema_col not in _EMA_COL_ALLOWLIST:
+            raise ValueError(
+                f"ema_slope_source '{ema_col}' is not in the allowed set "
+                f"{sorted(_EMA_COL_ALLOWLIST)}. Update the allowlist if a new "
+                "EMA column is added to the schema."
+            )
+
         # Fetch all bars for slope calculation
         query = text(REGIME_METRICS_SQL_TEMPLATE.format(ema_col=ema_col))
 
         result = await self.session.execute(
             query,
-            {"tf": timeframe, "ts_start": ts_start, "ts_eval": ts_eval, "symbols": basket_symbols},
+            {
+                "tf": timeframe,
+                "ts_start": ts_start,
+                "ts_eval": ts_eval,
+                "symbols": basket_symbols,
+            },
         )
 
         rows = result.fetchall()
@@ -453,7 +499,15 @@ class MarketSelectionDB:
         # Convert to DataFrame
         bars_df = pd.DataFrame(
             rows,
-            columns=["symbol", "timestamp", "adx_14", "atr_close_ratio", "ema", "close", "volume"],
+            columns=[
+                "symbol",
+                "timestamp",
+                "adx_14",
+                "atr_close_ratio",
+                "ema",
+                "close",
+                "volume",
+            ],
         )
 
         # Calculate metrics per symbol
@@ -491,13 +545,15 @@ class MarketSelectionDB:
             else:
                 ema_slope = 0.0
 
-            results.append({
-                "symbol": symbol,
-                "adx_median": adx_median,
-                "atr_close_ratio": atr_close_median,
-                "ema_slope": ema_slope,
-                "volume_median": volume_median,
-            })
+            results.append(
+                {
+                    "symbol": symbol,
+                    "adx_median": adx_median,
+                    "atr_close_ratio": atr_close_median,
+                    "ema_slope": ema_slope,
+                    "volume_median": volume_median,
+                }
+            )
 
         return pd.DataFrame(results)
 
@@ -517,7 +573,12 @@ class MarketSelectionDB:
 
         result = await self.session.execute(
             query,
-            {"tf": timeframe, "ts_start": ts_start, "ts_eval": ts_eval, "pct": percentile},
+            {
+                "tf": timeframe,
+                "ts_start": ts_start,
+                "ts_eval": ts_eval,
+                "pct": percentile,
+            },
         )
 
         row = result.fetchone()

@@ -116,7 +116,9 @@ def dispatch_quality_alerts(
         logger.warning(msg)
 
         slack_ok = bool(slack.send_message(msg)) if slack else False
-        email_ok = _send_email(subject=f"DQ {result.severity.value}: {result.check_name}", body=msg)
+        email_ok = _send_email(
+            subject=f"DQ {result.severity.value}: {result.check_name}", body=msg
+        )
         if slack_ok or email_ok:
             sent += 1
 

@@ -8,7 +8,9 @@ from src.utils.session_utils import get_db_session
 async def migrate_create_ops_swap_repair_audit() -> None:
     async with get_db_session() as session:
         await session.execute(text("CREATE SCHEMA IF NOT EXISTS ops;"))
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS ops.swap_repair_audit (
                 id BIGSERIAL PRIMARY KEY,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -35,17 +37,25 @@ async def migrate_create_ops_swap_repair_audit() -> None:
                 summary_payload JSONB NOT NULL,
                 requested_conf JSONB NOT NULL DEFAULT '{}'::jsonb
             );
-        """))
-        await session.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_swap_repair_audit_created_at "
-            "ON ops.swap_repair_audit (created_at DESC);"
-        ))
-        await session.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_swap_repair_audit_run "
-            "ON ops.swap_repair_audit (dag_id, dag_run_id, timeframe);"
-        ))
-        await session.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_swap_repair_audit_symbol_tf "
-            "ON ops.swap_repair_audit (symbol, timeframe, created_at DESC);"
-        ))
+        """
+            )
+        )
+        await session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_swap_repair_audit_created_at "
+                "ON ops.swap_repair_audit (created_at DESC);"
+            )
+        )
+        await session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_swap_repair_audit_run "
+                "ON ops.swap_repair_audit (dag_id, dag_run_id, timeframe);"
+            )
+        )
+        await session.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_swap_repair_audit_symbol_tf "
+                "ON ops.swap_repair_audit (symbol, timeframe, created_at DESC);"
+            )
+        )
         await session.commit()

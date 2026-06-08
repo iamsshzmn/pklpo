@@ -156,7 +156,7 @@ class ContractLoader:
     @property
     def version(self) -> str:
         """Возвращает версию контракта."""
-        return self.load()["contract_version"]
+        return str(self.load()["contract_version"])
 
 
 # Singleton для удобства

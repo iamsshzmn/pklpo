@@ -71,7 +71,6 @@ FEATURE_GROUPS = {
 
 
 # Re-export validate_feature_specs as alias for validate_phase2_requirements
-# for backward compatibility with domain/indicator_specs.py
 def validate_feature_specs(feature_specs: list[FeatureSpec]) -> bool:
     """
     Validate that all required features are available.

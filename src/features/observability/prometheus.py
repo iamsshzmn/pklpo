@@ -76,9 +76,7 @@ class PipelineMetrics:
         self._prefix = "pklpo"
 
         if not _HAS_PROMETHEUS:
-            logger.info(
-                "prometheus-client not installed — metrics disabled"
-            )
+            logger.info("prometheus-client not installed — metrics disabled")
             self._init_noop()
             return
 
@@ -210,17 +208,13 @@ class PipelineMetrics:
     # Convenience recording helpers
     # ------------------------------------------------------------------
 
-    def record_rows_written(
-        self, symbol: str, timeframe: str, count: int
-    ) -> None:
+    def record_rows_written(self, symbol: str, timeframe: str, count: int) -> None:
         self.rows_written_total.labels(symbol, timeframe).inc(count)
 
     def record_upsert_failure(self, symbol: str, timeframe: str) -> None:
         self.upsert_failures_total.labels(symbol, timeframe).inc()
 
-    def record_duplicates(
-        self, symbol: str, timeframe: str, count: int
-    ) -> None:
+    def record_duplicates(self, symbol: str, timeframe: str, count: int) -> None:
         self.duplicates_detected_total.labels(symbol, timeframe).inc(count)
 
     def record_freshness_lag(
@@ -228,45 +222,31 @@ class PipelineMetrics:
     ) -> None:
         self.freshness_lag_seconds.labels(symbol, timeframe).set(lag_seconds)
 
-    def record_fill_rate(
-        self, symbol: str, timeframe: str, rate: float
-    ) -> None:
+    def record_fill_rate(self, symbol: str, timeframe: str, rate: float) -> None:
         self.fill_rate.labels(symbol, timeframe).set(rate)
 
-    def record_hole_rate(
-        self, symbol: str, timeframe: str, rate: float
-    ) -> None:
+    def record_hole_rate(self, symbol: str, timeframe: str, rate: float) -> None:
         self.hole_rate.labels(symbol, timeframe).set(rate)
 
-    def record_quality_score(
-        self, symbol: str, timeframe: str, score: float
-    ) -> None:
+    def record_quality_score(self, symbol: str, timeframe: str, score: float) -> None:
         self.quality_score.labels(symbol, timeframe).set(score)
 
-    def record_batch_size(
-        self, symbol: str, timeframe: str, size: int
-    ) -> None:
+    def record_batch_size(self, symbol: str, timeframe: str, size: int) -> None:
         self.batch_size_current.labels(symbol, timeframe).set(size)
         self.batch_size_distribution.labels(symbol, timeframe).observe(size)
 
     def observe_calc_duration(
         self, symbol: str, timeframe: str, duration_seconds: float
     ) -> None:
-        self.calc_duration_seconds.labels(symbol, timeframe).observe(
-            duration_seconds
-        )
+        self.calc_duration_seconds.labels(symbol, timeframe).observe(duration_seconds)
 
     def observe_upsert_duration(
         self, symbol: str, timeframe: str, duration_seconds: float
     ) -> None:
-        self.upsert_duration_seconds.labels(symbol, timeframe).observe(
-            duration_seconds
-        )
+        self.upsert_duration_seconds.labels(symbol, timeframe).observe(duration_seconds)
 
     @contextmanager
-    def calc_timer(
-        self, symbol: str, timeframe: str
-    ) -> Generator[None, None, None]:
+    def calc_timer(self, symbol: str, timeframe: str) -> Generator[None, None, None]:
         """Context manager that measures and records calculation duration."""
         start = time.monotonic()
         yield
@@ -274,9 +254,7 @@ class PipelineMetrics:
         self.observe_calc_duration(symbol, timeframe, elapsed)
 
     @contextmanager
-    def upsert_timer(
-        self, symbol: str, timeframe: str
-    ) -> Generator[None, None, None]:
+    def upsert_timer(self, symbol: str, timeframe: str) -> Generator[None, None, None]:
         """Context manager that measures and records upsert duration."""
         start = time.monotonic()
         yield
@@ -310,7 +288,8 @@ class PipelineMetrics:
             return True
         except Exception:
             logger.warning(
-                "Failed to push metrics to %s", self._pushgateway_url,
+                "Failed to push metrics to %s",
+                self._pushgateway_url,
                 exc_info=True,
             )
             return False

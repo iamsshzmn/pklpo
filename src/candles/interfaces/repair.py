@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import json
+import math
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import text
+
 from src.candles.application.repair import (
+    GuaranteeLastClosedBarsUseCase,
     RepairCommand,
     RepairPreview,
     RepairSummary,
@@ -14,7 +19,9 @@ from src.candles.application.repair import (
     preview_repair_timeframe,
     run_repair_timeframe,
 )
+from src.candles.domain.okx_calendar import StorageCalendar
 from src.candles.domain.repair import (
+    NoProgressPolicy,
     RepairExecutionMode,
     RepairGuardrails,
     RepairStrategy,
@@ -25,6 +32,9 @@ from src.candles.interfaces.swap_sync import (
     _MarketDataPortAdapter,
     _TracingTelemetryAdapter,
 )
+from src.config import get_settings
+from src.core.run_context import RunContext
+from src.utils.session_utils import get_db_session
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable
@@ -80,6 +90,10 @@ class _NoopHistoricalRangeSource:
         return []
 
 
+def _build_calendar() -> StorageCalendar:
+    return StorageCalendar()
+
+
 def _build_guardrails(
     *,
     max_gap_tasks_per_run: int,
@@ -126,6 +140,8 @@ def _build_repair_use_case(
     telemetry: _TracingTelemetryAdapter,
     strategy: RepairStrategy,
     source: Any,
+    calendar: StorageCalendar,
+    no_progress_policy: NoProgressPolicy | None = None,
 ) -> RunGapRepairUseCase | RunHistoricalBackfillUseCase:
     use_case_cls = (
         RunHistoricalBackfillUseCase
@@ -136,8 +152,25 @@ def _build_repair_use_case(
         coverage_query=repository,
         historical_source=source,
         repair_store=repository,
+        calendar=calendar,
         telemetry=telemetry,
+        no_progress_policy=no_progress_policy,
     )
+
+
+def _build_no_progress_policy(
+    *,
+    critical_timeframes: list[str] | tuple[str, ...] | None,
+    no_progress_threshold: int | None,
+) -> NoProgressPolicy | None:
+    if critical_timeframes is None and no_progress_threshold is None:
+        return None
+    kwargs: dict[str, Any] = {}
+    if critical_timeframes is not None:
+        kwargs["critical_timeframes"] = frozenset(str(tf) for tf in critical_timeframes)
+    if no_progress_threshold is not None:
+        kwargs["no_progress_threshold"] = int(no_progress_threshold)
+    return NoProgressPolicy(**kwargs)
 
 
 @asynccontextmanager
@@ -146,6 +179,8 @@ async def _open_repair_runtime(
     mode: RepairExecutionMode,
     strategy: RepairStrategy,
     config: dict[str, Any] | None,
+    calendar: StorageCalendar,
+    no_progress_policy: NoProgressPolicy | None = None,
 ) -> AsyncIterator[_RepairRuntime]:
     repository = RepairCandlesRepository()
     telemetry = _TracingTelemetryAdapter()
@@ -162,6 +197,8 @@ async def _open_repair_runtime(
                     telemetry=telemetry,
                     strategy=strategy,
                     source=source,
+                    calendar=calendar,
+                    no_progress_policy=no_progress_policy,
                 ),
             )
         return
@@ -174,6 +211,8 @@ async def _open_repair_runtime(
             telemetry=telemetry,
             strategy=strategy,
             source=_NoopHistoricalRangeSource(),
+            calendar=calendar,
+            no_progress_policy=no_progress_policy,
         ),
     )
 
@@ -203,12 +242,28 @@ def _build_execute_once(
     guardrails: RepairGuardrails,
     now_ts_ms: int,
     padding_bars: int,
+    calendar: StorageCalendar,
+    auto_apply_window: bool = False,
 ) -> Callable[..., Awaitable[RepairSummary]]:
     async def _execute_once(
         *,
         start_ts_ms: int,
         end_ts_ms: int,
     ) -> RepairSummary:
+        effective_guardrails = guardrails
+        if auto_apply_window:
+            aligned_start_ts_ms = calendar.floor_open(start_ts_ms, timeframe)
+            aligned_end_ts_ms = calendar.floor_open(end_ts_ms, timeframe)
+            window_days = max(
+                1,
+                math.ceil((aligned_end_ts_ms - aligned_start_ts_ms) / 86_400_000),
+            )
+            effective_guardrails = RepairGuardrails(
+                max_gap_tasks_per_run=guardrails.max_gap_tasks_per_run,
+                max_requested_bars_per_run=guardrails.max_requested_bars_per_run,
+                max_range_days=max(guardrails.max_range_days, window_days),
+                max_fail_ratio=guardrails.max_fail_ratio,
+            )
         command = _build_repair_command(
             symbol=symbol,
             timeframe=timeframe,
@@ -216,7 +271,7 @@ def _build_execute_once(
             end_ts_ms=end_ts_ms,
             mode=mode,
             strategy=strategy,
-            guardrails=guardrails,
+            guardrails=effective_guardrails,
             now_ts_ms=now_ts_ms,
             padding_bars=padding_bars,
         )
@@ -243,18 +298,27 @@ async def _run_swap_repair_once_summary(
     max_fail_ratio: float,
     padding_bars: int,
     config: dict[str, Any] | None = None,
+    critical_timeframes: list[str] | tuple[str, ...] | None = None,
+    no_progress_threshold: int | None = None,
 ) -> RepairSummary:
     now_ts_ms = int(datetime.now(UTC).timestamp() * 1000)
+    calendar = _build_calendar()
     guardrails = _build_guardrails(
         max_gap_tasks_per_run=max_gap_tasks_per_run,
         max_requested_bars_per_run=max_requested_bars_per_run,
         max_range_days=max_range_days,
         max_fail_ratio=max_fail_ratio,
     )
+    no_progress_policy = _build_no_progress_policy(
+        critical_timeframes=critical_timeframes,
+        no_progress_threshold=no_progress_threshold,
+    )
     async with _open_repair_runtime(
         mode=mode,
         strategy=strategy,
         config=config,
+        calendar=calendar,
+        no_progress_policy=no_progress_policy,
     ) as runtime:
         execute_once = _build_execute_once(
             use_case=runtime.use_case,
@@ -265,6 +329,8 @@ async def _run_swap_repair_once_summary(
             guardrails=guardrails,
             now_ts_ms=now_ts_ms,
             padding_bars=padding_bars,
+            calendar=calendar,
+            auto_apply_window=False,
         )
         return await execute_once(
             start_ts_ms=start_ts_ms,
@@ -286,6 +352,8 @@ async def run_swap_repair(
     max_fail_ratio: float,
     padding_bars: int,
     config: dict[str, Any] | None = None,
+    critical_timeframes: list[str] | tuple[str, ...] | None = None,
+    no_progress_threshold: int | None = None,
 ) -> dict[str, Any]:
     summary = await _run_swap_repair_once_summary(
         symbol=symbol,
@@ -300,6 +368,8 @@ async def run_swap_repair(
         max_fail_ratio=max_fail_ratio,
         padding_bars=padding_bars,
         config=config,
+        critical_timeframes=critical_timeframes,
+        no_progress_threshold=no_progress_threshold,
     )
     return summary.to_dict()
 
@@ -326,6 +396,7 @@ async def plan_swap_repair(
 
     repository = RepairCandlesRepository()
     now_ts_ms = int(datetime.now(UTC).timestamp() * 1000)
+    calendar = _build_calendar()
     preview: RepairPreview = await preview_repair_timeframe(
         symbol=symbol,
         timeframe=timeframe,
@@ -344,6 +415,7 @@ async def plan_swap_repair(
             max_range_days=max_range_days,
             max_fail_ratio=0.0,
         ),
+        calendar=calendar,
         anchor_ts_ms=anchor_ts_ms,
         anchor_strategy=auto_apply_anchor_strategy,
         anchor_metadata=repository,
@@ -370,15 +442,22 @@ async def run_swap_repair_timeframe(
     auto_apply_iteration_limit: int = 100,
     anchor_ts_ms: int | None = None,
     auto_apply_anchor_strategy: str = "first-coverage",
+    critical_timeframes: list[str] | tuple[str, ...] | None = None,
+    no_progress_threshold: int | None = None,
 ) -> dict[str, Any]:
     if auto_apply_window and mode is not RepairExecutionMode.APPLY:
         raise ValueError("swap_repair auto-apply requires apply mode")
     now_ts_ms = int(datetime.now(UTC).timestamp() * 1000)
+    calendar = _build_calendar()
     guardrails = _build_guardrails(
         max_gap_tasks_per_run=max_gap_tasks_per_run,
         max_requested_bars_per_run=max_requested_bars_per_run,
         max_range_days=max_range_days,
         max_fail_ratio=max_fail_ratio,
+    )
+    no_progress_policy = _build_no_progress_policy(
+        critical_timeframes=critical_timeframes,
+        no_progress_threshold=no_progress_threshold,
     )
     validated = {
         "symbol": symbol,
@@ -391,6 +470,8 @@ async def run_swap_repair_timeframe(
         mode=mode,
         strategy=strategy,
         config=config,
+        calendar=calendar,
+        no_progress_policy=no_progress_policy,
     ) as runtime:
         summary = await run_repair_timeframe(
             validated=validated,
@@ -411,7 +492,10 @@ async def run_swap_repair_timeframe(
                 guardrails=guardrails,
                 now_ts_ms=now_ts_ms,
                 padding_bars=padding_bars,
+                calendar=calendar,
+                auto_apply_window=auto_apply_window,
             ),
+            calendar=calendar,
             auto_apply_iteration_limit=auto_apply_iteration_limit,
             anchor_ts_ms=anchor_ts_ms,
             anchor_strategy=auto_apply_anchor_strategy,
@@ -434,6 +518,8 @@ async def run_swap_repair_auto_apply(
     config: dict[str, Any] | None = None,
     anchor_ts_ms: int | None = None,
     auto_apply_anchor_strategy: str = "first-coverage",
+    critical_timeframes: list[str] | tuple[str, ...] | None = None,
+    no_progress_threshold: int | None = None,
 ) -> dict[str, Any]:
     return await run_swap_repair_timeframe(
         symbol=symbol,
@@ -453,4 +539,143 @@ async def run_swap_repair_auto_apply(
         auto_apply_iteration_limit=auto_apply_max_iterations,
         anchor_ts_ms=anchor_ts_ms,
         auto_apply_anchor_strategy=auto_apply_anchor_strategy,
+        critical_timeframes=critical_timeframes,
+        no_progress_threshold=no_progress_threshold,
     )
+
+
+async def guarantee_last_n_closed_bars(
+    *,
+    symbol: str,
+    timeframe: str,
+    bars: int,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    repository = RepairCandlesRepository()
+    settings = get_settings()
+    run_context = RunContext.create(
+        {
+            "use_case": "last_n_closed_bars",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "bars": bars,
+        }
+    )
+    now_ts_ms = int(datetime.now(UTC).timestamp() * 1000)
+    calendar = _build_calendar()
+    market_adapter = build_market_data_adapter(config or {})
+    async with _MarketDataPortAdapter(market_adapter) as market_data:
+        use_case = GuaranteeLastClosedBarsUseCase(
+            coverage_query=repository,
+            historical_source=_HistoricalRangeSourceAdapter(market_data),
+            repair_store=repository,
+            run_context=run_context,
+            bars=bars,
+            week_anchor_ts_ms=int(settings.okx.week_anchor_ts_ms or 0),
+            calendar=calendar,
+        )
+        outcome = await use_case.run(symbol, timeframe, now_ts_ms)
+    return {
+        "status": outcome.status,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "mode": RepairExecutionMode.APPLY.value,
+        "strategy": "last_n_closed_bars",
+        "bars": bars,
+        "affected_recalc_range": outcome.affected_recalc_range,
+        "unresolved_timestamps": outcome.unresolved_timestamps,
+        "corrupted_count": outcome.corrupted_count,
+        "repaired_count": outcome.repaired_count,
+        "run_id": outcome.run_id,
+        "algo_version": outcome.algo_version,
+        "params_hash": outcome.params_hash,
+    }
+
+
+async def enqueue_indicator_recalc(
+    *,
+    symbol: str,
+    timeframe: str,
+    start_ts_ms: int,
+    end_ts_ms: int,
+    specs: list[str] | None = None,
+    source_dag: str | None = None,
+) -> dict[str, Any]:
+    warmup_bars = int(get_settings().features.recommended_warmup_bars)
+    detail = json.dumps(
+        {
+            "specs": specs or [],
+        }
+    )
+    statement = text(
+        """
+        INSERT INTO ops.indicator_recalc_queue (
+            symbol,
+            timeframe,
+            range_start_ts,
+            range_end_ts,
+            warmup_bars,
+            status,
+            source_dag,
+            detail
+        )
+        VALUES (
+            :symbol,
+            :timeframe,
+            :range_start_ts,
+            :range_end_ts,
+            :warmup_bars,
+            'queued',
+            :source_dag,
+            CAST(:detail AS jsonb)
+        )
+        ON CONFLICT (symbol, timeframe, range_start_ts, range_end_ts)
+        DO UPDATE SET
+            warmup_bars = EXCLUDED.warmup_bars,
+            status = CASE
+                WHEN ops.indicator_recalc_queue.status IN ('completed', 'failed')
+                    THEN 'queued'
+                ELSE ops.indicator_recalc_queue.status
+            END,
+            source_dag = EXCLUDED.source_dag,
+            detail = EXCLUDED.detail,
+            enqueued_at = CASE
+                WHEN ops.indicator_recalc_queue.status IN ('completed', 'failed')
+                    THEN now()
+                ELSE ops.indicator_recalc_queue.enqueued_at
+            END,
+            claimed_at = CASE
+                WHEN ops.indicator_recalc_queue.status IN ('completed', 'failed')
+                    THEN NULL
+                ELSE ops.indicator_recalc_queue.claimed_at
+            END,
+            completed_at = CASE
+                WHEN ops.indicator_recalc_queue.status IN ('completed', 'failed')
+                    THEN NULL
+                ELSE ops.indicator_recalc_queue.completed_at
+            END
+        """
+    )
+    async with get_db_session() as session:
+        await session.execute(
+            statement,
+            {
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "range_start_ts": start_ts_ms,
+                "range_end_ts": end_ts_ms,
+                "warmup_bars": warmup_bars,
+                "source_dag": source_dag or "repair_interface",
+                "detail": detail,
+            },
+        )
+    return {
+        "status": "queued",
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "start_ts_ms": start_ts_ms,
+        "end_ts_ms": end_ts_ms,
+        "rows_written": 0,
+        "queue_status": "queued",
+        "warmup_bars": warmup_bars,
+    }

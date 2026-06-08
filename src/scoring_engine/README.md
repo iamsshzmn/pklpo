@@ -73,13 +73,13 @@ score_raw = Σ (вес_i × нормализованное_значение_i)
 
 ```bash
 # Вычисление score для конкретной пары и времени
-python -m src.scoring_engine.cli --symbol BTC-USDT --tf 1m
+python -m src.scoring_engine.cli --symbol BTC-USDT --tf 5m
 
 # С указанием timestamp
-python -m src.scoring_engine.cli --symbol BTC-USDT --tf 1m --ts 1704067200
+python -m src.scoring_engine.cli --symbol BTC-USDT --tf 5m --ts 1704067200
 
 # Подробный вывод
-python -m src.scoring_engine.cli --symbol BTC-USDT --tf 1m --verbose
+python -m src.scoring_engine.cli --symbol BTC-USDT --tf 5m --verbose
 ```
 
 ### Python API
@@ -88,7 +88,7 @@ python -m src.scoring_engine.cli --symbol BTC-USDT --tf 1m --verbose
 from src.scoring_engine.compute import compute_score
 
 # Вычисление score
-result = await compute_score("BTC-USDT", "1m", 1704067200)
+result = await compute_score("BTC-USDT", "5m", 1704067200)
 
 if result:
     print(f"Score Raw: {result.score_raw:.4f}")
@@ -110,7 +110,11 @@ python src/db/migrate_create_score_results.py
 
 | symbol   | timeframe | ts                  | score_raw | score_calibrated | p_win | edge_net | confidence | is_valid |
 |----------|-----------|---------------------|-----------|------------------|-------|----------|------------|----------|
-| BTC-USDT | 1m        | 2025-01-01 12:00:00 | 0.72      | 0.68             | 0.68  | 0.14     | 0.44       | TRUE     |
+| BTC-USDT | 5m        | 2025-01-01 12:00:00 | 0.72      | 0.68             | 0.68  | 0.14     | 0.44       | TRUE     |
+
+`1m` may be used by operational freshness and short-lived monitoring flows, but
+it is not part of the historical OHLCV SLA and should not be treated as a
+long-term scoring dependency.
 
 ## 🔧 Настройка
 

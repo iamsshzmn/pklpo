@@ -493,12 +493,32 @@ src/market_meta/
 
 | Логическое имя | Физическая таблица | Примечание |
 |----------------|-------------------|------------|
-| OHLCV данные | `swap_ohlcv_p` | Партиционирована по месяцам |
+| OHLCV данные | `swap_ohlcv_p` | Партиционирована по месяцам. **Source of truth для coverage.** |
+| Bootstrap state | `ops.swap_ohlcv_bootstrap_state` | Checkpoint + кэш покрытия. Всегда верифицируется через `swap_ohlcv_p`. |
 | Индикаторы | `indicators` | НЕ партиционирована |
 | Legacy OHLCV | `ohlcv` | Пустая (не используется) |
 | Legacy Indicators | `indicators_p` | Пустая (не используется) |
 
 **Известная проблема:** Модель `OHLCV` ссылается на таблицу `ohlcv` (пустая). Фактические данные в `swap_ohlcv_p`. Функция `fetch_ohlcv_df` имеет fallback на `swap_ohlcv_p`.
+
+### Bootstrap state schema (ops.swap_ohlcv_bootstrap_state)
+
+```
+symbol, timeframe          — PK
+target_start_ts, target_end_ts — целевое окно (ms)
+checkpoint_ts              — текущая позиция backward traversal (ms)
+expected_bars              — bars по StorageCalendar в окне
+actual_bars, missing_bars  — по последнему live count_candles
+coverage_pct               — actual / expected × 100
+status                     — pending | running | incomplete | completed | stuck
+bootstrap_completed        — bool; COALESCE-защищен, сбрасывается при расхождении
+```
+
+**Иерархия источников истины:**
+```
+swap_ohlcv_p     ← источник истины для coverage
+bootstrap_state  ← кэш + checkpoint (всегда верифицируется перед skip)
+```
 
 ### Timestamp форматы
 
@@ -558,12 +578,20 @@ LOG_LEVEL=INFO
 
 | DAG ID | Schedule | Описание |
 |--------|----------|----------|
-| `okx_swap_ohlcv_sync_v2` | `*/5 * * * *` | Синхронизация OHLCV с OKX |
-| `features_calc_short` | `*/15 * * * *` | Расчёт 24 основных индикаторов |
+| `okx_swap_ohlcv_sync_v2` | `*/5 * * * *` | Live ingest OHLCV для SWAP-инструментов; режимы: `fast` (1m/5m), `slow` (15m–1M), `ext` (funding/OI), `bootstrap` |
+| `okx_swap_repair_v1` | manual | Gap detection и исторический backfill для SWAP-свечей |
+| `okx_swap_ohlcv_bootstrap_v1` | manual | Backward traversal исторических OHLCV с checkpoint/resume |
+| `swap_ohlcv_retention` | scheduled | Retention cleanup для `swap_ohlcv_p` |
+| `features_calc` | scheduled | Полный расчёт индикаторов через CLI |
+| `features_calc_short` | `*/15 * * * *` | Инкрементальный расчёт 24 основных индикаторов |
+| `market_selection` | scheduled | Фильтрация пар по качеству данных и рыночным метрикам |
+| `indicators_partition_maintenance` | scheduled | Обслуживание monthly partitions для `indicators_p` |
 
 **Timeframes:** `1m`, `5m`, `15m`, `30m`, `1H`, `4H`, `1D`
 
 **Indicators (24):** EMA(12,26), RSI(14), MACD, ATR(14), ADX, Bollinger Bands и др.
+
+> Целевые имена DAG (post-stabilization): `ohlcv_realtime_sync`, `ohlcv_gap_repair`, `ohlcv_history_backfill`, `ohlcv_retention_cleanup`. См. ADR-2026-05-15-ohlcv-dag-naming.
 
 ---
 
@@ -574,6 +602,7 @@ LOG_LEVEL=INFO
 - Все вычисления воспроизводимы (`run_id`, `algo_version`, `params_hash`, `snapshot_id`).
 - No look-ahead: чтение данных только по закрытым барам.
 - Идемпотентность записи на уровне ключей данных и событий.
+- **Bootstrap state invariant:** `bootstrap_completed=true` никогда не является финальным. Каждый вызов `RunBootstrapUseCase` верифицирует `actual_bars` через `count_candles` против `swap_ohlcv_p`. Если `live_actual < expected_bars` — state автоматически downgrade до `incomplete` и запускается re-fetch. Невозможное состояние: `completed=true AND live_actual < expected_bars` обнаруживается и исправляется при следующем запуске.
 
 ---
 
@@ -625,7 +654,7 @@ LOG_LEVEL=INFO
 
 ## 16. Decision Log (ADR)
 
-Для каждого архитектурного решения создаётся ADR по шаблону `docs/adr/ADR-YYYYMMDD-<slug>.md`:
+Для каждого архитектурного решения создаётся ADR по шаблону `Captains_Logbook/done/YYYY/MM/adr/ADR-YYYYMMDD-<slug>.md`:
 
 - **Контекст/проблема**
 - **Альтернативы**
@@ -669,10 +698,10 @@ LOG_LEVEL=INFO
 
 | # | Проблема | Где | Целевое состояние |
 |---|----------|-----|-------------------|
-| G-13 | **Нет ни одного ADR** | `docs/adr/` (не существует) | Создать папку, задокументировать ключевые решения (execution layer, partition strategy) |
+| G-13 | **ADR** | `Captains_Logbook/done/2026/05/adr/` | ✅ Решено: 2 ADR задокументированы (last-N-bars, UTC storage calendar) |
 | G-14 | **Нет smoke-тестов контрактов портов** | `tests/` | Добавить тесты для всех портов из раздела 7 |
 | G-15 | **`TARGET_ARCHITECTURE.md` и `ARCHITECTURE.md` существовали отдельно** | Корень репо | ✅ Решено: слиты в этот файл |
 
 ---
 
-**Последнее обновление:** 2026-03-17
+**Последнее обновление:** 2026-05-15

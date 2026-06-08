@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +27,7 @@ class SyncConfig(BaseModel, frozen=True):
     dynamic_batch_size: bool = False
 
     @classmethod
-    def from_env(cls, overrides: dict | None = None) -> SyncConfig:
+    def from_env(cls, overrides: dict[str, Any] | None = None) -> SyncConfig:
         """Build config from environment variables with optional overrides.
 
         Env vars: CANDLES_BATCH_SIZE, CANDLES_MAX_RETRIES, etc.
@@ -54,6 +55,6 @@ class SyncConfig(BaseModel, frozen=True):
 
 
 # Convenience dict for runtime callers that still pass plain mappings
-DEFAULT_CONFIG: dict[str, int | float | bool] = SyncConfig().model_dump()
+DEFAULT_CONFIG: dict[str, Any] = SyncConfig().model_dump()
 
 __all__ = ["DEFAULT_CONFIG", "SWAP_BARS", "SyncConfig"]

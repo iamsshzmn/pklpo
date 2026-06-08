@@ -24,7 +24,9 @@ async def migrate_create_market_selection() -> None:
 
     async with AsyncSession(engine) as session:
         # 1. market_scores_tf
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS market_scores_tf (
                 symbol TEXT NOT NULL,
                 timeframe TEXT NOT NULL,
@@ -64,28 +66,44 @@ async def migrate_create_market_selection() -> None:
 
                 PRIMARY KEY (symbol, timeframe, ts_eval)
             )
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_mstf_tf_ts
                 ON market_scores_tf (timeframe, ts_eval)
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_mstf_symbol_tf
                 ON market_scores_tf (symbol, timeframe)
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_mstf_eligible_ts
                 ON market_scores_tf (eligible, ts_eval)
                 WHERE eligible = true
-        """))
+        """
+            )
+        )
 
         logger.info("Created table: market_scores_tf")
 
         # 2. market_universe
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS market_universe (
                 ts_version BIGINT NOT NULL,
                 symbol TEXT NOT NULL,
@@ -117,27 +135,43 @@ async def migrate_create_market_selection() -> None:
 
                 PRIMARY KEY (ts_version, symbol)
             )
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_mu_ts_version
                 ON market_universe (ts_version)
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_mu_symbol
                 ON market_universe (symbol)
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_mu_rank
                 ON market_universe (ts_version, rank)
-        """))
+        """
+            )
+        )
 
         logger.info("Created table: market_universe")
 
         # 3. market_universe_versions
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS market_universe_versions (
                 ts_version BIGINT PRIMARY KEY,
                 ts_eval BIGINT NOT NULL,
@@ -168,23 +202,35 @@ async def migrate_create_market_selection() -> None:
 
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_muv_status
                 ON market_universe_versions (status)
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_muv_published
                 ON market_universe_versions (ts_version)
                 WHERE status = 'published'
-        """))
+        """
+            )
+        )
 
         logger.info("Created table: market_universe_versions")
 
         # 4. market_regime_history
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS market_regime_history (
                 ts_eval BIGINT PRIMARY KEY,
 
@@ -214,23 +260,35 @@ async def migrate_create_market_selection() -> None:
                 config_hash TEXT NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_mrh_regime
                 ON market_regime_history (global_regime)
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_mrh_not_stale
                 ON market_regime_history (ts_eval)
                 WHERE is_stale = false
-        """))
+        """
+            )
+        )
 
         logger.info("Created table: market_regime_history")
 
         # 5. market_selection_whitelist (для white/black list)
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE TABLE IF NOT EXISTS market_selection_lists (
                 symbol TEXT NOT NULL,
                 list_type TEXT NOT NULL CHECK (list_type IN ('whitelist', 'blacklist')),
@@ -240,12 +298,18 @@ async def migrate_create_market_selection() -> None:
                 expires_at TIMESTAMPTZ,
                 PRIMARY KEY (symbol, list_type)
             )
-        """))
+        """
+            )
+        )
 
-        await session.execute(text("""
+        await session.execute(
+            text(
+                """
             CREATE INDEX IF NOT EXISTS idx_msl_type
                 ON market_selection_lists (list_type)
-        """))
+        """
+            )
+        )
 
         logger.info("Created table: market_selection_lists")
 

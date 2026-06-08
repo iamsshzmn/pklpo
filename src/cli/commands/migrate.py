@@ -7,7 +7,9 @@ logger = logging.getLogger(__name__)
 
 
 def register(subparsers):
-    p = subparsers.add_parser("migrate", help="Р’С‹РїРѕР»РЅРёС‚СЊ РјРёРіСЂР°С†РёРё Р±Р°Р·С‹ РґР°РЅРЅС‹С…")
+    p = subparsers.add_parser(
+        "migrate", help="Р’С‹РїРѕР»РЅРёС‚СЊ РјРёРіСЂР°С†РёРё Р±Р°Р·С‹ РґР°РЅРЅС‹С…"
+    )
     p.add_argument(
         "--dry-run",
         action="store_true",

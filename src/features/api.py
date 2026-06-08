@@ -34,6 +34,7 @@ except Exception:  # pragma: no cover - optional at import time
             "features.core dependencies are not available. Install runtime deps or import 'features.core' directly."
         )
 
+
 __all__ = [
     "FEATURE_SPECS",
     "DefaultFeatureCalculatorBackend",

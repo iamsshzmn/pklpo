@@ -11,7 +11,9 @@ if TYPE_CHECKING:
 class IndicatorSchemaSyncPort(Protocol):
     """Application-facing contract for schema synchronization."""
 
-    async def sync_database_schema(self, session: AsyncSession) -> dict[str, object]: ...
+    async def sync_database_schema(
+        self, session: AsyncSession
+    ) -> dict[str, object]: ...
 
 
 class SyncIndicatorSchemaUseCase:

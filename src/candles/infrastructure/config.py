@@ -98,9 +98,7 @@ class CacheConfig:
             errors.append("MARKET_META_CACHE_TTL_HOURS must be positive")
 
         if self.auto_refresh_interval_hours <= 0:
-            errors.append(
-                "MARKET_META_AUTO_REFRESH_INTERVAL_HOURS must be positive"
-            )
+            errors.append("MARKET_META_AUTO_REFRESH_INTERVAL_HOURS must be positive")
 
         if self.max_cache_size_mb <= 0:
             errors.append("MARKET_META_MAX_CACHE_SIZE_MB must be positive")
@@ -211,9 +209,7 @@ class ValidationConfig:
             errors.append("MARKET_META_MAX_VALIDATION_ERRORS must be positive")
 
         if self.max_validation_warnings <= 0:
-            errors.append(
-                "MARKET_META_MAX_VALIDATION_WARNINGS must be positive"
-            )
+            errors.append("MARKET_META_MAX_VALIDATION_WARNINGS must be positive")
 
         return errors
 
@@ -258,9 +254,7 @@ class RiskConfig:
             errors.append("MARKET_META_MAX_POSITION_SIZE_USD must be positive")
 
         if self.max_total_exposure_usd <= 0:
-            errors.append(
-                "MARKET_META_MAX_TOTAL_EXPOSURE_USD must be positive"
-            )
+            errors.append("MARKET_META_MAX_TOTAL_EXPOSURE_USD must be positive")
 
         if self.max_leverage <= 0:
             errors.append("MARKET_META_MAX_LEVERAGE must be positive")
@@ -323,14 +317,10 @@ class MetricsConfig:
             errors.append("MARKET_META_METRICS_PORT must be between 1 and 65535")
 
         if self.cache_metrics_interval_seconds <= 0:
-            errors.append(
-                "MARKET_META_CACHE_METRICS_INTERVAL must be positive"
-            )
+            errors.append("MARKET_META_CACHE_METRICS_INTERVAL must be positive")
 
         if self.metrics_retention_hours <= 0:
-            errors.append(
-                "MARKET_META_METRICS_RETENTION_HOURS must be positive"
-            )
+            errors.append("MARKET_META_METRICS_RETENTION_HOURS must be positive")
 
         return errors
 
@@ -430,9 +420,7 @@ class MarketMetaConfig:
             try:
                 os.makedirs(self.data_dir, exist_ok=True)
             except Exception as e:
-                errors.append(
-                    f"Failed to create data directory {self.data_dir}: {e}"
-                )
+                errors.append(f"Failed to create data directory {self.data_dir}: {e}")
 
         return errors
 

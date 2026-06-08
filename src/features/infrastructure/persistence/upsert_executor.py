@@ -15,7 +15,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from src.logging import get_logger
 from src.utils.retry import RetryableOperation, RetryConfig
 
-from ..upsert_builder import build_and_execute_upsert
+from ..upsert import build_and_execute_upsert
 
 logger = get_logger(__name__)
 

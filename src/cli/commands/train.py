@@ -248,13 +248,15 @@ async def _load_ohlcv(
     try:
         async with get_db_session() as session:
             limit_clause = f"LIMIT {limit}" if limit else ""
-            query = text(f"""
+            query = text(
+                f"""
                 SELECT timestamp, open, high, low, close, volume
                 FROM swap_ohlcv_p
                 WHERE symbol = :symbol AND timeframe = :timeframe
                 ORDER BY timestamp ASC
                 {limit_clause}
-            """)
+            """
+            )
             result = await session.execute(
                 query, {"symbol": symbol, "timeframe": timeframe}
             )
@@ -368,7 +370,9 @@ def _show_plan(args) -> None:  # type: ignore[no-untyped-def]
     logger.info("train dry-run:")
     logger.info("  Symbols:           %s", args.symbols)
     logger.info("  Timeframe:         %s", args.timeframe)
-    logger.info("  Model:             %s (n_estimators=%d)", args.model, args.n_estimators)
+    logger.info(
+        "  Model:             %s (n_estimators=%d)", args.model, args.n_estimators
+    )
     logger.info("  CV:                %s (n_splits=%d)", args.cv, args.n_splits)
     logger.info(
         "  Feature selection: %s (n_features=%d)",

@@ -20,7 +20,9 @@ def _utc_now_ts_ms() -> int:
 
 
 def register(subparsers) -> None:
-    parser = subparsers.add_parser("swap-repair", help="Historical backfill and gap repair")
+    parser = subparsers.add_parser(
+        "swap-repair", help="Historical backfill and gap repair"
+    )
     parser.add_argument("--symbols", nargs="+", default=["BTC-USDT-SWAP"])
     parser.add_argument("--timeframes", nargs="+", default=["1m"])
     parser.add_argument("--start", required=True, help="UTC ISO-8601 start")

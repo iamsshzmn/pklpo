@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
+from src.candles.application.coverage_gate import evaluate_ohlcv_coverage
+
 if TYPE_CHECKING:
     import pandas as pd
 
@@ -124,6 +126,35 @@ async def process_symbol_features(
                     "compute_time_seconds": round(time.time() - tf_start, 2),
                 }
                 continue
+            from src.candles.interfaces import eligibility as eligibility_interface
+
+            eligibility = await eligibility_interface.get_state(symbol, timeframe)
+            if eligibility is None:
+                results[timeframe] = {
+                    "status": "skipped",
+                    "reason": "feature_eligibility_missing",
+                    "compute_time_seconds": round(time.time() - tf_start, 2),
+                }
+                logger.info(
+                    "Feature eligibility missing %s/%s",
+                    symbol,
+                    timeframe,
+                )
+                continue
+            if not eligibility.can_compute_features:
+                results[timeframe] = {
+                    "status": "skipped",
+                    "reason": "feature_eligibility_blocked",
+                    "eligibility_state": eligibility.state,
+                    "compute_time_seconds": round(time.time() - tf_start, 2),
+                }
+                logger.info(
+                    "Feature eligibility blocked %s/%s: state=%s",
+                    symbol,
+                    timeframe,
+                    eligibility.state,
+                )
+                continue
 
             df_ohlcv = await get_ohlcv_window(
                 session,
@@ -137,6 +168,46 @@ async def process_symbol_features(
                 results[timeframe] = {
                     "status": "skipped",
                     "reason": "no_data",
+                    "compute_time_seconds": round(time.time() - tf_start, 2),
+                }
+                continue
+            coverage = evaluate_ohlcv_coverage(
+                timestamps_ms=[int(ts) for ts in df_ohlcv["timestamp"].tolist()],
+                timeframe=timeframe,
+                required_bars=warmup_bars,
+            )
+            if not coverage.passed:
+                try:
+                    from src.features.observability import get_metrics
+
+                    metrics = get_metrics()
+                    metrics.record_fill_rate(
+                        symbol,
+                        timeframe,
+                        coverage.coverage_ratio,
+                    )
+                    metrics.record_hole_rate(
+                        symbol,
+                        timeframe,
+                        1.0 - coverage.coverage_ratio,
+                    )
+                except Exception:  # pragma: no cover - metrics must not block compute
+                    logger.exception("Failed to record coverage gate metrics")
+                logger.warning(
+                    "Coverage gate blocked %s/%s: reason=%s actual=%d expected=%d missing=%d",
+                    symbol,
+                    timeframe,
+                    coverage.reason,
+                    coverage.actual_bars,
+                    coverage.expected_bars,
+                    coverage.missing_count,
+                )
+                results[timeframe] = {
+                    "status": "skipped",
+                    "reason": "coverage_gate_failed",
+                    "coverage_gate_reason": coverage.reason,
+                    "coverage_ratio": coverage.coverage_ratio,
+                    "missing_count": coverage.missing_count,
                     "compute_time_seconds": round(time.time() - tf_start, 2),
                 }
                 continue
@@ -375,8 +446,7 @@ async def run_features_calc_short_validate(
                             SELECT MAX(timestamp)
                             FROM {IndicatorStorageContract.table_name}
                             WHERE timeframe = :tf
-                            """
-                            ,
+                            """,
                         ),
                         {"tf": tf},
                     )

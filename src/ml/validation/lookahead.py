@@ -96,9 +96,7 @@ def check_lookahead(
     """
     n = len(df_full)
     if not 1 <= n_trim < n:
-        raise ValueError(
-            f"n_trim={n_trim} must be in [1, {n - 1}] (len(df_full)={n})."
-        )
+        raise ValueError(f"n_trim={n_trim} must be in [1, {n - 1}] (len(df_full)={n}).")
 
     # Step 1: run on full data
     result_a: pd.Series | pd.DataFrame = pipeline_fn(df_full)

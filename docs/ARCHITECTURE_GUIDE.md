@@ -1,10 +1,5 @@
 # Architecture Guide
 
-A set of architectural rules and principles for building clean, maintainable software systems.
-Based on Robert C. Martin's *Clean Architecture* (2017) and *Clean Code* (2008).
-
----
-
 ## Programming Paradigms as Constraints
 
 Each paradigm removes a capability from the programmer — not adds one:
@@ -151,6 +146,77 @@ Use simple data structures or domain objects.
 
 ---
 
+## Analytics And Data Semantics
+
+Analytical systems need explicit semantic contracts. Do not force callers,
+humans, agents, or downstream services to infer business meaning from
+implementation code.
+
+### Canonical Data Contracts
+
+Every durable analytical concept must have one source of truth for its meaning.
+This includes features, eligibility rules, trading terms, timeframes, instruments,
+signals, and derived datasets.
+
+For each canonical contract, define:
+- Grain: entity keys, timestamp semantics, timeframe, and partition boundaries
+- Source of truth: table, view, registry, domain object, or documented contract
+- Freshness: when the value is considered current or stale
+- Gaps and gotchas: nullability, warmup windows, coverage limits, exclusions
+- Ownership: which module or workflow is allowed to change the definition
+
+Do not let feature meaning, eligibility logic, or trading terminology exist only
+inside calculation code.
+
+### Source-Of-Truth Hierarchy
+
+When sources disagree, prefer explicit semantic contracts over incidental
+implementation details.
+
+Recommended order:
+1. Semantic layer, registry, or domain contract
+2. Data lineage and schema contracts
+3. Curated query examples
+4. Business prose and historical notes
+5. Raw implementation code as a last resort
+
+Documentation volume is not a substitute for source-of-truth clarity.
+
+### Agent Knowledge As Code
+
+Agent-facing rules, skills, prompts, and query workflows are part of the system
+contract when agents are expected to operate on project data.
+
+If a change alters data semantics, eligibility logic, feature definitions,
+canonical tables or views, trading terminology, or analytics workflow
+assumptions, update the corresponding agent knowledge in the same change set.
+
+Treat agent knowledge drift as architecture drift.
+
+### Validation Against Silent Failures
+
+For analytics and trading systems, silent wrong answers are more dangerous than
+explicit failures. Prefer fail-closed behavior when provenance, freshness, or
+eligibility cannot be established.
+
+Any user-facing analytical answer or generated signal should make its provenance
+inspectable:
+- Source dataset or table
+- Timeframe and grain
+- Freshness or last sync point
+- Coverage or eligibility status when relevant
+- Assumptions used to map the question to data
+
+### Curated Examples Over Exhaustive Dumps
+
+Keep small, curated corpora of representative analytical queries, edge cases,
+and expected outputs.
+
+Do not treat full history, large unstructured docs, or raw query dumps as
+architecture. Structure and canonical meaning matter more than volume.
+
+---
+
 ## Key Patterns
 
 ### Humble Object Pattern
@@ -222,6 +288,9 @@ One short file per significant decision:
 2. **Decision** — what was chosen
 3. **Consequences** — what becomes easier and harder as a result
 
+ADR files live in `Captains_Logbook/done/YYYY/MM/adr/`.
+Do not create or use `docs/adr/` for ADR storage.
+
 ### Living Documentation
 
 Documentation that drifts from reality is worse than no documentation.
@@ -241,9 +310,3 @@ Delete stale docs — a lie is more dangerous than silence.
 | **Test-After Development** | Tests written to cover code, not specify behavior | Test-first; tests are the specification |
 | **Premature Optimization** | Architecture shaped by performance guesses | Profile first; optimize second; never guess |
 | **Screaming Framework** | Project structure reveals the framework, not the domain | Structure should scream the use cases |
-
----
-
-> "The goal of software architecture is to minimize the human resources required to build and maintain the required system."
->
-> — Robert C. Martin, *Clean Architecture*

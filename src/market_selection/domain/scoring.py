@@ -151,7 +151,10 @@ class ScoringEngine:
             "vol_raw": ("vol_score", False),  # higher vol = higher score
             "trend_q_raw": ("trend_q_score", False),  # higher trend_q = higher score
             "noise_raw": ("noise_score", True),  # lower noise = higher score (invert)
-            "stability_raw": ("stability_score", False),  # higher stability = higher score
+            "stability_raw": (
+                "stability_score",
+                False,
+            ),  # higher stability = higher score
             "liq_raw": ("liq_score", False),  # higher liq = higher score
         }
 
@@ -204,7 +207,7 @@ class ScoringEngine:
         std = valid.std()
 
         if std < EPS:
-            return values.apply(lambda x: 0.5 if np.isnan(x) else 0.5)
+            return values.apply(lambda _: 0.5)
 
         z = (values - mean) / (std + EPS)
         return 1.0 / (1.0 + np.exp(-z))
@@ -230,7 +233,6 @@ class ScoringEngine:
         # Normalize to sum = 1.0
         total = sum(adjusted.values())
         return {k: v / total for k, v in adjusted.items()} if total > 0 else base
-
 
     def calculate_tf_scores(
         self,

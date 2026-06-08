@@ -5,6 +5,7 @@
 ## Содержание
 
 - [okx_swap_ohlcv_sync_v2](#okx_swap_ohlcv_sync_v2) - Синхронизация OHLCV данных
+- [okx_swap_repair_v1](#okx_swap_repair_v1) - Ручной repair пробелов и повреждённых свечей
 - [features_calc_short](#features_calc_short) - Расчёт коротких фичей
 - [market_selection](#market_selection) - Выбор торговых пар
 - [features_calc](#features_calc) - Расчёт всех фичей
@@ -285,7 +286,7 @@ airflow connections add pklpo_db \
     --conn-host pklpo_db \
     --conn-schema pklpo \
     --conn-login pklpo_user \
-    --conn-password strongpassword \
+    --conn-password '<set-via-secret-store>' \
     --conn-port 5432
 ```
 
@@ -415,6 +416,88 @@ airflow connections list | grep pklpo_db
 2. Проверить XCom для статистики
 3. Проверить свежесть данных (freshness gate может пропускать выполнение)
 4. Для ручных запусков использовать `{"mode":"..."}` в conf
+
+---
+
+---
+
+## okx_swap_repair_v1
+
+**DAG ID:** `okx_swap_repair_v1`
+
+**Назначение:**
+- Ручной bounded repair OHLCV-данных: заполнение пробелов и коррекция повреждённых свечей для OKX SWAP-инструментов
+- Thin orchestration layer над `src.candles.interfaces.repair`
+
+**Расписание:** `None` (ручной запуск)
+
+**Состав задач:**
+1. `validate_swap_repair_conf` — валидирует параметры DAG run, пушит структурированный конфиг в XCom
+2. `swap_repair_preview` — для каждого запрошенного таймфрейма делает detect-only превью (количество гэпов, bars, guardrail risk)
+3. `swap_repair` — выполняет repair (detect-only / dry-run / apply) для каждого таймфрейма
+4. `publish_swap_repair_ops` — пушит метрики в Pushgateway + пишет записи в `ops.swap_repair_audit`
+
+**Параметры запуска:**
+
+```json
+{
+  "trigger": "repair-all-swaps"
+}
+```
+
+`trigger` — единственный внешний параметр. Остальной runtime preset зашит в `REPAIR_TRIGGER_PRESETS` внутри `okx_swap_repair_v1.py`:
+
+| Ключ | Значение | Назначение |
+|---|---|---|
+| `symbols` | curated список из `src/candles/instruments_list.json` | набор инструментов |
+| `timeframes` | `["1H", "4H", "1D", "1W", "1M"]` | перечень ТФ |
+| `mode` | `apply` | режим запуска |
+| `repair_strategy` | `gap-repair` | стратегия |
+| `auto_apply_window` | `true` | окно вычисляется автоматически из coverage |
+| `auto_apply_anchor_strategy` | `listing-date` | canonical anchor для shipped trigger |
+| `padding_bars` | `0` | отступы вокруг окна |
+| `max_gap_tasks_per_run` | `50` | guardrail по числу gap-задач |
+| `max_requested_bars_per_run` | `10000` | guardrail по объёму bars |
+| `max_range_days` | `7` | guardrail по длине окна |
+| `critical_timeframes` | `["1H"]` | TF, на которых no-progress эскалируется в FAIL |
+| `no_progress_threshold` | `3` | число подряд no-progress итераций до эскалации |
+| `max_fail_ratio` | `1.0` | **deprecated** — больше не блокирует apply, оставлен для обратной совместимости; удалится в REPAIR-1101 после прод-соака |
+
+**Runtime semantics:**
+- DAG всегда работает в `apply` режиме.
+- Окно всегда вычисляется автоматически из coverage state (`auto_apply_window=True`).
+- Для shipped trigger anchor остаётся `listing-date`.
+- Текущий shipped runtime ещё не переведён полностью на `tail-first progressive fill`; план миграции и целевой контракт описаны в [docs/okx_swap_repair_v1_plan_vs_actual.md](../../../docs/okx_swap_repair_v1_plan_vs_actual.md).
+- Repair выполняется для каждого `symbol × timeframe` из внутреннего preset-а.
+
+**Outcome model:**
+Каждая итерация repair классифицируется в один из `RepairOutcome`:
+- `success` — окно закрыто (`received >= requested`).
+- `partial` — API вернул часть бар; run продолжается, task state = success.
+- `empty` — API вернул пусто; legitimate no-op; task state = success.
+- `fail` — исключение из API/store; проброшено наверх.
+
+**No-progress escalation:**
+В текущем shipped runtime, если на ТФ из `critical_timeframes` подряд произошло `no_progress_threshold` итераций с `progress == 0`, use case бросает `ValueError`, а DAG оборачивает его в `AirflowFailException` — retry НЕ производится (см. `TERMINAL_REPAIR_ERROR_PREFIXES`). План tail-first redesign меняет это поведение для blocked historical ranges, но не для реальных системных ошибок.
+
+Детали transition-контракта и целевой tail-first семантики описаны в [docs/okx_swap_repair_v1_plan_vs_actual.md](../../../docs/okx_swap_repair_v1_plan_vs_actual.md).
+
+**Partial auto-apply:**
+- Целевое поведение redesign: `tail-first progressive fill`, где repair начинает с самых свежих unresolved gap и двигается в глубину истории чанками фиксированного размера.
+- Если `max_requested_bars_per_run` недостаточно для закрытия всех пробелов за один запуск, таск завершается с `auto_apply_incomplete=true` (task state = success).
+- `max_range_days` выбирает planner window; `max_requested_bars_per_run` и `max_gap_tasks_per_run` остаются downstream guardrails внутри уже выбранного окна.
+- Для blocked historical chunk целевая семантика — successful partial apply с диагностикой, а не новый failure class.
+- До завершения rollout повторный trigger всё ещё нужно интерпретировать через текущий shipped runtime и audit payloads.
+- Подробнее: [docs/operator-guide/partial-auto-apply.md](../../docs/operator-guide/partial-auto-apply.md)
+
+**Мониторинг:**
+- Аудит: `ops.swap_repair_audit` — каждый apply-запуск записывает результаты
+- Метрики: Pushgateway — `pklpo_swap_repair_rows_written`, `pklpo_swap_repair_remaining_gap_tasks`
+- XCom у `swap_repair`: список RepairSummary per-timeframe
+
+**Настройки:**
+- `max_active_runs=1` — только один активный запуск
+- `execution_timeout=2 часа`
 
 ---
 

@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import socket
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import exc as sa_exc, select, text
 
+from src.candles.domain.candle_validation import (
+    CandleValidationError,
+    validate_chunk_for_write,
+)
+from src.candles.domain.okx_calendar import StorageCalendar
+from src.candles.domain.repair import RepairWindow
+from src.candles.domain.timeframes import TF_TO_MS
+from src.candles.infrastructure.ohlcv_write_lock import ohlcv_symbol_write_lock
+from src.config.settings import get_settings
 from src.models import Instrument
 from src.utils.retry import get_db_retry
 from src.utils.session_utils import get_db_session
@@ -40,6 +50,7 @@ def _build_transient_db_exceptions() -> tuple[type[Exception], ...]:
 
 
 _DB_RETRY = get_db_retry(exceptions=_build_transient_db_exceptions())
+logger = logging.getLogger(__name__)
 
 
 class SwapCandlesRepository:
@@ -68,9 +79,33 @@ class SwapCandlesRepository:
         timeframe: str,
         candles: list[dict[str, Any]],
         additional_data: dict[str, Any],
+        window: RepairWindow | None = None,
+        calendar: StorageCalendar | None = None,
     ) -> int:
         if not candles:
             return 0
+        calendar = calendar or StorageCalendar()
+        if get_settings().candles.strict_write_validation:
+            write_window = window or _chunk_window(
+                candles,
+                timeframe=timeframe,
+                calendar=calendar,
+            )
+            try:
+                validate_chunk_for_write(
+                    candles,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    calendar=calendar,
+                    window=write_window,
+                )
+            except CandleValidationError as exc:
+                _log_candle_validation_failure(
+                    exc,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                )
+                raise
 
         funding_rate = None
         if additional_data.get("funding_rate"):
@@ -151,7 +186,12 @@ class SwapCandlesRepository:
         async def _operation() -> int:
             async with get_db_session() as session:
                 try:
-                    result = await session.execute(stmt, rows)
+                    async with ohlcv_symbol_write_lock(
+                        session,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                    ):
+                        result = await session.execute(stmt, rows)
                     await session.commit()
                 except Exception:
                     await session.rollback()
@@ -271,3 +311,39 @@ class SwapCandlesRepository:
             }
 
         return await self._run_with_db_retry(_operation)
+
+
+def _chunk_window(
+    candles: list[dict[str, Any]],
+    *,
+    timeframe: str,
+    calendar: StorageCalendar,
+) -> RepairWindow:
+    timestamps = [_candle_timestamp(candle) for candle in candles]
+    start_ts_ms = min(timestamps)
+    if timeframe not in TF_TO_MS:
+        return RepairWindow(start_ts_ms=start_ts_ms, end_ts_ms=max(timestamps) + 1)
+    end_ts_ms = calendar.next_open(max(timestamps), timeframe)
+    return RepairWindow(start_ts_ms=start_ts_ms, end_ts_ms=end_ts_ms)
+
+
+def _candle_timestamp(candle: dict[str, Any]) -> int:
+    return int(candle.get("ts", candle.get("timestamp")))
+
+
+def _log_candle_validation_failure(
+    exc: CandleValidationError,
+    *,
+    symbol: str,
+    timeframe: str,
+) -> None:
+    logger.warning(
+        "candle.write_validation_failed",
+        extra={
+            "row_index": exc.row_index,
+            "code": exc.code,
+            "timestamp": exc.timestamp_ms,
+            "symbol": symbol,
+            "timeframe": timeframe,
+        },
+    )

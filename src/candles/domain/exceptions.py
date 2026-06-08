@@ -49,7 +49,7 @@ class MetadataStaleError(MetadataError):
         last_refresh: str | None = None,
         ttl_hours: float | None = None,
     ):
-        context = {}
+        context: dict[str, Any] = {}
         if last_refresh:
             context["last_refresh"] = last_refresh
         if ttl_hours:
@@ -174,7 +174,7 @@ class RiskLimitBreach(RiskError):
         current_value: float | None = None,
         limit_value: float | None = None,
     ):
-        context = {"risk_type": risk_type}
+        context: dict[str, Any] = {"risk_type": risk_type}
         if current_value is not None:
             context["current_value"] = current_value
         if limit_value is not None:
@@ -314,7 +314,7 @@ class CacheCorruptionError(CacheError):
     """
 
     def __init__(self, message: str, cache_key: str | None = None):
-        context = {}
+        context: dict[str, Any] = {}
         if cache_key:
             context["cache_key"] = cache_key
         super().__init__(message, context)

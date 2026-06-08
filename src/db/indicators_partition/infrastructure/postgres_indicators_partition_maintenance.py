@@ -19,9 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class PostgresIndicatorsPartitionMaintenanceAdapter(
-    IndicatorsPartitionMaintenancePort
-):
+class PostgresIndicatorsPartitionMaintenanceAdapter(IndicatorsPartitionMaintenancePort):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -108,7 +106,8 @@ class PostgresIndicatorsPartitionMaintenanceAdapter(
             for definition in definitions
         ]
         if not any(
-            definition in (
+            definition
+            in (
                 "PRIMARY KEY (SYMBOL, TIMEFRAME, TIMESTAMP)",
                 "UNIQUE (SYMBOL, TIMEFRAME, TIMESTAMP)",
             )

@@ -76,6 +76,7 @@ class RetryConfig:
         """
         if settings is None:
             from src.config.settings import get_settings
+
             settings = get_settings().retry
 
         if preset == "db":
@@ -366,6 +367,7 @@ class RetryableOperation:
 # Factory functions for pre-configured retry decorators
 # =============================================================================
 
+
 def get_db_retry(
     exceptions: type[Exception] | tuple | None = None,
     on_retry: Callable | None = None,
@@ -396,12 +398,15 @@ def get_db_retry(
         ]
         try:
             import asyncpg
-            db_exceptions.extend([
-                asyncpg.PostgresConnectionError,
-                asyncpg.CannotConnectNowError,
-                asyncpg.ConnectionDoesNotExistError,
-                asyncpg.TooManyConnectionsError,
-            ])
+
+            db_exceptions.extend(
+                [
+                    asyncpg.PostgresConnectionError,
+                    asyncpg.CannotConnectNowError,
+                    asyncpg.ConnectionDoesNotExistError,
+                    asyncpg.TooManyConnectionsError,
+                ]
+            )
         except ImportError:
             pass
         exceptions = tuple(db_exceptions)
@@ -448,14 +453,18 @@ def get_api_retry(
         ]
         try:
             import aiohttp
-            api_exceptions.extend([
-                aiohttp.ClientError,
-                aiohttp.ServerTimeoutError,
-            ])
+
+            api_exceptions.extend(
+                [
+                    aiohttp.ClientError,
+                    aiohttp.ServerTimeoutError,
+                ]
+            )
         except ImportError:
             pass
         try:
             import httpx
+
             api_exceptions.append(httpx.HTTPError)
         except ImportError:
             pass

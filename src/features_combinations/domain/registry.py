@@ -3,7 +3,7 @@
 Централизованный реестр комбинаций индикаторов и их схемы.
 """
 
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
 from .pairs import PAIRS
 from .quartets import QUARTETS
@@ -17,4 +17,11 @@ class CombinationConfig(TypedDict):
 
 
 # Единый источник правды для комбинаций
-COMBINATIONS: dict[str, CombinationConfig] = {**PAIRS, **TRIOS, **QUARTETS}
+COMBINATIONS: dict[str, CombinationConfig] = cast(
+    "dict[str, CombinationConfig]",
+    {
+        **cast("dict[str, Any]", PAIRS),
+        **cast("dict[str, Any]", TRIOS),
+        **cast("dict[str, Any]", QUARTETS),
+    },
+)

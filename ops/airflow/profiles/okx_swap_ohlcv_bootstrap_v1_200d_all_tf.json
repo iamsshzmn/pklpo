@@ -1,0 +1,9 @@
+{
+  "lookback_days": 200,
+  "symbols": null,
+  "timeframes": ["1H", "4H", "1D", "1W", "1M"],
+  "chunk_bars": 500,
+  "circuit_break_after": 3,
+  "dry_run": false,
+  "skip_recalc": false
+}

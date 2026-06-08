@@ -8,10 +8,14 @@ Supports: .env files, environment variables, validation, type checking.
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 
 class DatabaseSettings(BaseSettings):
@@ -55,10 +59,13 @@ class OKXSettings(BaseSettings):
         extra="ignore",
     )
 
+    DEFAULT_WEEK_ANCHOR_TS_MS: ClassVar[int] = 1_777_824_000_000
+
     api_key: SecretStr = Field(default=SecretStr(""))
     api_secret: SecretStr = Field(default=SecretStr(""))
     passphrase: SecretStr = Field(default=SecretStr(""))
     base_url: str = "https://www.okx.com"
+    week_anchor_ts_ms: int | None = DEFAULT_WEEK_ANCHOR_TS_MS
 
     # Rate limiting
     max_requests_per_second: int = 10
@@ -74,6 +81,35 @@ class OKXSettings(BaseSettings):
     def has_credentials(self) -> bool:
         """Check whether API keys are set."""
         return bool(self.api_key.get_secret_value())
+
+    def __init__(
+        self,
+        _env_file: Any = ".env",
+        _env_file_encoding: str | None = "utf-8",
+        **values: Any,
+    ) -> None:
+        super().__init__(
+            _env_file=_env_file,
+            _env_file_encoding=_env_file_encoding,
+            **values,
+        )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Keep the OKX weekly anchor code-defined per ADR-2026-05-03."""
+        return (
+            init_settings,
+            _without_week_anchor_source(env_settings),
+            _without_week_anchor_source(dotenv_settings),
+            file_secret_settings,
+        )
 
 
 class FeaturesSettings(BaseSettings):
@@ -138,47 +174,91 @@ class FeaturesSettings(BaseSettings):
 
     # Validation thresholds (OCP: modify without changing code)
     price_outlier_threshold: float = Field(
-        default=0.02, ge=0.0, le=1.0,
+        default=0.02,
+        ge=0.0,
+        le=1.0,
         description="Maximum fraction of price outliers (2%)",
     )
     volume_outlier_threshold: float = Field(
-        default=0.02, ge=0.0, le=1.0,
+        default=0.02,
+        ge=0.0,
+        le=1.0,
         description="Maximum fraction of volume outliers (2%)",
     )
     outlier_multiplier: float = Field(
-        default=1.5, ge=1.0, le=5.0,
+        default=1.5,
+        ge=1.0,
+        le=5.0,
         description="IQR multiplier for outlier detection",
     )
 
     # Warm-up window settings
     ma_warmup_multiplier: float = Field(
-        default=2.0, ge=1.0, le=5.0,
+        default=2.0,
+        ge=1.0,
+        le=5.0,
         description="Warm-up = MA period * multiplier",
     )
     atr_warmup_multiplier: float = Field(
-        default=2.0, ge=1.0, le=5.0,
+        default=2.0,
+        ge=1.0,
+        le=5.0,
         description="Warm-up = ATR period * multiplier",
     )
     min_warmup_rows: int = Field(
-        default=50, ge=10, le=500,
+        default=50,
+        ge=10,
+        le=500,
         description="Minimum warm-up rows",
+    )
+    operational_warmup_bars: int = Field(
+        default=280,
+        ge=1,
+        description="Minimum bars required before feature/scoring eligibility.",
+    )
+    recommended_warmup_bars: int = Field(
+        default=500,
+        ge=1,
+        description="Recommended warm-up bars for production feature recalculation.",
+    )
+    warmup_bars_by_timeframe: dict[str, int] = Field(
+        default={
+            "1H": 500,
+            "4H": 500,
+            "1D": 500,
+            "1W": 280,
+            "1M": 0,
+        },
+        description="Per-timeframe warm-up contract; 1M is informational-only.",
     )
 
     # Price change validation
     min_price_change: float = Field(
-        default=0.001, ge=0.0, le=0.1,
+        default=0.001,
+        ge=0.0,
+        le=0.1,
         description="Minimum price change (0.1%)",
     )
     max_price_change: float = Field(
-        default=0.5, ge=0.1, le=1.0,
+        default=0.5,
+        ge=0.1,
+        le=1.0,
         description="Maximum price change (50%)",
     )
 
     # Group calculation configuration
     calculation_order: list[str] = Field(
         default=[
-            "overlap", "ma", "oscillators", "volatility", "volume",
-            "trend", "candles", "squeeze", "statistics", "performance",
+            "overlap",
+            "ma",
+            "oscillators",
+            "volatility",
+            "volume",
+            "trend",
+            "candles",
+            "squeeze",
+            "statistics",
+            "performance",
         ],
         description="Order of group calculation",
     )
@@ -186,9 +266,14 @@ class FeaturesSettings(BaseSettings):
     # Feature periods for warm-up validation
     feature_periods: dict[str, int] = Field(
         default={
-            "sma_20": 20, "sma_50": 50, "sma_200": 200,
-            "ema_8": 8, "ema_21": 21, "ema_50": 50,
-            "atr_14": 14, "atr_21": 21,
+            "sma_20": 20,
+            "sma_50": 50,
+            "sma_200": 200,
+            "ema_8": 8,
+            "ema_21": 21,
+            "ema_50": 50,
+            "atr_14": 14,
+            "atr_21": 21,
         },
         description="Feature name to period mapping for warm-up validation",
     )
@@ -241,9 +326,7 @@ class RiskSettings(BaseSettings):
     def validate_limits(self) -> "RiskSettings":
         """Validate limit consistency."""
         if self.default_risk_per_trade > self.max_risk_per_trade:
-            raise ValueError(
-                "default_risk_per_trade cannot exceed max_risk_per_trade"
-            )
+            raise ValueError("default_risk_per_trade cannot exceed max_risk_per_trade")
         if self.daily_loss_limit > self.weekly_loss_limit:
             raise ValueError("daily_loss_limit cannot exceed weekly_loss_limit")
         return self
@@ -302,6 +385,18 @@ class CacheSettings(BaseSettings):
     max_size_mb: int = 100
 
 
+class CandlesSettings(BaseSettings):
+    """Candle ingestion and storage settings."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="CANDLES_",
+        extra="ignore",
+    )
+
+    strict_write_validation: bool = True
+    db_alignment_trigger_enabled: bool = False
+
+
 class LoggingSettings(BaseSettings):
     """Logging settings."""
 
@@ -346,6 +441,27 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _without_week_anchor_source(
+    source: PydanticBaseSettingsSource,
+) -> PydanticBaseSettingsSource:
+    class _FilteredSource(PydanticBaseSettingsSource):
+        """Proxy a settings source while suppressing week_anchor_ts_ms."""
+
+        def __call__(self) -> dict[str, Any]:
+            data = dict(source())
+            data.pop("week_anchor_ts_ms", None)
+            return data
+
+        def get_field_value(
+            self,
+            field: Any,
+            field_name: str,
+        ) -> tuple[Any, str, bool]:
+            return source.get_field_value(field, field_name)
+
+    return _FilteredSource(source.settings_cls)
+
+
 class ObservabilitySettings(BaseModel):
     """Observability settings (Prometheus/Pushgateway)."""
 
@@ -353,7 +469,9 @@ class ObservabilitySettings(BaseModel):
         default_factory=lambda: _env_bool("OBSERVABILITY_PROMETHEUS_ENABLED", False)
     )
     prometheus_pushgateway_url: str = Field(
-        default_factory=lambda: os.getenv("OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", "")
+        default_factory=lambda: os.getenv(
+            "OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", ""
+        )
     )
     metrics_prefix: str = Field(
         default_factory=lambda: os.getenv("OBSERVABILITY_METRICS_PREFIX", "pklpo")
@@ -453,14 +571,34 @@ class Settings(BaseSettings):
     risk: RiskSettings = Field(default_factory=RiskSettings)
     retry: RetrySettings = Field(default_factory=RetrySettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)
+    candles: CandlesSettings = Field(default_factory=CandlesSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     airflow: AirflowSettings = Field(default_factory=AirflowSettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     quant: QuantSettings = Field(default_factory=QuantSettings)
 
     # Paths
-    project_root: Path = Field(default_factory=lambda: Path(__file__).parent.parent.parent)
+    project_root: Path = Field(
+        default_factory=lambda: Path(__file__).parent.parent.parent
+    )
     data_dir: Path = Field(default=Path("./data"))
+
+    def __init__(
+        self,
+        _env_file: Any = ".env",
+        _env_file_encoding: str | None = "utf-8",
+        **values: Any,
+    ) -> None:
+        super().__init__(
+            _env_file=_env_file,
+            _env_file_encoding=_env_file_encoding,
+            **values,
+        )
+        if "okx" not in values:
+            self.okx = OKXSettings(
+                _env_file=_env_file,
+                _env_file_encoding=_env_file_encoding,
+            )
 
     @property
     def is_production(self) -> bool:
@@ -504,6 +642,7 @@ def reload_settings() -> Settings:
 # ---------------------------------------------------------------------------
 # Utility helpers (formerly split across env_validator.py)
 # ---------------------------------------------------------------------------
+
 
 def get_database_url() -> str:
     """

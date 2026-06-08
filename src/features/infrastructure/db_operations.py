@@ -51,7 +51,9 @@ def build_ohlcv_partition_pruning_window_ms(
     lower_anchor = (
         datetime.fromtimestamp(since_ts, tz=UTC)
         if since_ts is not None
-        else datetime.fromtimestamp(max(0, int(now.timestamp()) - horizon_seconds), tz=UTC)
+        else datetime.fromtimestamp(
+            max(0, int(now.timestamp()) - horizon_seconds), tz=UTC
+        )
     )
     lower_bound = _month_start(lower_anchor)
     upper_bound = _add_month(_month_start(now), 1)
@@ -112,20 +114,30 @@ async def get_symbol_timeframes_to_update(session):
 
 
 async def fetch_ohlcv_df(
-    session, symbol: str, timeframe: str, since_ts: int | None = None, limit: int = 200
+    session,
+    symbol: str,
+    timeframe: str,
+    since_ts: int | None = None,
+    until_ts: int | None = None,
+    limit: int = 200,
 ) -> pd.DataFrame | None:
-    """Load OHLCV data from swap_ohlcv_p using timestamp bounds for partition pruning."""
+    """Load OHLCV data from swap_ohlcv_p using timestamp bounds for partition pruning.
+
+    ``since_ts`` is expressed in seconds for legacy callers.
+    ``until_ts`` is expressed in milliseconds and acts as an exclusive upper bound.
+    """
     from_ts_ms, to_ts_ms = build_ohlcv_partition_pruning_window_ms(
         timeframe=timeframe,
         since_ts=since_ts,
         limit=limit,
     )
+    effective_to_ts_ms = min(to_ts_ms, until_ts) if until_ts is not None else to_ts_ms
 
     params = {
         "symbol": symbol,
         "timeframe": timeframe,
         "from_ts_ms": from_ts_ms,
-        "to_ts_ms": to_ts_ms,
+        "to_ts_ms": effective_to_ts_ms,
         "limit": int(limit),
     }
     query = """

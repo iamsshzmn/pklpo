@@ -133,9 +133,7 @@ class LogContext:
     DEPRECATED: Use src.logging.log_operation instead.
     """
 
-    def __init__(
-        self, module_name: str, operation: str, logger=None
-    ):
+    def __init__(self, module_name: str, operation: str, logger=None):
         self.module_name = module_name
         self.operation = operation
         self.logger = logger or get_logger(module_name)

@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import logging
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from src.candles.domain.repair import (
     BackfillPlan,
+    GapTask,
+    NoProgressPolicy,
     RepairExecutionMode,
     RepairPlan,
     RepairStrategy,
     RepairVerificationMethod,
     RepairWindow,
     clamp_window_to_closed_bars,
+    classify_repair_outcome,
     detect_gap_tasks,
+    is_blocked_repair_outcome,
     sanitize_repair_candle,
     summarize_repair_verification,
     validate_repair_candles,
@@ -19,14 +25,34 @@ from src.candles.domain.repair import (
 from src.candles.domain.repair_timeframes import window_padding
 
 from .dto import RepairCommand, RepairResult
+from .progress import NoProgressTracker
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from src.candles.domain.okx_calendar import OKXCandleCalendar
+
     from .ports import (
         CandleCoverageQueryPort,
         HistoricalCandleSourcePort,
         RepairCandleStorePort,
         TelemetryPort,
     )
+
+
+logger = logging.getLogger(__name__)
+
+
+def _classify_blocked_cause(
+    *, blocked: bool, fetched_rows: int, received_rows: int
+) -> str | None:
+    if not blocked:
+        return None
+    if fetched_rows == 0:
+        return "api_returned_empty"
+    if received_rows == 0:
+        return "outside_exchange_history"
+    return None
 
 
 class _NullTelemetry:
@@ -47,12 +73,17 @@ class _BaseRepairUseCase:
         coverage_query: CandleCoverageQueryPort,
         historical_source: HistoricalCandleSourcePort,
         repair_store: RepairCandleStorePort,
+        calendar: OKXCandleCalendar,
         telemetry: TelemetryPort | None = None,
+        no_progress_policy: NoProgressPolicy | None = None,
     ) -> None:
         self._coverage_query = coverage_query
         self._historical_source = historical_source
         self._repair_store = repair_store
+        self._calendar = calendar
         self._telemetry = telemetry or _NullTelemetry()
+        self._no_progress_policy = no_progress_policy or NoProgressPolicy()
+        self._no_progress_trackers: dict[tuple[str, str], NoProgressTracker] = {}
 
     async def run(self, command: RepairCommand) -> RepairResult:
         plan = await self._build_plan(command)
@@ -91,30 +122,104 @@ class _BaseRepairUseCase:
 
         rows_written = 0
         fetch_calls = 0
-        total_requested = 0
-        total_missing = max(plan.requested_bars, 1)
+        total_received = 0
+        total_fetched = 0
+        remaining_missing_before = await self._coverage_query.count_missing_timestamps(
+            symbol=plan.symbol,
+            timeframe=plan.timeframe,
+            start_ts_ms=plan.window.start_ts_ms,
+            end_ts_ms=plan.window.end_ts_ms,
+        )
 
         for task in plan.tasks:
             padding_ms = window_padding(plan.timeframe, command.padding_bars)
-            candles = await self._historical_source.fetch_range(
-                symbol=plan.symbol,
-                timeframe=plan.timeframe,
-                start_ts_ms=max(plan.window.start_ts_ms, task.start_ts_ms - padding_ms),
-                end_ts_ms=min(plan.window.end_ts_ms, task.end_ts_ms + padding_ms),
+            request_start_ts = max(plan.window.start_ts_ms, task.start_ts_ms - padding_ms)
+            request_end_ts = min(plan.window.end_ts_ms, task.end_ts_ms + padding_ms)
+            fetch_latency_ms = 0
+            db_write_latency_ms = 0
+            fetched_rows = 0
+            received_rows = 0
+            task_written = 0
+
+            try:
+                fetch_started = time.perf_counter()
+                try:
+                    candles = await self._historical_source.fetch_range(
+                        symbol=plan.symbol,
+                        timeframe=plan.timeframe,
+                        start_ts_ms=request_start_ts,
+                        end_ts_ms=request_end_ts,
+                    )
+                finally:
+                    fetch_latency_ms = int(
+                        (time.perf_counter() - fetch_started) * 1000
+                    )
+                fetch_calls += 1
+                fetched_rows = len(candles)
+                total_fetched += fetched_rows
+                valid_rows = validate_repair_candles(
+                    candles=candles,
+                    task_window=RepairWindow(task.start_ts_ms, task.end_ts_ms),
+                    closed_until_ts_ms=plan.window.end_ts_ms,
+                )
+                validated = self._sanitize_candles(valid_rows)
+                received_rows = len(validated)
+                total_received += received_rows
+
+                db_write_started = time.perf_counter()
+                try:
+                    task_written = await self._repair_store.selective_upsert_candles(
+                        symbol=plan.symbol,
+                        timeframe=plan.timeframe,
+                        candles=validated,
+                        window=plan.window,
+                    )
+                finally:
+                    db_write_latency_ms = int(
+                        (time.perf_counter() - db_write_started) * 1000
+                    )
+                rows_written += task_written
+            except Exception as exc:
+                self._telemetry.event(
+                    "candles.repair.task_failed",
+                    **_task_telemetry_payload(
+                        plan=plan,
+                        task=task,
+                        request_start_ts=request_start_ts,
+                        request_end_ts=request_end_ts,
+                        fetched_rows=fetched_rows,
+                        received_rows=received_rows,
+                        written=task_written,
+                        fetch_latency_ms=fetch_latency_ms,
+                        db_write_latency_ms=db_write_latency_ms,
+                        status="error",
+                        error=str(exc),
+                    ),
+                )
+                raise
+
+            self._telemetry.event(
+                "candles.repair.task_result",
+                **_task_telemetry_payload(
+                    plan=plan,
+                    task=task,
+                    request_start_ts=request_start_ts,
+                    request_end_ts=request_end_ts,
+                    fetched_rows=fetched_rows,
+                    received_rows=received_rows,
+                    written=task_written,
+                    fetch_latency_ms=fetch_latency_ms,
+                    db_write_latency_ms=db_write_latency_ms,
+                    status="ok",
+                ),
             )
-            fetch_calls += 1
-            total_requested += task.missing_bars
-            valid_rows = validate_repair_candles(
-                candles=candles,
-                task_window=RepairWindow(task.start_ts_ms, task.end_ts_ms),
-                closed_until_ts_ms=plan.window.end_ts_ms,
-            )
-            validated = self._sanitize_candles(valid_rows)
-            rows_written += await self._repair_store.selective_upsert_candles(
-                symbol=plan.symbol,
-                timeframe=plan.timeframe,
-                candles=validated,
-            )
+
+        remaining_missing_after = await self._coverage_query.count_missing_timestamps(
+            symbol=plan.symbol,
+            timeframe=plan.timeframe,
+            start_ts_ms=plan.window.start_ts_ms,
+            end_ts_ms=plan.window.end_ts_ms,
+        )
 
         verified_timestamps = await self._coverage_query.list_timestamps(
             symbol=plan.symbol,
@@ -126,23 +231,91 @@ class _BaseRepairUseCase:
             timestamps=verified_timestamps,
             timeframe=plan.timeframe,
             window=plan.window,
+            calendar=self._calendar,
         )
         verified = verification.remaining_gap_tasks == 0
-        fail_ratio = 0.0 if total_requested == 0 else max(total_requested - rows_written, 0) / total_missing
-        if fail_ratio > command.guardrails.max_fail_ratio:
-            raise ValueError("apply exceeded max_fail_ratio")
+        progress = remaining_missing_before - remaining_missing_after
+        outcome = classify_repair_outcome(
+            requested=plan.requested_bars,
+            received=total_received,
+            exception=False,
+        )
+        blocked = is_blocked_repair_outcome(
+            requested=plan.requested_bars,
+            received=total_received,
+            exception=False,
+        )
+        blocked_reason = "empty-chunk" if blocked else None
+        blocked_cause = _classify_blocked_cause(
+            blocked=blocked,
+            fetched_rows=total_fetched,
+            received_rows=total_received,
+        )
+        api_fill_ratio = total_received / max(plan.requested_bars, 1)
+        write_success_ratio = rows_written / max(total_received, 1)
+
+        tracker = self._get_no_progress_tracker(
+            symbol=plan.symbol,
+            timeframe=plan.timeframe,
+        )
+        tracker.record(progress, blocked=blocked)
+        if tracker.should_escalate():
+            raise ValueError(
+                f"no progress on critical TF {plan.timeframe}: "
+                f"{self._no_progress_policy.no_progress_threshold} iterations in a row"
+            )
 
         self._telemetry.event(
             "candles.repair.completed",
             symbol=plan.symbol,
             timeframe=plan.timeframe,
             strategy=plan.strategy.value,
+            requested=plan.requested_bars,
+            received=total_received,
+            written=rows_written,
             rows_written=rows_written,
             fetch_calls=fetch_calls,
             verified=verified,
             verification_method=verification.method.value,
             remaining_gap_tasks=verification.remaining_gap_tasks,
             remaining_requested_bars=verification.remaining_requested_bars,
+            remaining_missing_before=remaining_missing_before,
+            remaining_missing_after=remaining_missing_after,
+            progress=progress,
+            api_fill_ratio=api_fill_ratio,
+            write_success_ratio=write_success_ratio,
+            outcome=outcome.value,
+            blocked=blocked,
+            blocked_reason=blocked_reason,
+            blocked_cause=blocked_cause,
+            fetched_rows=total_fetched,
+        )
+        logger.info(
+            "repair.outcome",
+            extra={
+                "repair_symbol": plan.symbol,
+                "repair_timeframe": plan.timeframe,
+                "repair_strategy": plan.strategy.value,
+                "repair_mode": command.mode.value,
+                "repair_outcome": outcome.value,
+                "repair_requested_bars": plan.requested_bars,
+                "repair_received_bars": total_received,
+                "repair_rows_written": rows_written,
+                "repair_fetch_calls": fetch_calls,
+                "repair_verified": verified,
+                "repair_verification_method": verification.method.value,
+                "repair_remaining_gap_tasks": verification.remaining_gap_tasks,
+                "repair_remaining_requested_bars": verification.remaining_requested_bars,
+                "repair_remaining_missing_before": remaining_missing_before,
+                "repair_remaining_missing_after": remaining_missing_after,
+                "repair_progress": progress,
+                "repair_api_fill_ratio": api_fill_ratio,
+                "repair_write_success_ratio": write_success_ratio,
+                "repair_blocked": blocked,
+                "repair_blocked_reason": blocked_reason,
+                "repair_blocked_cause": blocked_cause,
+                "repair_fetched_rows": total_fetched,
+            },
         )
         return RepairResult(
             mode=command.mode,
@@ -155,20 +328,50 @@ class _BaseRepairUseCase:
             remaining_requested_bars=verification.remaining_requested_bars,
             verification_method=verification.method,
             watermark_updated=False,
+            received_bars=total_received,
+            remaining_missing_before=remaining_missing_before,
+            remaining_missing_after=remaining_missing_after,
+            progress=progress,
+            api_fill_ratio=api_fill_ratio,
+            write_success_ratio=write_success_ratio,
+            outcome=outcome,
+            blocked=blocked,
+            blocked_reason=blocked_reason,
+            blocked_cause=blocked_cause,
         )
+
+    def _get_no_progress_tracker(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+    ) -> NoProgressTracker:
+        key = (symbol, timeframe)
+        if key not in self._no_progress_trackers:
+            self._no_progress_trackers[key] = NoProgressTracker(
+                policy=self._no_progress_policy,
+                timeframe=timeframe,
+            )
+        return self._no_progress_trackers[key]
 
     async def _build_plan(self, command: RepairCommand) -> RepairPlan:
         raise NotImplementedError
 
-    def _sanitize_candles(self, candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _sanitize_candles(
+        self,
+        candles: Sequence[Mapping[str, Any]],
+    ) -> list[dict[str, Any]]:
         fetched_at = datetime.now(UTC)
-        return [sanitize_repair_candle(candle, fetched_at=fetched_at) for candle in candles]
+        return [
+            sanitize_repair_candle(candle, fetched_at=fetched_at) for candle in candles
+        ]
 
     def _normalized_window(self, command: RepairCommand) -> RepairWindow:
         return clamp_window_to_closed_bars(
             window=RepairWindow(command.start_ts_ms, command.end_ts_ms),
             timeframe=command.timeframe,
             now_ts_ms=command.now_ts_ms,
+            calendar=self._calendar,
         )
 
 
@@ -186,14 +389,21 @@ class RunGapRepairUseCase(_BaseRepairUseCase):
             symbol=command.symbol,
             timeframe=command.timeframe,
             window=window,
-            tasks=detect_gap_tasks(timestamps=timestamps, timeframe=command.timeframe, window=window),
+            tasks=detect_gap_tasks(
+                timestamps=timestamps,
+                timeframe=command.timeframe,
+                window=window,
+                calendar=self._calendar,
+            ),
         )
 
 
 class RunHistoricalBackfillUseCase(_BaseRepairUseCase):
     async def _build_plan(self, command: RepairCommand) -> RepairPlan:
         window = self._normalized_window(command)
-        tasks = detect_gap_tasks(timestamps=[], timeframe=command.timeframe, window=window)
+        tasks = detect_gap_tasks(
+            timestamps=[], timeframe=command.timeframe, window=window, calendar=self._calendar
+        )
         return BackfillPlan(
             strategy=RepairStrategy.BACKFILL,
             symbol=command.symbol,
@@ -201,3 +411,41 @@ class RunHistoricalBackfillUseCase(_BaseRepairUseCase):
             window=window,
             tasks=tasks,
         )
+
+
+def _task_telemetry_payload(
+    *,
+    plan: RepairPlan,
+    task: GapTask,
+    request_start_ts: int,
+    request_end_ts: int,
+    fetched_rows: int,
+    received_rows: int,
+    written: int,
+    fetch_latency_ms: int,
+    db_write_latency_ms: int,
+    status: str,
+    error: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "symbol": plan.symbol,
+        "timeframe": plan.timeframe,
+        "strategy": plan.strategy.value,
+        "window_start_ts": plan.window.start_ts_ms,
+        "window_end_ts": plan.window.end_ts_ms,
+        "task_start_ts": task.start_ts_ms,
+        "task_end_ts": task.end_ts_ms,
+        "request_start_ts": request_start_ts,
+        "request_end_ts": request_end_ts,
+        "requested": task.missing_bars,
+        "fetched": fetched_rows,
+        "received": received_rows,
+        "written": written,
+        "rows_written": written,
+        "fetch_latency_ms": fetch_latency_ms,
+        "db_write_latency_ms": db_write_latency_ms,
+        "status": status,
+    }
+    if error is not None:
+        payload["error"] = error
+    return payload

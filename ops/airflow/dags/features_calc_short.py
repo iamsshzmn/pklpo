@@ -236,29 +236,6 @@ def features_calc_short_run_task(**context):
     return result
 
 
-def features_calc_short_prepare_storage_task(**context):
-    env = get_dag_env()
-    setup_env(env)
-
-    dag_run = context.get("dag_run")
-    conf = (dag_run.conf or {}) if dag_run else {}
-    reference_dt = context.get("logical_date")
-
-    from src.db.indicators_partition.interfaces import (
-        run_indicators_partition_maintenance,
-    )
-
-    return asyncio.run(
-        run_indicators_partition_maintenance(
-            months_back=_to_int(conf.get("partition_months_back"), 1),
-            months_ahead=_to_int(conf.get("partition_months_ahead"), 3),
-            reference_dt=reference_dt,
-            require_parent_pk=True,
-            repair_parent_schema=True,
-        )
-    )
-
-
 def features_calc_short_validate_task(**context):
     env = get_dag_env()
     setup_env(env)
@@ -302,16 +279,12 @@ dag = DAG(
     sla_miss_callback=DAG_SLA_MISS_CALLBACK,
 )
 
-features_calc_short_prepare_storage = PythonOperator(
-    task_id="features_calc_short_prepare_storage",
-    python_callable=features_calc_short_prepare_storage_task,
-    dag=dag,
-)
-
 features_calc_short_run = PythonOperator(
     task_id="features_calc_short_run",
     python_callable=features_calc_short_run_task,
     dag=dag,
+    pool="compute_pool",
+    pool_slots=1,
 )
 
 features_calc_short_validate = PythonOperator(
@@ -320,4 +293,4 @@ features_calc_short_validate = PythonOperator(
     dag=dag,
 )
 
-features_calc_short_prepare_storage >> features_calc_short_run >> features_calc_short_validate
+features_calc_short_run >> features_calc_short_validate

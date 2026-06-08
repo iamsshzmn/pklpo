@@ -103,7 +103,9 @@ async def migrate_add_data_retention() -> None:
             # 3. Создаем сам триггер
             logger.info("🔄 Создаем триггер...")
             await session.execute(
-                text("DROP TRIGGER IF EXISTS trigger_cleanup_swap_data ON swap_ohlcv_p;")
+                text(
+                    "DROP TRIGGER IF EXISTS trigger_cleanup_swap_data ON swap_ohlcv_p;"
+                )
             )
             await session.execute(
                 text(

@@ -325,7 +325,7 @@ airflow connections add pklpo_db \
     --conn-host pklpo_db \
     --conn-schema pklpo \
     --conn-login pklpo_user \
-    --conn-password strongpassword \
+    --conn-password '<set-via-secret-store>' \
     --conn-port 5432
 ```
 

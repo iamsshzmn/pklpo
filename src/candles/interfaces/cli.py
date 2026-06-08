@@ -21,6 +21,7 @@ from src.utils.session_utils import get_db_session
 # Query functions (from candles_cli_service.py)
 # ---------------------------------------------------------------------------
 
+
 async def fetch_swap_status() -> dict[str, Any] | None:
     async with get_db_session() as session:
         result = await session.execute(
@@ -154,10 +155,24 @@ async def export_swap_symbol_data(
         rows = result.fetchall()
 
     cols = [
-        "symbol", "timeframe", "timestamp", "open", "high", "low", "close",
-        "volume", "vol_ccy", "vol_usd", "funding_rate", "open_interest",
-        "long_short_ratio", "long_account_ratio", "short_account_ratio",
-        "top_long_short_ratio", "top_long_account_ratio", "top_short_account_ratio",
+        "symbol",
+        "timeframe",
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "vol_ccy",
+        "vol_usd",
+        "funding_rate",
+        "open_interest",
+        "long_short_ratio",
+        "long_account_ratio",
+        "short_account_ratio",
+        "top_long_short_ratio",
+        "top_long_account_ratio",
+        "top_short_account_ratio",
         "fetched_at",
     ]
     out: list[dict[str, Any]] = []
@@ -178,6 +193,7 @@ async def export_swap_symbol_data(
 # ---------------------------------------------------------------------------
 # CLI command handlers
 # ---------------------------------------------------------------------------
+
 
 async def _sync_all(
     symbols: list[str] | None,
@@ -300,6 +316,7 @@ async def _export(symbol: str, output_file: str, timeframes: list[str] | None) -
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="CLI for swap candles")

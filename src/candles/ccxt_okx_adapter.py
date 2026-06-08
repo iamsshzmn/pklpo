@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aiolimiter import AsyncLimiter
 
@@ -12,7 +12,11 @@ from src.candles.application.sync.policy import (
     classify_market_data_failure,
 )
 from src.candles.domain.timeframes import TF_TO_MS
+from src.candles.infrastructure.client import OKXClient
 from src.candles.observability.tracer import trace_event
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,14 @@ _TF_TO_CCXT = {
     "1W": "1w",
 }
 
+_HISTORY_ENDPOINT = "/api/v5/market/history-candles"
+_HISTORY_PAGE_LIMIT = 100
+_OKX_HISTORY_UTC_BARS = {
+    "1D": "1Dutc",
+    "1W": "1Wutc",
+    "1M": "1Mutc",
+}
+
 
 def _to_ccxt_symbol(inst_id: str) -> str:
     # BTC-USDT-SWAP -> BTC/USDT:USDT
@@ -42,14 +54,213 @@ def _to_ccxt_symbol(inst_id: str) -> str:
     return f"{base}/{quote}:{quote}"
 
 
+class _OKXHistoryCandlesClient:
+    _RETRIABLE_FAILURE_KINDS = frozenset(
+        {
+            MarketDataFailureKind.TIMEOUT,
+            MarketDataFailureKind.RATE_LIMIT,
+            MarketDataFailureKind.TRANSIENT,
+        }
+    )
+
+    def __init__(
+        self,
+        *,
+        request: Callable[..., Awaitable[dict[str, Any]]],
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        trace: Callable[..., None] = trace_event,
+        page_limit: int = _HISTORY_PAGE_LIMIT,
+        max_transport_retries: int = 3,
+        max_partial_retries: int = 3,
+        backoff_base_seconds: float = 0.5,
+    ) -> None:
+        self._request = request
+        self._sleep = sleep
+        self._trace = trace
+        self._page_limit = page_limit
+        self._max_transport_retries = max_transport_retries
+        self._max_partial_retries = max_partial_retries
+        self._backoff_base_seconds = backoff_base_seconds
+
+    async def fetch_range(
+        self,
+        *,
+        inst_id: str,
+        bar: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> list[dict[str, Any]]:
+        if start_ts_ms >= end_ts_ms:
+            return []
+
+        tf_ms = TF_TO_MS.get(bar)
+        if tf_ms is None:
+            raise ValueError(f"Unsupported timeframe for history fetch: {bar}")
+
+        collected: dict[int, dict[str, Any]] = {}
+        cursor = end_ts_ms - tf_ms
+        while cursor >= start_ts_ms:
+            page_end_ts_ms = min(end_ts_ms, cursor + tf_ms)
+            page_start_ts_ms = max(
+                start_ts_ms,
+                page_end_ts_ms - (self._page_limit * tf_ms),
+            )
+            page = await self._fetch_page(
+                inst_id=inst_id,
+                bar=bar,
+                page_start_ts_ms=page_start_ts_ms,
+                page_end_ts_ms=page_end_ts_ms,
+            )
+            for candle in page["candles"]:
+                collected.setdefault(int(candle["ts"]), candle)
+
+            oldest_ts = page["oldest_ts"]
+            if oldest_ts is None:
+                break
+            if oldest_ts <= start_ts_ms:
+                break
+
+            next_cursor = oldest_ts - tf_ms
+            if next_cursor >= cursor:
+                break
+            cursor = next_cursor
+
+        return [collected[ts] for ts in sorted(collected)]
+
+    async def _fetch_page(
+        self,
+        *,
+        inst_id: str,
+        bar: str,
+        page_start_ts_ms: int,
+        page_end_ts_ms: int,
+    ) -> dict[str, Any]:
+        tf_ms = TF_TO_MS[bar]
+        params = {
+            "instId": inst_id,
+            "bar": self._okx_history_bar(bar),
+            # OKX history-candles semantics are direction-sensitive:
+            # "before" returns newer rows and "after" returns older rows.
+            # For a half-open window [page_start_ts_ms, page_end_ts_ms), the
+            # lower bound must therefore go to "before" and the upper bound to
+            # "after". OKX excludes the row whose ts equals "before", so shift
+            # back by one storage bar and keep local [start, end) filtering.
+            "before": str(max(0, page_start_ts_ms - tf_ms)),
+            "after": str(page_end_ts_ms),
+            "limit": str(self._page_limit),
+        }
+        expected_rows = max(0, (page_end_ts_ms - page_start_ts_ms) // tf_ms)
+        candles_by_ts: dict[int, dict[str, Any]] = {}
+        partial_attempts = 0
+        transport_attempts = 0
+
+        while True:
+            try:
+                payload = await self._request(path=_HISTORY_ENDPOINT, params=params)
+            except Exception as exc:
+                failure_kind = classify_market_data_failure(exc)
+                if (
+                    failure_kind not in self._RETRIABLE_FAILURE_KINDS
+                    or transport_attempts >= self._max_transport_retries
+                ):
+                    raise
+                await self._sleep(self._backoff_seconds(transport_attempts))
+                transport_attempts += 1
+                continue
+
+            for candle in self._normalize_rows(
+                payload.get("data", []),
+                page_start_ts_ms=page_start_ts_ms,
+                page_end_ts_ms=page_end_ts_ms,
+            ):
+                candles_by_ts[int(candle["ts"])] = candle
+
+            received_rows = len(candles_by_ts)
+            oldest_ts = min(candles_by_ts) if candles_by_ts else None
+            newest_ts = max(candles_by_ts) if candles_by_ts else None
+            status = self._page_status(
+                received_rows=received_rows,
+                expected_rows=expected_rows,
+            )
+
+            if status != "PARTIAL" or partial_attempts >= self._max_partial_retries:
+                self._trace(
+                    "okx.history_candles.page",
+                    endpoint="history-candles",
+                    symbol=inst_id,
+                    timeframe=bar,
+                    okx_bar=params["bar"],
+                    requested_start_ts_ms=page_start_ts_ms,
+                    requested_end_ts_ms=page_end_ts_ms,
+                    received_rows=received_rows,
+                    expected_rows=expected_rows,
+                    oldest_ts=oldest_ts,
+                    newest_ts=newest_ts,
+                    status=status,
+                    before=params["before"],
+                    after=params["after"],
+                    limit=self._page_limit,
+                )
+                return {
+                    "candles": [candles_by_ts[ts] for ts in sorted(candles_by_ts)],
+                    "oldest_ts": oldest_ts,
+                    "newest_ts": newest_ts,
+                    "status": status,
+                }
+
+            await self._sleep(self._backoff_seconds(partial_attempts))
+            partial_attempts += 1
+
+    def _normalize_rows(
+        self,
+        rows: list[list[Any]],
+        *,
+        page_start_ts_ms: int,
+        page_end_ts_ms: int,
+    ) -> list[dict[str, Any]]:
+        candles_by_ts: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            ts = int(row[0])
+            if not page_start_ts_ms <= ts < page_end_ts_ms:
+                continue
+            candles_by_ts[ts] = {
+                "ts": ts,
+                "open": row[1],
+                "high": row[2],
+                "low": row[3],
+                "close": row[4],
+                "volume": row[5],
+                "volCcy": row[6] if len(row) > 6 else None,
+                "volUsd": row[7] if len(row) > 7 else None,
+            }
+        return [candles_by_ts[ts] for ts in sorted(candles_by_ts)]
+
+    @staticmethod
+    def _page_status(*, received_rows: int, expected_rows: int) -> str:
+        if received_rows == 0:
+            return "EMPTY"
+        if received_rows < expected_rows:
+            return "PARTIAL"
+        return "OK"
+
+    @staticmethod
+    def _okx_history_bar(bar: str) -> str:
+        return _OKX_HISTORY_UTC_BARS.get(bar, bar)
+
+    def _backoff_seconds(self, attempt: int) -> float:
+        return self._backoff_base_seconds * (2**attempt)
+
+
 class CcxtOKXAdapter:
     """CCXT-backed market data adapter for the candles sync runtime."""
 
-    _RETRIABLE_INIT_KINDS = frozenset({
-        MarketDataFailureKind.TIMEOUT,
-        MarketDataFailureKind.RATE_LIMIT,
-        MarketDataFailureKind.TRANSIENT,
-    })
+    _RETRIABLE_INIT_KINDS = frozenset(
+        {
+            MarketDataFailureKind.TIMEOUT,
+            MarketDataFailureKind.RATE_LIMIT,
+            MarketDataFailureKind.TRANSIENT,
+        }
+    )
 
     def __init__(
         self,
@@ -70,14 +281,20 @@ class CcxtOKXAdapter:
             "timeout": self._timeout_ms,
         }
         self._exchange = ccxt.okx(self._exchange_config)
-        self._max_init_retries = max_init_retries
-        self._init_retry_delay = init_retry_delay
         # Adapter-local traffic shaping. Orchestrator should not depend on limiter internals.
         self._global_limiter = AsyncLimiter(max_requests_per_second, 1)
         self._candles_limiter = AsyncLimiter(16, 1)
         self._extra_data_limiter = AsyncLimiter(3, 1)
         self._instrument_limiters: dict[str, AsyncLimiter] = {}
         self._funding_instrument_limiters: dict[str, AsyncLimiter] = {}
+        self._history_transport = OKXClient(
+            timeout=int(effective_timeout_seconds),
+            instrument_limiter=self._instrument_limiters,
+            public_limiter=self._global_limiter,
+        )
+        self._history_client = _OKXHistoryCandlesClient(request=self._history_request)
+        self._max_init_retries = max_init_retries
+        self._init_retry_delay = init_retry_delay
         self._init_metrics: dict[str, Any] = {
             "load_markets_attempts": 0,
             "load_markets_retries": 0,
@@ -101,8 +318,22 @@ class CcxtOKXAdapter:
         try:
             await self._exchange.close()
         except Exception:
-            logger.debug("Ignoring error closing exchange during retry cleanup", exc_info=True)
+            logger.debug(
+                "Ignoring error closing exchange during retry cleanup", exc_info=True
+            )
         self._exchange = ccxt.okx(self._exchange_config)
+
+    async def _history_request(
+        self, *, path: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        async with self._candles_limiter:
+            return await self._history_transport._request(
+                "GET",
+                path,
+                params=params,
+                symbol=str(params["instId"]),
+                is_public=True,
+            )
 
     def snapshot_init_metrics(self) -> dict[str, Any]:
         return dict(self._init_metrics)
@@ -140,6 +371,9 @@ class CcxtOKXAdapter:
                     attempt + 1,
                     elapsed_ms,
                 )
+                history_transport = getattr(self, "_history_transport", None)
+                if history_transport is not None:
+                    await history_transport.__aenter__()
                 return self
             except Exception as exc:
                 elapsed_ms = (time.monotonic() - t0) * 1000
@@ -187,11 +421,16 @@ class CcxtOKXAdapter:
         try:
             await self._exchange.close()
         except Exception:
-            logger.debug("Ignoring error closing exchange after exhausted retries", exc_info=True)
+            logger.debug(
+                "Ignoring error closing exchange after exhausted retries", exc_info=True
+            )
         assert last_error is not None
         raise last_error
 
     async def __aexit__(self, *exc: Any) -> None:
+        history_transport = getattr(self, "_history_transport", None)
+        if history_transport is not None:
+            await history_transport.__aexit__(*exc)
         await self._exchange.close()
 
     async def get_candles(
@@ -237,7 +476,7 @@ class CcxtOKXAdapter:
             for r in rows
         ]
 
-    async def get_history_candles(
+    async def _get_history_candles_via_ccxt_legacy(
         self,
         *,
         inst_id: str,
@@ -337,6 +576,21 @@ class CcxtOKXAdapter:
 
         return [collected[ts] for ts in sorted(collected)]
 
+    async def get_history_candles(
+        self,
+        *,
+        inst_id: str,
+        bar: str = "1m",
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> list[dict[str, Any]]:
+        return await self._history_client.fetch_range(
+            inst_id=inst_id,
+            bar=bar,
+            start_ts_ms=start_ts_ms,
+            end_ts_ms=end_ts_ms,
+        )
+
     async def get_instruments(self, inst_type: str = "SWAP") -> list[dict[str, Any]]:
         ccxt_type_map = {"SWAP": "swap", "SPOT": "spot", "FUTURES": "future"}
         target = ccxt_type_map.get(inst_type.upper(), inst_type.lower())
@@ -345,20 +599,22 @@ class CcxtOKXAdapter:
             if mkt.get("type") != target or mkt.get("quote") != "USDT":
                 continue
             info = mkt.get("info", {})
-            results.append({
-                "instId": info.get("instId", mkt.get("id")),
-                "instType": inst_type.upper(),
-                "baseCcy": mkt.get("base"),
-                "quoteCcy": mkt.get("quote"),
-                "settleCcy": info.get("settleCcy"),
-                "ctType": info.get("ctType"),
-                "ctVal": info.get("ctVal"),
-                "state": info.get("state"),
-                "listTime": info.get("listTime"),
-                "minSz": info.get("minSz"),
-                "maxSz": info.get("maxSz"),
-                "minNotional": info.get("minNotional"),
-            })
+            results.append(
+                {
+                    "instId": info.get("instId", mkt.get("id")),
+                    "instType": inst_type.upper(),
+                    "baseCcy": mkt.get("base"),
+                    "quoteCcy": mkt.get("quote"),
+                    "settleCcy": info.get("settleCcy"),
+                    "ctType": info.get("ctType"),
+                    "ctVal": info.get("ctVal"),
+                    "state": info.get("state"),
+                    "listTime": info.get("listTime"),
+                    "minSz": info.get("minSz"),
+                    "maxSz": info.get("maxSz"),
+                    "minNotional": info.get("minNotional"),
+                }
+            )
         return results
 
     async def get_funding_rates(self, symbols: list[str]) -> dict[str, dict[str, Any]]:

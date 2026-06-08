@@ -79,12 +79,24 @@ class GlobalRegime:
             "basket_adx_median": self.basket_adx_median,
             "basket_atr_close_median": self.basket_atr_close_median,
             "basket_ema_slope_median": self.basket_ema_slope_median,
-            "regime_1d": self.tf_regimes.get("1D", TFRegime("1D", RegimeType.RANGE, 0.5, 0, 0, 0)).regime.value,
-            "regime_1d_strength": self.tf_regimes.get("1D", TFRegime("1D", RegimeType.RANGE, 0.5, 0, 0, 0)).strength,
-            "regime_4h": self.tf_regimes.get("4H", TFRegime("4H", RegimeType.RANGE, 0.5, 0, 0, 0)).regime.value,
-            "regime_4h_strength": self.tf_regimes.get("4H", TFRegime("4H", RegimeType.RANGE, 0.5, 0, 0, 0)).strength,
-            "regime_1h": self.tf_regimes.get("1H", TFRegime("1H", RegimeType.RANGE, 0.5, 0, 0, 0)).regime.value,
-            "regime_1h_strength": self.tf_regimes.get("1H", TFRegime("1H", RegimeType.RANGE, 0.5, 0, 0, 0)).strength,
+            "regime_1d": self.tf_regimes.get(
+                "1D", TFRegime("1D", RegimeType.RANGE, 0.5, 0, 0, 0)
+            ).regime.value,
+            "regime_1d_strength": self.tf_regimes.get(
+                "1D", TFRegime("1D", RegimeType.RANGE, 0.5, 0, 0, 0)
+            ).strength,
+            "regime_4h": self.tf_regimes.get(
+                "4H", TFRegime("4H", RegimeType.RANGE, 0.5, 0, 0, 0)
+            ).regime.value,
+            "regime_4h_strength": self.tf_regimes.get(
+                "4H", TFRegime("4H", RegimeType.RANGE, 0.5, 0, 0, 0)
+            ).strength,
+            "regime_1h": self.tf_regimes.get(
+                "1H", TFRegime("1H", RegimeType.RANGE, 0.5, 0, 0, 0)
+            ).regime.value,
+            "regime_1h_strength": self.tf_regimes.get(
+                "1H", TFRegime("1H", RegimeType.RANGE, 0.5, 0, 0, 0)
+            ).strength,
         }
 
 
@@ -334,8 +346,14 @@ class RegimeClassifier:
         if "4H" in tf_data and not tf_data["4H"].empty:
             basket_df = tf_data["4H"][tf_data["4H"]["symbol"].isin(basket_symbols)]
             if not basket_df.empty:
-                global_regime.basket_adx_median = float(basket_df["adx_median"].median())
-                global_regime.basket_atr_close_median = float(basket_df["atr_close_ratio"].median())
-                global_regime.basket_ema_slope_median = float(basket_df["ema_slope"].median())
+                global_regime.basket_adx_median = float(
+                    basket_df["adx_median"].median()
+                )
+                global_regime.basket_atr_close_median = float(
+                    basket_df["atr_close_ratio"].median()
+                )
+                global_regime.basket_ema_slope_median = float(
+                    basket_df["ema_slope"].median()
+                )
 
         return global_regime

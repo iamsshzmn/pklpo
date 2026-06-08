@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from src.candles.domain.repair import RepairOutcome
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -43,6 +45,16 @@ class RepairResult:
     remaining_requested_bars: int = 0
     verification_method: RepairVerificationMethod | None = None
     watermark_updated: bool = False
+    received_bars: int = 0
+    remaining_missing_before: int = 0
+    remaining_missing_after: int = 0
+    progress: int = 0
+    api_fill_ratio: float = 0.0
+    write_success_ratio: float = 0.0
+    outcome: RepairOutcome = RepairOutcome.SUCCESS
+    blocked: bool = False
+    blocked_reason: str | None = None
+    blocked_cause: str | None = None
 
     def to_summary(
         self,
@@ -70,7 +82,7 @@ class RepairPreview:
     gap_tasks: int
     requested_bars: int
     expected_iteration_count: int
-    guardrail_risk: bool
+    guardrail_risk: str  # "ok" | "medium" | "high"
     guardrail_violations: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:

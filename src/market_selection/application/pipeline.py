@@ -54,7 +54,9 @@ class MarketSelectionPipeline:
             adx_trend_threshold=config.regime.adx_trend_threshold,
             adx_range_threshold=config.regime.adx_range_threshold,
         )
-        self.regime_classifier = RegimeClassifier(build_regime_classifier_config(config))
+        self.regime_classifier = RegimeClassifier(
+            build_regime_classifier_config(config)
+        )
         self.scoring_engine = ScoringEngine(build_scoring_config(config))
         self.universe_manager = UniverseManager(build_universe_config(config))
         self.write_lock_timeout_ms = 10_000
@@ -88,7 +90,9 @@ class MarketSelectionPipeline:
             start_time=time.time(),
             config_hash=self.config.config_hash(),
         )
-        logger.info("Starting market selection pipeline (config_hash=%s)", ctx.config_hash)
+        logger.info(
+            "Starting market selection pipeline (config_hash=%s)", ctx.config_hash
+        )
 
         try:
             early_result = await self._initialize_run(ctx)
@@ -98,7 +102,9 @@ class MarketSelectionPipeline:
             regime = await self._prepare_regime(ctx)
             state = await self._process_timeframes(ctx, regime)
 
-            fallback_result = await self._fallback_for_systemic_outage(ctx, regime, state)
+            fallback_result = await self._fallback_for_systemic_outage(
+                ctx, regime, state
+            )
             if fallback_result is not None:
                 return fallback_result
 
@@ -117,7 +123,9 @@ class MarketSelectionPipeline:
                     ctx.start_time,
                 )
 
-            universe, global_flags = await self.steps.select_universe(final_scores, regime)
+            universe, global_flags = await self.steps.select_universe(
+                final_scores, regime
+            )
             should_fallback, fallback_reason = self.universe_manager.should_fallback(
                 len(universe)
             )
@@ -178,7 +186,9 @@ class MarketSelectionPipeline:
             regime.strength,
             regime.stale,
         )
-        await self.persistence.insert_regime_history(ctx.ts_eval, regime, ctx.config_hash)
+        await self.persistence.insert_regime_history(
+            ctx.ts_eval, regime, ctx.config_hash
+        )
         await self.session.commit()
         return regime
 
@@ -204,6 +214,7 @@ class MarketSelectionPipeline:
         logger.info("Processing %s...", timeframe)
         quality_results = await self.steps.compute_quality_gate(timeframe, ctx.ts_eval)
         quality_by_symbol = {result.symbol: result for result in quality_results}
+        await self._apply_feature_eligibility_filter(timeframe, quality_results)
         state.quality_results[timeframe] = quality_by_symbol
 
         eligible = [result for result in quality_results if result.eligible]
@@ -231,7 +242,9 @@ class MarketSelectionPipeline:
             regime.regime,
             quality_scores,
         )
-        scores = self._apply_volatile_filter(timeframe, regime, quality_by_symbol, scores)
+        scores = self._apply_volatile_filter(
+            timeframe, regime, quality_by_symbol, scores
+        )
         state.tf_scores[timeframe] = {score.symbol: score.score_tf for score in scores}
 
         await self.persistence.upsert_scores_tf(
@@ -245,6 +258,28 @@ class MarketSelectionPipeline:
             window_days=self.config.windows_days.get(timeframe, 30),
         )
         await self.session.commit()
+
+    async def _apply_feature_eligibility_filter(
+        self,
+        timeframe: str,
+        quality_results: list[QualityResult],
+    ) -> None:
+        from src.candles.interfaces import eligibility as eligibility_interface
+
+        for result in quality_results:
+            if not result.eligible:
+                continue
+            eligibility = await eligibility_interface.get_state(result.symbol, timeframe)
+            if eligibility is not None and eligibility.can_score:
+                continue
+            result.eligible = False
+            state = "missing" if eligibility is None else eligibility.state
+            logger.info(
+                "Market selection eligibility blocked %s/%s: state=%s",
+                result.symbol,
+                timeframe,
+                state,
+            )
 
     def _apply_volatile_filter(
         self,

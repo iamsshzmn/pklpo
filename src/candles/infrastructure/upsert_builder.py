@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.sql import func
 
@@ -20,7 +20,7 @@ def build_upsert_set_clause(
     table_columns: list[Column],
     coalesce_fields: frozenset[str],
     skip_fields: frozenset[str] | None = None,
-) -> dict[str, any]:
+) -> dict[str, Any]:
     """Строит SET clause для ON CONFLICT DO UPDATE.
 
     Политика DO_NOT_OVERWRITE_NON_NULL_WITH_NULL:
@@ -40,7 +40,7 @@ def build_upsert_set_clause(
     if skip_fields is None:
         skip_fields = frozenset()
 
-    update_dict: dict[str, any] = {}
+    update_dict: dict[str, Any] = {}
 
     for col in table_columns:
         if col.name in skip_fields:
@@ -50,9 +50,7 @@ def build_upsert_set_clause(
             update_dict[col.name] = func.now()
         elif col.name in coalesce_fields:
             # COALESCE: не затираем существующее значение NULL'ом
-            update_dict[col.name] = func.coalesce(
-                stmt.excluded[col.name], col
-            )
+            update_dict[col.name] = func.coalesce(stmt.excluded[col.name], col)
         else:
             # Остальные поля (включая метаданные) перезаписываем
             update_dict[col.name] = stmt.excluded[col.name]
@@ -61,22 +59,26 @@ def build_upsert_set_clause(
 
 
 # Стандартные наборы полей для market_data_ext
-MARKET_DATA_EXT_COALESCE_FIELDS = frozenset({
-    "open_interest",
-    "oi_change_24h",
-    "oi_change_pct_24h",
-    "funding_rate",
-    "next_funding_time",
-    "funding_interval_hours",
-    "bid_imbalance",
-    "ask_imbalance",
-    "spread_bps",
-})
+MARKET_DATA_EXT_COALESCE_FIELDS = frozenset(
+    {
+        "open_interest",
+        "oi_change_24h",
+        "oi_change_pct_24h",
+        "funding_rate",
+        "next_funding_time",
+        "funding_interval_hours",
+        "bid_imbalance",
+        "ask_imbalance",
+        "spread_bps",
+    }
+)
 
-MARKET_DATA_EXT_SKIP_FIELDS = frozenset({
-    "id",
-    "created_at",
-    "symbol",
-    "timeframe",
-    "bar_timestamp",
-})
+MARKET_DATA_EXT_SKIP_FIELDS = frozenset(
+    {
+        "id",
+        "created_at",
+        "symbol",
+        "timeframe",
+        "bar_timestamp",
+    }
+)

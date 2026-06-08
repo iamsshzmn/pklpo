@@ -98,7 +98,9 @@ async def validate_schema_expectations() -> tuple[bool, list[str]]:
         for label, candidates in table_groups.items():
             table = await _resolve_table(session, candidates)
             if table is None:
-                issues.append(f"missing table group {label}: expected one of {candidates}")
+                issues.append(
+                    f"missing table group {label}: expected one of {candidates}"
+                )
                 continue
             resolved_tables[label] = table
 

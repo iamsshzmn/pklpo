@@ -32,6 +32,20 @@ DEFAULT_SWAP_REPAIR_XCOM_KEYS = (
     "watermark_updated",
 )
 
+OPTIONAL_SWAP_REPAIR_OUTCOME_VALUES = ("success", "partial", "empty", "fail")
+OPTIONAL_SWAP_REPAIR_INT_KEYS = (
+    "received_bars",
+    "remaining_missing_before",
+    "remaining_missing_after",
+    "progress",
+)
+OPTIONAL_SWAP_REPAIR_FLOAT_KEYS = (
+    "api_fill_ratio",
+    "write_success_ratio",
+)
+OPTIONAL_SWAP_REPAIR_BOOL_KEYS = ("blocked",)
+OPTIONAL_SWAP_REPAIR_STR_KEYS = ("blocked_reason", "blocked_cause")
+
 DEFAULT_SWAP_REPAIR_TIMEFRAMES = ("1m", "1H", "4H", "1D", "1W", "1M")
 DEFAULT_SWAP_REPAIR_WINDOW_HOURS = 6
 DEFAULT_SWAP_REPAIR_SYMBOL = "BTC-USDT-SWAP"
@@ -116,11 +130,9 @@ def utc_now_ts_ms() -> int:
 
 
 def _normalize_swap_repair_symbol(value: Any) -> str:
-    symbol = str(value or DEFAULT_SWAP_REPAIR_SYMBOL)
-    if symbol != DEFAULT_SWAP_REPAIR_SYMBOL:
-        raise ValueError(
-            f"Unsupported repair symbol: {symbol}. Expected one of: {DEFAULT_SWAP_REPAIR_SYMBOL}"
-        )
+    symbol = str(value or DEFAULT_SWAP_REPAIR_SYMBOL).strip()
+    if not symbol:
+        raise ValueError("swap_repair field 'symbol' must be a non-empty OKX instId (e.g. BTC-USDT-SWAP)")
     return symbol
 
 
@@ -382,6 +394,46 @@ def validate_swap_repair_xcom_payload(
             if normalized.get("verification_method") != "gap-detection":
                 raise ValueError(
                     f"{context_name} apply run must use gap-detection verification"
+                )
+
+    if "outcome" in normalized and normalized["outcome"] is not None:
+        outcome_value = normalized["outcome"]
+        if (
+            not isinstance(outcome_value, str)
+            or outcome_value not in OPTIONAL_SWAP_REPAIR_OUTCOME_VALUES
+        ):
+            raise ValueError(
+                f"{context_name} outcome must be one of {OPTIONAL_SWAP_REPAIR_OUTCOME_VALUES}, "
+                f"got {outcome_value!r}"
+            )
+    for key in OPTIONAL_SWAP_REPAIR_INT_KEYS:
+        if key in normalized and normalized[key] is not None:
+            normalized[key] = coerce_int(
+                normalized[key],
+                field_name=key,
+                context_name=context_name,
+            )
+    for key in OPTIONAL_SWAP_REPAIR_FLOAT_KEYS:
+        if key in normalized and normalized[key] is not None:
+            value = normalized[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(
+                    f"{context_name} {key} must be numeric, got {type(value).__name__}"
+                )
+            normalized[key] = float(value)
+    for key in OPTIONAL_SWAP_REPAIR_BOOL_KEYS:
+        if key in normalized and normalized[key] is not None:
+            value = normalized[key]
+            if not isinstance(value, bool):
+                raise ValueError(
+                    f"{context_name} {key} must be a boolean, got {type(value).__name__}"
+                )
+    for key in OPTIONAL_SWAP_REPAIR_STR_KEYS:
+        if key in normalized and normalized[key] is not None:
+            value = normalized[key]
+            if not isinstance(value, str):
+                raise ValueError(
+                    f"{context_name} {key} must be a string, got {type(value).__name__}"
                 )
     return normalized
 

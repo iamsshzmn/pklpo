@@ -92,7 +92,11 @@ def _normalize_column_names(result_df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with normalized column names
     """
-    # Unify column names (single rename mapping)
+    # Unify column names (single rename mapping).
+    # NOTE: canonical name → alias mapping lives in schema/name_aliases.py (NAME_ALIASES).
+    # This local map handles post-calculation column aliases that arrive AFTER the
+    # pandas_ta stage; they use different naming conventions than PANDAS_TA_TO_CANONICAL
+    # and must not be merged without verification.
     column_rename_map = {
         # Bollinger Bands
         "bbands_upper": "bb_upper",

@@ -459,6 +459,26 @@ Instead of storing current state, store the **sequence of events** that produced
 - Use `--apply` flag to execute actual changes.
 - Always print the execution plan before any destructive action.
 
+### Data Quality — Fail-Loud Policy
+
+*(Added: features-prune-v2 V1, 2026-06-08)*
+
+- **Data quality anomalies are terminal, not silent.** Conditions listed below must raise
+  an exception or return a hard failure — never silently zero-fill, replace with NaN, or
+  continue with degraded data.
+- **Terminal conditions** (gate_validator is the enforcement point):
+  - `len(df) < GateConfig.min_rows` before DB write
+  - `nan_ratio(feature_group) > GateConfig.max_nan_ratio` before DB write
+  - `fill_rate < GateConfig.min_fill_rate` before DB write
+  - `coverage_pct < 99.5` (check `candle_eligibility`, do not join features)
+- **NaN outside bootstrap period** is a bug, not expected output. Log as ERROR.
+- **Ambiguous anomalies** (partial data, unknown instrument): log as WARNING and skip
+  that instrument — do not write partial rows to `indicators_p`.
+- **ORDER BY requirement**: every SQL read from `indicators_p`, `candles_swap_1h`, or
+  `features_*` tables that feeds calculation must ORDER BY `(open_time, instrument_id)`
+  or equivalent stable key. Reads without ORDER BY must include an explicit comment
+  explaining why order is irrelevant (e.g., scalar aggregates).
+
 ---
 
 ## 13. Current Tasks
@@ -529,6 +549,21 @@ Instead of storing current state, store the **sequence of events** that produced
 
 ---
 
+### CT-006: Bootstrap State Reconciliation ✅ DONE 2026-05-15
+
+**Description:** `ops.swap_ohlcv_bootstrap_state` could permanently diverge from `swap_ohlcv_p`. Once `bootstrap_completed=true` was set, the system never re-verified actual row counts — returning hardcoded `coverage=100%, missing=0` from a stale cache.
+
+**Root cause:** Early-exit in `RunBootstrapUseCase.run()` trusted the state table unconditionally. After any row deletion from `swap_ohlcv_p` (cleanup, partition drop), the state remained stuck at `completed`.
+
+**Fixed in `feat/okx-swap-repair-unified`:**
+- `use_cases.py`: early-exit now performs live `count_candles` against `swap_ohlcv_p` before returning. If `live_actual < expected_bars`, state is downgraded to `incomplete` and re-fetch starts from `target_end_ts`.
+- `interfaces/bootstrap.py`: `init_bootstrap_state` also reconciles `bootstrap_completed=True` pairs with live counts. New `reconcile_bootstrap_state()` for operational use.
+- Tests: `test_completed_state_reconciles_when_db_diverges`, `test_completed_state_reconciles_partial_divergence`.
+
+**Invariant established:** `swap_ohlcv_p` is the source of truth. `bootstrap_state` is cache + checkpoint. See `ARCHITECTURE.md §13`.
+
+---
+
 ## 14. Future Tasks
 
 ### FT-001: Unified Execution Path (Backtest / Paper / Live)
@@ -579,7 +614,11 @@ Add an ML-ready feature export path:
 
 ### FT-007: ADR Archive
 
-Establish `docs/adr/` directory. Write retroactive ADRs for:
+ADRs live in `Captains_Logbook/done/YYYY/MM/adr/`. Written so far:
+- ✅ `ADR-2026-05-03` — last N closed bars architecture
+- ✅ `ADR-2026-05-14` — swap_ohlcv_p UTC storage calendar
+
+Retroactive ADRs still TODO:
 - Choice of PostgreSQL over ClickHouse for indicators storage
 - Pandas-based calculation pipeline vs streaming (Faust / Kafka)
 - Watermark-based incremental update strategy
@@ -637,5 +676,5 @@ Establish `docs/adr/` directory. Write retroactive ADRs for:
 
 ---
 
-*Last updated: 2026-03-17*
+*Last updated: 2026-05-15*
 *Related documents: `ARCHITECTURE_GUIDE.md` (principles), `TARGET_ARCHITECTURE.md`, `CLAUDE.md`, `ROADMAP.md`, `src/FEATURES_DEPENDENCIES.md`*

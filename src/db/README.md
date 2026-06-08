@@ -83,7 +83,8 @@ src/db/
 | `170_monitoring_metrics` | Система мониторинга и метрик | `migrate_monitoring_metrics.py` |
 | `180_swap_ohlcv` | Партиционированная `swap_ohlcv` | `migrate_create_swap_ohlcv.py` |
 | `190_features_table` | Таблица `features` для индикаторов | `migrate_create_features_table.py` |
-| `210_data_retention` | Политика хранения данных (2 дня) | `migrate_add_data_retention.py` |
+| `210_data_retention` | Legacy политика хранения данных (2 дня, заменена 340) | `migrate_add_data_retention.py` |
+| `340_swap_ohlcv_retention_policy` | Per-timeframe retention policy и cleanup audit для `swap_ohlcv_p` | `migrate_swap_ohlcv_retention_policy.py` |
 | `230_expand_indicators_precision` | Расширение точности до `NUMERIC(38,12)` | `migrate_expand_indicators_precision.py` |
 | `240_combination_features` | Таблица `combination_features` | `migrate_create_combination_features.py` |
 | `250_market_data_ext` | Таблица `market_data_ext` (OI, funding, L2) | `migrate_create_market_data_ext.py` |

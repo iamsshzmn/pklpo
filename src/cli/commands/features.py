@@ -572,7 +572,9 @@ async def _refill_null_indicators(
 
     # Validate indicator names to avoid SQL injection.
     valid_columns = {
-        name for name in FEATURE_SPECS if IndicatorStorageContract.is_feature_column(name)
+        name
+        for name in FEATURE_SPECS
+        if IndicatorStorageContract.is_feature_column(name)
     }
     invalid_inds = [ind for ind in null_indicators if ind not in valid_columns]
     if invalid_inds:
@@ -891,9 +893,13 @@ async def _process_symbol_timeframe(
             # Ensure ts exists in seconds.
             if "ts" not in ind_df.columns and "timestamp" in features_df.columns:
                 ind_df["ts"] = (
-                features_df["timestamp"].astype("int64") // 1000
+                    features_df["timestamp"].astype("int64") // 1000
                 ).astype("int64")
-            indicator_cols = [c for c in ind_df.columns if c not in {"ts", "symbol", "timeframe", "timestamp"}]
+            indicator_cols = [
+                c
+                for c in ind_df.columns
+                if c not in {"ts", "symbol", "timeframe", "timestamp"}
+            ]
             await bootstrap.storage_gateway.ensure_indicator_columns(
                 session,
                 INDICATORS_TABLE_NAME,

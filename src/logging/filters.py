@@ -63,8 +63,7 @@ class SensitiveDataFilter(logging.Filter):
 
         # Compile patterns for performance
         self.compiled_patterns = [
-            re.compile(pattern, re.IGNORECASE)
-            for pattern in self.sensitive_patterns
+            re.compile(pattern, re.IGNORECASE) for pattern in self.sensitive_patterns
         ]
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -95,7 +94,7 @@ class SensitiveDataFilter(logging.Filter):
 
     def _sanitize_dict(self, data: dict[str, Any]) -> dict[str, Any]:
         """Sanitize dictionary by masking sensitive keys."""
-        sanitized = {}
+        sanitized: dict[str, Any] = {}
 
         for key, value in data.items():
             if any(sensitive in key.lower() for sensitive in self.sensitive_keys):

@@ -40,6 +40,35 @@ sys.path.insert(0, "/opt/airflow/project")
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
+
+def _normalize_async_database_uri(uri: str) -> str:
+    if uri.startswith("postgresql+asyncpg://"):
+        return uri
+    if uri.startswith("postgresql://"):
+        return uri.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if uri.startswith("postgres://"):
+        return uri.replace("postgres://", "postgresql+asyncpg://", 1)
+    return uri
+
+
+def _get_database_url() -> str:
+    from airflow.hooks.base import BaseHook
+
+    conn = BaseHook.get_connection("pklpo_db")
+    if not conn:
+        raise RuntimeError(
+            "DATABASE_URL is not configured. Set Airflow Connection 'pklpo_db'."
+        )
+    return _normalize_async_database_uri(conn.get_uri())
+
+
+def _redact_database_url(uri: str) -> str:
+    scheme, separator, rest = uri.partition("://")
+    if not separator or "@" not in rest:
+        return uri
+    return f"{scheme}{separator}***@{rest.rsplit('@', 1)[1]}"
+
+
 # Import alerting callbacks through the public features bootstrap boundary.
 try:
     from src.features.bootstrap import create_feature_airflow_callbacks
@@ -98,16 +127,12 @@ def features_run_task(
 
     print("\n🔧 Настройка переменных окружения...")
     env = os.environ.copy()
-    env["DATABASE_URL"] = (
-        "postgresql+asyncpg://pklpo_user:strongpassword@pklpo_db:5432/pklpo"
-    )
+    env["DATABASE_URL"] = _get_database_url()
     env["FEATURES_LOG_FILE"] = "/tmp/pklpo/features.log"
     # Важно: гарантируем, что используется смонтированный код проекта, а не установленный пакет
     env["PYTHONPATH"] = "/opt/airflow/project"
     # Для тестов с малым количеством данных (599 свечей): ОТКЛЮЧАЕМ gate validation
     # ВНИМАНИЕ: Это только для тестирования! В production нужны полноценные данные
-    env["FEATURES_MIN_FILL_RATE"] = "0.0"  # Разрешить 0% заполнения
-    env["FEATURES_MAX_NAN_RATIO"] = "1.0"  # Разрешить 100% NaN
     # Добавляем текущую директорию в PYTHONPATH для корректного импорта модулей
     if "PYTHONPATH" in env:
         env["PYTHONPATH"] = f"/opt/airflow/project:{env['PYTHONPATH']}"
@@ -119,11 +144,9 @@ def features_run_task(
     env["TQDM_DISABLE"] = "1"
 
     print(f"✅ PYTHONPATH: {env['PYTHONPATH']}")
-    print(f"✅ DATABASE_URL: {env['DATABASE_URL']}")
+    print(f"✅ DATABASE_URL: {_redact_database_url(env['DATABASE_URL'])}")
     print(f"✅ FEATURES_LOG_FILE: {env['FEATURES_LOG_FILE']}")
     print(f"✅ FEATURES_VERBOSE: {env['FEATURES_VERBOSE']}")
-    print(f"✅ FEATURES_MIN_FILL_RATE: {env.get('FEATURES_MIN_FILL_RATE', 'NOT SET')}")
-    print(f"✅ FEATURES_MAX_NAN_RATIO: {env.get('FEATURES_MAX_NAN_RATIO', 'NOT SET')}")
 
     print("\n📁 Создание временных директорий...")
     # Гарантируем доступность временных директорий
@@ -195,6 +218,24 @@ def features_run_task(
     print(f"   - timeframes: {timeframes}")
     print(f"   - limit: {normalized_limit} (None = все свечи)")
     print(f"   - timestamp: {datetime.now()}")
+
+    eligible_by_tf = _run_async(
+        _resolve_feature_eligible_work_items(normalized_symbols, timeframes)
+    )
+    timeframes = [tf for tf in timeframes if eligible_by_tf.get(tf)]
+    if normalized_symbols is not None:
+        eligible_symbols = sorted(
+            {symbol for tf_symbols in eligible_by_tf.values() for symbol in tf_symbols}
+        )
+        normalized_symbols = ",".join(eligible_symbols) if eligible_symbols else None
+    if not timeframes or (symbols is not None and normalized_symbols is None):
+        print("⚠️ Feature eligibility blocked all requested work")
+        return {
+            "status": "skipped",
+            "reason": "feature_eligibility_blocked",
+            "eligible_by_tf": eligible_by_tf,
+        }
+
     print("\n🔨 Формирование команды...")
     # Запуск с параметрами (по умолчанию без лимита — все доступные бары)
     # Используем все доступные фичи (specs=None означает все доступные)
@@ -458,9 +499,7 @@ def smoke_validate_features_task():
 
     print("\n🔧 Настройка переменных окружения...")
     env = os.environ.copy()
-    env["DATABASE_URL"] = (
-        "postgresql+asyncpg://pklpo_user:strongpassword@pklpo_db:5432/pklpo"
-    )
+    env["DATABASE_URL"] = _get_database_url()
     env["FEATURES_LOG_FILE"] = "/tmp/pklpo/features.log"
     # Обеспечиваем импорт актуального кода проекта
     env["PYTHONPATH"] = "/opt/airflow/project"
@@ -474,7 +513,7 @@ def smoke_validate_features_task():
     env["FEATURES_VERBOSE"] = "true"
 
     print(f"✅ PYTHONPATH: {env['PYTHONPATH']}")
-    print(f"✅ DATABASE_URL: {env['DATABASE_URL']}")
+    print(f"✅ DATABASE_URL: {_redact_database_url(env['DATABASE_URL'])}")
     print(f"✅ FEATURES_LOG_FILE: {env['FEATURES_LOG_FILE']}")
 
     print("\n📁 Создание временных директорий...")
@@ -609,6 +648,46 @@ def smoke_validate_features_task():
     print(f"   - Время выполнения: {duration:.2f} секунд")
     print(f"   - Время завершения: {datetime.now()}")
     print("=" * 80)
+
+
+def _run_async(coro):
+    import asyncio
+
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+async def _resolve_feature_eligible_work_items(
+    normalized_symbols: str | None,
+    timeframes: list[str],
+) -> dict[str, list[str]]:
+    from src.candles.interfaces import eligibility as eligibility_interface
+
+    requested_symbols = (
+        [item for item in normalized_symbols.split(",") if item]
+        if normalized_symbols is not None
+        else None
+    )
+    eligible_by_tf: dict[str, list[str]] = {}
+    for timeframe in timeframes:
+        if requested_symbols is None:
+            eligible_by_tf[timeframe] = await eligibility_interface.eligible_symbols(
+                timeframe
+            )
+            continue
+        eligible_symbols: list[str] = []
+        for symbol in requested_symbols:
+            record = await eligibility_interface.get_state(symbol, timeframe)
+            if record is None:
+                print(f"Feature eligibility missing for {symbol}/{timeframe} — skipping (fail close)")
+                continue
+            if record.can_compute_features:
+                eligible_symbols.append(symbol)
+        eligible_by_tf[timeframe] = eligible_symbols
+    return eligible_by_tf
 
 
 def combinations_run_task(
@@ -796,6 +875,8 @@ with DAG(
     features_run = PythonOperator(
         task_id="features_run",
         python_callable=features_run_task,
+        pool="compute_pool",
+        pool_slots=1,
         op_kwargs={
             # Позволяем переопределять через dag_run.conf, иначе берём из params
             "symbols": "{{ dag_run.conf.get('symbols', params.symbols) }}",
@@ -812,6 +893,8 @@ with DAG(
     combinations_run = PythonOperator(
         task_id="combinations_run",
         python_callable=combinations_run_task,
+        pool="compute_pool",
+        pool_slots=1,
         op_kwargs={
             "symbols": "{{ dag_run.conf.get('symbols', params.symbols) }}",
             "timeframes": "{{ dag_run.conf.get('timeframes', params.timeframes) }}",

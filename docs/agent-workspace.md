@@ -56,8 +56,6 @@ The shared hook source of truth is `agent_workspace/hooks/config.json`.
 
 | Hook | Script | Purpose |
 | --- | --- | --- |
-| Prompt safety | `agent_workspace/hooks/check_prompt.py` | Blocks clearly destructive command wording unless the prompt includes confirmation language |
-| Prompt enrichment | `agent_workspace/hooks/enrich_prompt.py` | Optional repo-aware hints keyed to current subsystems like migrations, features, candles, and Airflow |
 | Post-tool validation | `agent_workspace/hooks/post_tool_validate.py` | Runs `py_compile` and `ruff check` on changed Python files only |
 | Turn summary | `agent_workspace/hooks/turn_summary.py` | Prints a short `git status --short` summary at stop time |
 
@@ -71,13 +69,12 @@ Design rules for hooks in this repo:
 
 ## Claude Code Wiring
 
-`.claude/settings.json` wires these hook stages:
+`.claude/settings.json` currently wires these hook stages:
 
-- `UserPromptSubmit` for prompt safety and optional enrichment
 - `PostToolUse` for lightweight validation after write tools
 - `Stop` for a changed-file summary
 
-The enrichment hook is present but disabled in `agent_workspace/hooks/config.json`. Enable it only if the team wants extra repo hints on every prompt.
+Prompt-stage hooks are intentionally not connected in the current baseline.
 
 ## Repo-Backed Validation Commands
 
@@ -119,7 +116,6 @@ For a new hook:
 
 ## Assumptions And TODOs
 
-- TODO: confirm whether the team wants prompt enrichment enabled by default; it is currently disabled for minimal noise.
 - TODO: confirm whether Claude Code in this repo should validate additional write tools beyond `Write|Edit|MultiEdit`.
 - TODO: if CI adds a stable changed-files test command, prefer that over file-local `ruff` checks in the post-tool hook.
 

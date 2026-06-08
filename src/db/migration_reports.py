@@ -152,7 +152,9 @@ class MigrationReport:
             """
         )
         tracked_tables = (
-            await session.execute(tracked_tables_q, {"tracked_tables": list(TRACKED_TABLES)})
+            await session.execute(
+                tracked_tables_q, {"tracked_tables": list(TRACKED_TABLES)}
+            )
         ).fetchall()
 
         return {
@@ -326,7 +328,9 @@ class MigrationReport:
             """
         )
         stale_stats = (
-            await session.execute(stale_stats_q, {"tracked_tables": list(TRACKED_TABLES)})
+            await session.execute(
+                stale_stats_q, {"tracked_tables": list(TRACKED_TABLES)}
+            )
         ).fetchall()
 
         now = datetime.now()
@@ -485,7 +489,9 @@ class MigrationReport:
 
         if not filename:
             timestamp = self.timestamp.strftime("%Y%m%d_%H%M%S")
-            path = REPORTS_DIR / f"migration_report_{self.migration_id}_{timestamp}.json"
+            path = (
+                REPORTS_DIR / f"migration_report_{self.migration_id}_{timestamp}.json"
+            )
         else:
             path = Path(filename)
 
@@ -589,7 +595,12 @@ async def generate_system_health_report() -> dict[str, Any]:
 
             health_checks: list[dict[str, str]] = []
 
-            for table_name in ("ohlcv_p", "indicators_p", "instruments", "schema_migrations"):
+            for table_name in (
+                "ohlcv_p",
+                "indicators_p",
+                "instruments",
+                "schema_migrations",
+            ):
                 exists_q = text("SELECT to_regclass(:qualified_name) IS NOT NULL")
                 exists = bool(
                     (
@@ -674,6 +685,7 @@ async def generate_system_health_report() -> dict[str, Any]:
 
 
 if __name__ == "__main__":
+
     async def main() -> None:
         report = await generate_migration_report("140_operational_reliability", 1500)
         report.print_summary()

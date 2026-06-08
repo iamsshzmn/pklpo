@@ -6,8 +6,12 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from src.candles.infrastructure.adapters import build_market_data_adapter
+from src.candles.load_instruments import save_instruments_to_db
+
 if TYPE_CHECKING:
     from src.candles.ports import InstrumentCatalogQueryPort
+    from src.market_meta.ports import InstrumentRepositoryPort
 
 PRIORITY_SYMBOLS = ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
 
@@ -37,7 +41,9 @@ def resolve_instruments_cache_file(cache_dir: Path | None = None) -> Path:
     return target_dir / "instruments_list.json"
 
 
-def load_symbols_from_file(instruments_file: Path, *, logger: Any | None = None) -> list[str]:
+def load_symbols_from_file(
+    instruments_file: Path, *, logger: Any | None = None
+) -> list[str]:
     """Load a symbol list from JSON file, returning [] on invalid content."""
     if not instruments_file.exists():
         return []
@@ -50,9 +56,15 @@ def load_symbols_from_file(instruments_file: Path, *, logger: Any | None = None)
             logger.warning("Failed to read symbols from %s (%s)", instruments_file, exc)
         return []
 
+    if isinstance(payload, dict):
+        payload = payload.get("symbols", [])
+
     if not isinstance(payload, list):
         if logger is not None:
-            logger.warning("Invalid symbols payload in %s: expected list", instruments_file)
+            logger.warning(
+                "Invalid symbols payload in %s: expected list or dict with 'symbols' key",
+                instruments_file,
+            )
         return []
 
     symbols: list[str] = []
@@ -146,3 +158,50 @@ async def refresh_instruments_list(
         logger.info("  Removed: %s", len(removed))
 
     return new_symbols
+
+
+async def ensure_symbols_registered(
+    symbols: list[str],
+    *,
+    repository: InstrumentRepositoryPort,
+    logger: Any,
+) -> None:
+    """Register any curated symbols absent from the instruments table.
+
+    Fetches missing symbols from OKX API and upserts them.
+    Raises ValueError if a symbol is not on OKX — indicates typo or delisted instrument.
+    """
+    missing = await repository.find_missing_symbols(symbols)
+    if not missing:
+        logger.info(
+            "ensure_symbols_registered: all %d symbols already registered", len(symbols)
+        )
+        return
+
+    logger.info(
+        "ensure_symbols_registered: %d symbols missing from instruments table: %s",
+        len(missing),
+        missing,
+    )
+
+    async with build_market_data_adapter() as client:
+        okx_instruments = await client.get_instruments("SWAP")
+
+    okx_by_symbol = {
+        item["instId"]: item for item in okx_instruments if item.get("instId")
+    }
+    not_on_okx = [s for s in missing if s not in okx_by_symbol]
+    if not_on_okx:
+        raise ValueError(
+            f"Cannot register symbols — not found on OKX (typo or delisted): {not_on_okx}. "
+            "Remove them from src/candles/instruments_list.json or check the symbol name."
+        )
+
+    to_save = [okx_by_symbol[s] for s in missing]
+    new_count, updated_count = await save_instruments_to_db(to_save, "SWAP")
+    logger.info(
+        "ensure_symbols_registered: registered %d symbols (inserted=%d, updated=%d)",
+        len(missing),
+        new_count,
+        updated_count,
+    )

@@ -129,13 +129,15 @@ async def _load_ohlcv(
     try:
         async with get_db_session() as session:
             limit_clause = f"LIMIT {limit}" if limit else ""
-            query = text(f"""
+            query = text(
+                f"""
                 SELECT timestamp, open, high, low, close, volume
                 FROM swap_ohlcv_p
                 WHERE symbol = :symbol AND timeframe = :timeframe
                 ORDER BY timestamp ASC
                 {limit_clause}
-            """)
+            """
+            )
             result = await session.execute(
                 query, {"symbol": symbol, "timeframe": timeframe}
             )

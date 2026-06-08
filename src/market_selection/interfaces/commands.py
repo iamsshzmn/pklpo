@@ -146,7 +146,9 @@ async def _get_status() -> dict:
     engine = get_async_engine()
 
     async with AsyncSession(engine) as session:
-        result = await session.execute(text("""
+        result = await session.execute(
+            text(
+                """
             SELECT
                 ts_version,
                 ts_eval,
@@ -160,21 +162,25 @@ async def _get_status() -> dict:
             FROM market_universe_versions
             ORDER BY ts_version DESC
             LIMIT 5
-        """))
+        """
+            )
+        )
 
         versions = []
         for row in result.fetchall():
-            versions.append({
-                "ts_version": row[0],
-                "ts_eval": row[1],
-                "status": row[2],
-                "universe_size": row[3],
-                "regime": row[4],
-                "strength": row[5],
-                "execution_time": row[6],
-                "config_hash": row[7],
-                "created_at": str(row[8]) if row[8] else None,
-            })
+            versions.append(
+                {
+                    "ts_version": row[0],
+                    "ts_eval": row[1],
+                    "status": row[2],
+                    "universe_size": row[3],
+                    "regime": row[4],
+                    "strength": row[5],
+                    "execution_time": row[6],
+                    "config_hash": row[7],
+                    "created_at": str(row[8]) if row[8] else None,
+                }
+            )
 
         return {"versions": versions}
 
@@ -190,13 +196,17 @@ async def _explain_symbol(symbol: str) -> dict:
 
     async with AsyncSession(engine) as session:
         # Get latest universe version
-        version_result = await session.execute(text("""
+        version_result = await session.execute(
+            text(
+                """
             SELECT ts_version, ts_eval
             FROM market_universe_versions
             WHERE status IN ('published', 'fallback_prev')
             ORDER BY ts_version DESC
             LIMIT 1
-        """))
+        """
+            )
+        )
         version_row = version_result.fetchone()
 
         if not version_row:
@@ -205,18 +215,25 @@ async def _explain_symbol(symbol: str) -> dict:
         ts_version, ts_eval = version_row
 
         # Check if symbol is in universe
-        universe_result = await session.execute(text("""
+        universe_result = await session.execute(
+            text(
+                """
             SELECT final_score, rank, best_tf, worst_tf,
                    score_4h, score_1h, score_15m, score_5m,
                    reason_flags, penalty_applied
             FROM market_universe
             WHERE ts_version = :ts_version AND symbol = :symbol
-        """), {"ts_version": ts_version, "symbol": symbol})
+        """
+            ),
+            {"ts_version": ts_version, "symbol": symbol},
+        )
 
         universe_row = universe_result.fetchone()
 
         # Get TF scores
-        scores_result = await session.execute(text("""
+        scores_result = await session.execute(
+            text(
+                """
             SELECT
                 timeframe,
                 score_tf,
@@ -229,26 +246,31 @@ async def _explain_symbol(symbol: str) -> dict:
             FROM market_scores_tf
             WHERE ts_eval = :ts_eval AND symbol = :symbol
             ORDER BY timeframe
-        """), {"ts_eval": ts_eval, "symbol": symbol})
+        """
+            ),
+            {"ts_eval": ts_eval, "symbol": symbol},
+        )
 
         tf_scores = []
         for row in scores_result.fetchall():
-            tf_scores.append({
-                "timeframe": row[0],
-                "score_tf": row[1],
-                "quality_score": row[2],
-                "fill_rate": row[3],
-                "gap_rate": row[4],
-                "eligible": row[5],
-                "reason_flags": row[6],
-                "metrics": {
-                    "vol": row[7],
-                    "trend_q": row[8],
-                    "noise": row[9],
-                    "stability": row[10],
-                    "liq": row[11],
-                },
-            })
+            tf_scores.append(
+                {
+                    "timeframe": row[0],
+                    "score_tf": row[1],
+                    "quality_score": row[2],
+                    "fill_rate": row[3],
+                    "gap_rate": row[4],
+                    "eligible": row[5],
+                    "reason_flags": row[6],
+                    "metrics": {
+                        "vol": row[7],
+                        "trend_q": row[8],
+                        "noise": row[9],
+                        "stability": row[10],
+                        "liq": row[11],
+                    },
+                }
+            )
 
         result = {
             "symbol": symbol,
@@ -309,7 +331,9 @@ async def _get_universe(limit: int) -> list:
     engine = get_async_engine()
 
     async with AsyncSession(engine) as session:
-        result = await session.execute(text("""
+        result = await session.execute(
+            text(
+                """
             SELECT
                 mu.symbol,
                 mu.final_score,
@@ -325,7 +349,10 @@ async def _get_universe(limit: int) -> list:
             WHERE muv.status IN ('published', 'fallback_prev')
             ORDER BY muv.ts_version DESC, mu.rank
             LIMIT :limit
-        """), {"limit": limit})
+        """
+            ),
+            {"limit": limit},
+        )
 
         return [
             {
@@ -353,7 +380,9 @@ async def _get_regime() -> dict:
     engine = get_async_engine()
 
     async with AsyncSession(engine) as session:
-        result = await session.execute(text("""
+        result = await session.execute(
+            text(
+                """
             SELECT
                 ts_eval,
                 global_regime,
@@ -369,7 +398,9 @@ async def _get_regime() -> dict:
             FROM market_regime_history
             ORDER BY ts_eval DESC
             LIMIT 1
-        """))
+        """
+            )
+        )
 
         row = result.fetchone()
         if not row:
@@ -418,9 +449,7 @@ def handle(args: argparse.Namespace) -> int:
         asyncio.set_event_loop(loop)
 
         if action == "run":
-            result = loop.run_until_complete(
-                _run_pipeline(args.top_n, args.dry_run)
-            )
+            result = loop.run_until_complete(_run_pipeline(args.top_n, args.dry_run))
             if result.get("success"):
                 print("Pipeline completed successfully")
                 print(f"  Universe size: {result['universe_size']}")
@@ -536,8 +565,12 @@ def handle(args: argparse.Namespace) -> int:
                     print(f"  Success: {summary.get('success_runs', 0)}")
                     print(f"  Failed: {summary.get('failed_runs', 0)}")
                     print(f"  Success rate: {summary.get('success_rate', 0):.1%}")
-                    print(f"  Current universe: {summary.get('current_universe_size', 0)}")
-                    print(f"  Avg execution time: {summary.get('avg_execution_time', 0):.2f}s")
+                    print(
+                        f"  Current universe: {summary.get('current_universe_size', 0)}"
+                    )
+                    print(
+                        f"  Avg execution time: {summary.get('avg_execution_time', 0):.2f}s"
+                    )
                     print()
 
                     print("Regime Distribution (last 24 runs):")

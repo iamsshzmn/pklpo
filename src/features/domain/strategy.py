@@ -7,6 +7,7 @@ required for different indicator strategies.
 
 from typing import Any
 
+from src.features.domain.warmup_contract import build_warmup_contract
 from src.logging import get_logger
 
 logger = get_logger(__name__)
@@ -98,7 +99,8 @@ def max_lookback(strategy: str) -> int:
     Returns:
         Maximum lookback period in bars
     """
-    return STRATEGY_LOOKBACKS.get(strategy, 1)
+    contract = build_warmup_contract()
+    return contract.feature_requirements.get(strategy, STRATEGY_LOOKBACKS.get(strategy, 1))
 
 
 def get_strategy_lookbacks(strategies: list[str]) -> dict[str, int]:

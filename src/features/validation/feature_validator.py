@@ -1,4 +1,19 @@
 """
+feature_validator — KEEP (features-prune-v2 A4b).
+
+Responsibility: validates INPUT specifications and calculation parameters before
+the pipeline starts. Not concerned with data values or DB write quality.
+Signature: FeatureValidator.validate_specs(specs) → FeatureValidationResult
+           validate_feature_specs(specs, available) → FeatureValidationResult
+           (FeatureValidationResult contains .is_valid, .errors, .warnings)
+Zone: input boundary — checks FEATURE_SPECS presence, available indicators list,
+      compute params (timeframe, symbol), and spec completeness.
+Distinct from neighbours:
+  - data_validator  : validates OHLCV data values (NaN, ranges, timestamps)
+  - code_validator  : statistical checks on already-calculated indicator output
+  - gate_validator  : hard threshold gates (fill_rate, nan_ratio) before DB write
+  - chain.py        : composes validators via Chain of Responsibility (OCP)
+
 Validation module for the features module.
 
 This module provides validation functions for OHLCV data, feature specifications,

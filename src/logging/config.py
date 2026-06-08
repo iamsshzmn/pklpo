@@ -84,11 +84,7 @@ def get_log_dir() -> Path:
         Path to log directory.
     """
     env_dir = os.environ.get("LOG_DIR")
-    if env_dir:
-        log_dir = Path(env_dir)
-    else:
-        # Default: project root / logs
-        log_dir = Path(__file__).resolve().parents[2] / "logs"
+    log_dir = Path(env_dir) if env_dir else Path(__file__).resolve().parents[2] / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir
 
@@ -147,9 +143,8 @@ def _init_from_env() -> None:
         _verbosity = Verbosity.NORMAL
 
     # LOG_CATEGORIES or FEATURES_LOG_CATEGORIES: comma-separated list
-    categories_str = (
-        os.environ.get("LOG_CATEGORIES")
-        or os.environ.get("FEATURES_LOG_CATEGORIES", "")
+    categories_str = os.environ.get("LOG_CATEGORIES") or os.environ.get(
+        "FEATURES_LOG_CATEGORIES", ""
     )
     if categories_str:
         enabled = set()

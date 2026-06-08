@@ -35,4 +35,3 @@ async def handle(args):
     logger.info(
         f"📊 Символов: {stats['total_symbols']}, Свечей: {stats['total_candles_synced']:,}, Ошибок: {stats['errors_count']}"
     )
-

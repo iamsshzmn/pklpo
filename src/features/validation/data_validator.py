@@ -1,4 +1,16 @@
 """
+data_validator — KEEP (features-prune-v2 A4b).
+
+Responsibility: data quality checks BEFORE calculation and BEFORE DB save.
+Signature: DataValidator.validate(df) → DataValidationResult (structured dataclass)
+           DataValidator.validate_ohlcv(df) → (bool, dict)
+Zone: pre-calculation integrity (NaN counts, value ranges, timestamps).
+Distinct from neighbours:
+  - code_validator  : statistical checks on CALCULATED indicator data
+  - feature_validator: validates input specs/params, not data values
+  - gate_validator  : hard threshold gates (fill_rate, nan_ratio) before DB write
+  - chain.py        : composes validators via Chain of Responsibility (OCP)
+
 Data validation module for features calculation and saving.
 
 This module provides comprehensive validation functions to ensure data quality

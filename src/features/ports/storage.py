@@ -28,6 +28,7 @@ class FeatureStorageGateway(Protocol):
         timeframe: str,
         *,
         since_ts: int | None = None,
+        until_ts: int | None = None,
         limit: int = 200,
     ) -> pd.DataFrame | None: ...
 

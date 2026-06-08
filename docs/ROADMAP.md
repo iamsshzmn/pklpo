@@ -1,253 +1,350 @@
-﻿# PKLPO Roadmap 2.0
+# PKLPO Roadmap 3.0
 
-## Цель
-Собрать единый, исполнимый и проверяемый план развития платформы PKLPO на основе текущих документов `plan/ROADMAP.md`, `plan/quantitative_plan.md`, `plan/implementation_check.md`, `plan/tech_recommendations.md` и `plan/recommendatuion`.
+## Что это за документ
 
-Ключевые цели версии 2.0:
-- закрепить архитектуру и границы модулей;
-- закрыть незавершённые критичные блоки (shadow-live, deployment, единый CostModel, расширенный backtest);
-- выстроить инженерную дисциплину по OOP, DoP, DRY, KISS, SOLID;
-- обеспечить измеримый прогресс через гейты, метрики и Definition of Done.
+Roadmap 3.0 — результат discovery-аудита проекта (2026-05-20). Он заменяет
+Roadmap 2.0, который описывал PKLPO как enterprise trading platform. Реальный
+проект — **personal multi-timeframe research framework** для swing-трейдинга
+крипто-перпов с ручным исполнением сделок. Roadmap 3.0 приводит план в
+соответствие с реальным scope.
 
-## Текущее состояние (сводка)
+Ключевое отличие от 2.0:
+- 8 фаз (включая ExecutionPort, OMS, CI/CD canary) → **3 фазы** под реальный v1;
+- enterprise-DoD из 8 блоков → **5 measurable gates**;
+- честный статус: код Phase 3 написан, но **не покрыт тестами** — фаза НЕ закрыта;
+- всё, что обслуживает auto-execution и production-trading, отложено в **v2**.
 
-### 📍 Текущая позиция: Фаза 4 (Unified Execution & CostModel)
+---
 
-| Фаза | Название | Статус | Прогресс |
-|------|----------|--------|----------|
-| 0 | Platform Baseline | ✅ DONE | 100% |
-| 1 | Data & Ingest Hardening | ✅ DONE | 100% |
-| 2 | Features & Performance | ✅ DONE | 100% |
-| 3 | Quant Stack | ✅ DONE | 100% |
-| 4 | Unified Execution & CostModel | 🟡 IN PROGRESS | ~0% |
-| 5 | Risk & OMS Maturity | ⚪ PLANNED | 0% |
-| 6 | Shadow-Live | ⚪ PLANNED | 0% |
-| 7 | Deployment & Operations | ⚪ PLANNED | 0% |
+## Что такое PKLPO v1
 
-**Ближайшие приоритеты:**
-1. Фаза 4 Блок A: `src/execution/` — ExecutionPort + CostModel + BacktestExecutor
-2. Фаза 4 Блок B: BacktestEngine + CLI `backtest`
+Воспроизводимый research/discovery framework для multi-timeframe анализа
+крипто-перпетуалов. Система:
 
-По текущему `ROADMAP.md` и проверкам:
-- реализовано ядро ingest/features/MTF/signals/risk/storage/testing/monitoring;
-- частично реализованы Market Data++ и CostModel;
-- критично не завершены Shadow-Live и промышленный Deployment;
-- есть потенциал улучшений по конфигурации, retry/backoff, observability, типизации и унификации документации.
+- собирает OHLCV с OKX автономно и без потерь;
+- считает индикаторы и feature sets детерминированно, без look-ahead;
+- генерирует rule-based сигналы: regime (1W) → MTF context (1D/4H) → confluence setup;
+- валидирует гипотезы через walk-forward / CPCV / DSR против baseline;
+- логирует сигналы и ручные решения, измеряет signal-to-trade conversion;
+- доводит перспективные идеи до shadow/paper и до первой сделки на $100.
 
+**Целевой holding period:** 7–30 дней (90 дней — экспериментальный режим).
+**Primary TF:** 1D / 4H. **Higher TF context:** 1W. **Universe:** ликвидные perp.
+**Исполнение в v1:** ручное (discretionary overlay поверх структурированного сигнала).
 
+### Non-goals (v1 сознательно НЕ делает)
+
+Multi-exchange · HFT / orderbook / tick data · опционы и сложные деривативы ·
+auto-execution · portfolio optimization (HRP/CVaR/risk parity) · UI / SaaS /
+multi-user · Deep Learning / RL · marketplace стратегий · production-торговля
+с серьёзным капиталом.
+
+PKLPO v1 должен доказать один путь: **data → features → signals → backtest →
+shadow-live → manual decision** — и доказать, что этот путь не врёт.
+
+---
+
+## Текущее состояние (честная сводка, 2026-05-20)
+
+| Слой | Состояние | Комментарий |
+|------|-----------|-------------|
+| Ingest / candles | ✅ работает | `ON CONFLICT` во всех репозиториях, идемпотентность ingestion есть |
+| Repair / backfill | 🟡 код есть | Никогда не прогонялся против реального gap-сценария |
+| Features pipeline | 🟡 работает, раздут | 158 файлов / ~28.7k строк — оценочно ×3-5 от нужного объёма |
+| ML labeling / validation | 🔴 код есть, тестов 0 | 1542 строки (triple-barrier, CPCV, purged-KFold, lookahead, ...) — **не валидировано** |
+| ML metalabeling | ⚪ код впереди потребности | Нет decision-log и накопленных сделок для обучения — заморожено |
+| Signals | 🟡 скелет | `signals/` есть; `INSERT` без `ON CONFLICT` — риск дублей |
+| signal_decisions / manual_trades | 🔴 не существует | Критичный missing piece для research-цели |
+| Telegram notifier | 🔴 не существует | — |
+| Backtest | 🟡 частично | Custom `calc_pnl`; план — перейти на vectorbt/quantstats |
+| Research workflow | 🔴 не существует | Нет `notebooks/`, нет `runs/`, нет experiment tracking |
+| Baselines | 🔴 не существует | Без baseline reject-гейты бессмысленны |
+| Backup / DR | 🔴 нет бэкапов | ~70 GB на одном внешнем SSD — single point of failure |
+| `make check` quality gate | 🔴 декоративный | Сконфигурирован (coverage 85%), на практике не запускался |
+
+**Главный диагноз:** проект имеет *артефакты* инженерной строгости (DDD-слои,
+registry, Protocol-контракты, coverage-таргеты) без *практики* (запускаемых
+проверок, написанных тестов, используемого workflow). Приоритет №1 — закрыть
+этот разрыв, а не добавлять функциональность.
+
+### История (закрытые фазы 2.0)
+
+| Фаза 2.0 | Статус | Примечание |
+|----------|--------|------------|
+| 0. Platform Baseline | ✅ DONE | pydantic-settings, retry policy, ruff/mypy/pytest |
+| 1. Data & Ingest Hardening | 🟡 в основном | Repair не провалидирован прогоном |
+| 2. Features & Performance | 🟡 функционально | Раздутость — теперь tech-debt (см. Prune Track) |
+| 3. Quant Stack | 🔴 НЕ закрыта | Код блоков C–H написан, но без тестов = не доказан |
+
+---
 
 ## Целевая карта модулей
-- `market_data`: ingest, quality checks, store, freshness/SLA.
-- `features`: вычисление индикаторов и feature sets.
-- `context_mtf`: MTF context, triggers, consensus.
-- `signals`: signal generation + rationale.
-- `risk`: sizing, limits, guards, kill-switch.
-- `execution`: единый исполнителm (fees/spread/slippage/%ADV/latency).
-- `positions`: position store, pnl lifecycle.
-- `backtest`: WF/OOS, CPCV, DSR, отчеты.
-- `monitoring`: metrics/logs/alerts/runbook.
-- `platform`: config, migrations, CI/CD, orchestration.
 
-## Фазы Roadmap 2.0
+- `candles` (`market_data`): ingest, quality checks, store, repair, freshness/SLA.
+- `features`: индикаторы и feature sets. Целевой two-track: `research/` + `indicator_groups/`.
+- `mtf` (`context_mtf`): MTF context, regime detection, triggers, consensus.
+- `signals`: генерация сигналов + rationale; `signal_decisions`; `manual_trades`.
+- `ml`: labeling / validation (нужно протестировать); metalabeling (заморожено до v2).
+- `backtest`: walk-forward / CPCV / DSR / baselines / отчёты (миграция на vectorbt/quantstats).
+- `research`: notebook workflow + `runs/` артефакты + experiment metadata.
+- `risk`: sizing, limits, guards, kill-switch (в v1 — минимально, не развивать).
+- `platform`: config, migrations, orchestration, backup.
 
-### Фаза 0. Platform Baseline (1-2 недели) — ✅ DONE
-Цель: стабилизировать основу перед функциональными изменениями.
+Контекстов больше не плодить. Полная карта: `docs/ARCHITECTURE.md` §4–§7.
 
-Задачи:
-- ✅ Централизовать конфигурацию (`pydantic-settings`) и убрать дубли env/YAML/code.
-- ✅ Формализовать retry policy (exponential backoff + jitter) для внешних API.
-- ✅ Зафиксировать единые coding standards: ruff + mypy + pytest + pre-commit.
-- ✅ Ввести DoD/DoR для всех задач roadmap.
+---
 
-Гейт:
-- ✅ 100% runtime-конфигурации читается из единого слоя settings.
-- ✅ Все внешние клиенты используют стандартную retry policy.
-- ✅ CI зеленый по lint/type/test.
+## Фазы Roadmap 3.0
 
+Три фазы. Phase A — блокер всего: нельзя строить research на непроверенном
+фундаменте. Phase B — ядро продукта. Phase C — выход на shadow и первую сделку.
 
-### Фаза 2. Features & Performance (2-4 недели) — ✅ DONE (100%)
-Цель: ускорить вычисление и управляемость фичей.
+### Фаза A — Trust & Durability (3–4 недели) — 🔴 БЛОКЕР
 
-**SOLID рефакторинг (см. `src/features/REFACTORING_PROGRESS.md`):**
-- ✅ LSP: Унификация типов возврата групп индикаторов
-- ✅ SRP: Разделение GroupCalculator на 4 компонента
-- ✅ DIP: Устранение hard-coded импортов (injection)
-- ✅ OCP: Вынос конфигурации в settings
-- ✅ Инкапсуляция GroupRegistry
-- ✅ Разделение batch_builder (SRP) — фасад + 4 субмодуля (row_processor, schema_filter, name_normalizer, validator)
-- ✅ Тесты и документация (test_batch_builder_contracts, test_persistence_modules_coverage, bench_pipeline)
+Цель: фундамент, которому можно доверять. Бэкапы, тесты на код, который
+утверждает «бэктест честный», доказанная идемпотентность.
 
-Задачи:
-- ✅ Ввести профилирование по группам индикаторов.
-- ✅ Добавить timing metrics по feature groups.
-- ⚪ При необходимости внедрить Polars/DuckDB в hot paths (по метрикам, не «вслепую»).
-- ✅ Ужесточить типизацию в критичных модулях features.
-- ⬜ **[LIBRARY] Добавить TA-Lib как второй backend для `ta_safe/`** (🟡 Средний приоритет)
-  - TA-Lib в 5–20x быстрее pandas-реализаций (чистый C, 150+ индикаторов)
-  - `ta_safe/bridge.py` и dispatch-таблица уже реализованы
-  - TTM Squeeze оставить кастомным — в TA-Lib нет
-  - Подробнее: `docs/ideas/library_replacement_recommendations.md` §2
+| ID | Задача | Приоритет |
+|----|--------|-----------|
+| A0 | **Бэкапы БД.** `pg_dump` по cron → второй диск + облако (Backblaze/S3). Правило 3-2-1. **Проверенный restore в чистое окружение.** | P0 — сделать первым |
+| A1 | Аудит размера БД: `pg_total_relation_size` по таблицам. Понять, из чего 70 GB, почистить bloat. Прогноз роста под рост глубины/инструментов. | P0 |
+| A2 | Тесты `ml/labeling` + `ml/validation` (1542 строки): numerical-equivalence против reference dataset / mlfinlab. | P0 |
+| A3 | Look-ahead тест → обязательный gate в `make check`. | P0 |
+| A4 | Idempotency: `ON CONFLICT` + unique constraint для `signals.candidates/live/history`; double-run тесты для каждого DAG (ingest/backfill/repair/features/signals). | P0 |
+| A5 | Параметризовать SQL в `scoring_engine/processor.py:440/445` (symbol/timeframe). Allowlist для `ema_col` в `market_selection`. | P1 |
+| A6 | Запустить `make check`, зафиксировать baseline, починить до зелёного. | P0 |
+| A7 | Ручной тест repair: вырезать сутки данных → repair → проверить hole-rate. Заодно зафиксировать политику fail-loud. | P1 |
+| A8 | **CI/CD: GitHub Actions.** Pipeline на каждый push/PR: `ruff check` + `ruff format --check` + `mypy src` + `pytest` (fast-маркеры). Smoke-тест import на staging-конфиге. Блокирует merge при падении. | P0 |
+| A9 | **Structured JSON logging.** Единый `src/platform/logging.py` с JSON-форматтером. Обязательные поля: `timestamp`, `level`, `component`, `symbol`, `timeframe`, `run_id`, `error_type`. Заменяет plaintext-логи во всех компонентах (repair, ingest, features, signals). | P0 |
 
-Гейт:
-- ✅ p95 performance gate: baseline зафиксирован в `benchmarks/results/group_baseline_20260302.json` (p95≈7.86s при 10000 rows). Оптимизация через TA-Lib backend запланирована как library backlog — не блокирует закрытие фазы (текущая производительность достаточна для dev среды).
-- ✅ Покрытие тестами feature contracts.
+**Гейт A (= Success Gate 1 + 2):**
+- [ ] Бэкап восстановлен из облака в чистое окружение хотя бы раз.
+- [ ] `ml/labeling` + `ml/validation` покрыты тестами, проходят numerical-equivalence.
+- [ ] Look-ahead тест в `make check`, стабильно зелёный.
+- [ ] `make check` зелёный; coverage `candles`/`ml`/`signals` ≥ 80%.
+- [ ] Все DAG: double-run тест зелёный.
+- [ ] Repair прогнан против реального gap-сценария.
+- [ ] GitHub Actions pipeline зелёный на `main`.
+- [ ] Structured JSON logging подключён; `run_id` + `symbol` прослеживается в логах repair/ingest.
 
-**Закрыта: 2026-03-06**
+### Фаза B — Research Loop (4–5 недель) — ядро продукта
 
-### Фаза 3. Quant Stack (3-5 недель) — 🟡 IN PROGRESS (~25%)
-Цель: закрыть количественный контур из `quantitative_plan.md`.
-Детальный план: `plan/phase3_quant_stack_plan.md`
+Цель: рабочий цикл «гипотеза → backtest → сигнал → решение → лог». Адаптировать
+проверенные библиотеки вместо написания custom-кода.
 
-Задачи:
-- ✅ Scaffold: `src/core/`, `src/ml/`, `RunContext`, `QuantSettings`, `tests/ml/conftest.py` (Блок A)
-- ✅ Dollar bars: `src/core/bars.py` + тесты 10/10 + CLI `build-bars` + миграция БД (Блок B)
-- ❌ Triple-barrier labeling + sample weights (Блок C)
-- ❌ Purged K-Fold + Embargo и CPCV + unified Sharpe/DSR (Блок D)
-- ❌ Feature selection (MDI/MDA/PCA) (Блок E)
-- ❌ Metalabeling pipeline (Блок F)
-- ❌ Look-ahead test как обязательный quality gate (Блок G)
-- ❌ Отчёт и метрики CLI (Блок H)
-- ⬜ **[LIBRARY] Рассмотреть `mlfinlab`/`skfolio` для `ml/labeling/` и `ml/validation/`** (🟡 Средний приоритет)
-  - Официальная реализация AFML: triple barrier, CPCV, purged K-Fold, MDI/MDA/SFI
-  - Текущие кастомные реализации корректны (есть тесты) — замена снижает бремя поддержки
-  - skfolio — более современный sklearn-совместимый API
-  - Что оставить: `deflated_sharpe_ratio()`, meta-labeling (специфика стратегии)
-  - Подробнее: `docs/ideas/library_replacement_recommendations.md` §5
-- ⬜ **[LIBRARY] Добавить `hmmlearn`/`ruptures` для детекции рыночных режимов** (🟡 Средний приоритет)
-  - hmmlearn: HMM для статистически строгой детекции режимов (trend/range/volatile)
-  - ruptures: change point detection по волатильности
-  - Альтернатива / дополнение к текущей реализации `mtf/context/algorithms.py`
-  - Подробнее: `docs/ideas/library_replacement_recommendations.md` §8
+| ID | Задача | Приоритет |
+|----|--------|-----------|
+| B1 | Схемы `signal_decisions` (accept/reject/skip/watchlist + причина), `manual_trades`/`positions` (связь с `signal_id`). Достроить `signals` до 15 полей (direction, score, entry zone, invalidation, SL/TP, holding, expiry, rationale, warnings...). | P0 |
+| B2 | Telegram-бот: notification layer для сигналов + 3 алерта (DAG failed / hole-rate / disk < 15%). Source of truth остаётся в Postgres. | P0 |
+| B3 | Baselines: `buy_and_hold` BTC, `buy_and_hold` asset, `momentum`, `random_signals`, `cash`. Любая гипотеза сравнивается с ними по risk-adjusted метрикам. | P0 |
+| B4 | Research workflow: `notebooks/research_template.ipynb` + структура `runs/<run_id>/` (config.yaml, metrics.json, notes.md, charts/). Критичная логика — в `src/`, не в notebook. | P0 |
+| B5 | Data versioning: universe snapshot persistence (список символов на дату эксперимента), feature pipeline version stamp (git commit), data window, dependency lockfile hash. | P0 |
+| B6 | Backtest на **vectorbt** (заменяет `calc_pnl`) + **quantstats** (метрики/отчёт). Сохранить кастомный `deflated_sharpe_ratio()`. Адаптация, не написание custom execution layer. | P1 |
+| B7 | Зафиксировать reject gates в коде: мало сделок / negative expectancy после fees+slippage / большой DD / нестабильность по WF-окнам / признаки leakage. Multiple-testing правило: число тестируемых гипотез фиксируется в `config.yaml` **до** запуска. | P0 |
+| B8 | Two-track features: создать `features/research/` — голые функции на DataFrame, без registry, для быстрой итерации в notebook. Promoted-фичи переходят в `indicator_groups/` с контрактами и тестами. | P1 |
 
-Гейт:
-- 🟡 Все новые модули покрыты unit/integration тестами (bars.py: 85% ✅).
-- ❌ Look-ahead тест стабильно проходит.
-- ❌ CPCV/DSR добавлены в финальный отчет.
+**Гейт B (= Success Gate 3 + 4, partial):**
+- [ ] ≥ 10 гипотез прогнаны через единый pipeline с `runs/` артефактами.
+- [ ] Каждая гипотеза сравнена с 5 baseline по risk-adjusted метрикам.
+- [ ] Reject gates срабатывают автоматически.
+- [ ] ≥ 1 гипотеза прошла walk-forward + CPCV + DSR с positive expectancy после fees.
+- [ ] Сигнал генерируется → пишется в `signals` → уходит в Telegram.
+- [ ] Решения логируются в `signal_decisions`; signal-to-trade conversion считается.
+- [ ] Эксперимент воспроизводим: повторный запуск даёт те же features/labels/metrics.
+- [ ] Modern Data Stack track воспроизводим: `dbt build` зелёный, Parquet/DuckDB validation зелёный, pipeline events публикуются с версионированной схемой.
 
-### Фаза 4. Unified Execution & CostModel (3-5 недель) — 🟡 IN PROGRESS (~0%)
-Цель: исключить расхождения между backtest/paper/live.
-Детальный план: `plan/phase4_unified_execution_plan.md`
+### Фаза C — Shadow & First Trade (открытый период)
 
-Задачи:
-- ⬜ **Блок A:** `src/execution/` — ExecutionPort + CostModel (commission, IS, %ADV) + BacktestExecutor + ExecutionSettings + DB (trades, execution_runs)
-- ⬜ **Блок B:** `src/backtest/engine.py` — BacktestEngine (bar-by-bar, walk-forward, RunContext) + CLI `backtest` + deprecate SignalEvaluator
-- ⬜ **Блок C:** IS/reject_rate в BacktestReport + operational алерты + e2e тест
-- ⬜ **Блок D:** PositionEventStore (equity curve, PnL lifecycle) + интеграция в BacktestEngine
-- ⬜ **[LIBRARY] `vectorbt` → заменить `calc_pnl`, интегрировать в BacktestEngine (Блок B)** (🔴 Высокий приоритет)
-  - 100–1000x быстрее iterrows-симуляции; Portfolio с leverage/fees/slippage/%ADV
-  - Встроенные метрики (Sharpe, Sortino, MaxDD, Calmar, Omega, Win Rate)
-  - Параметрическая оптимизация и Plotly-визуализация из коробки
-  - Подробнее: `docs/ideas/library_replacement_recommendations.md` §3
-- ⬜ **[LIBRARY] `quantstats` → заменить `calc_metrics` + `report.py`** (🔴 Высокий приоритет)
-  - 50+ метрик: Sharpe, Sortino, Calmar, Omega, VaR, CVaR, Skew, Kurtosis
-  - Полный HTML-отчёт (заменяет `report.py`), бенчмаркинг против индексов
-  - Сохранить кастомный `deflated_sharpe_ratio()` — в QuantStats его нет
-  - Подробнее: `docs/ideas/library_replacement_recommendations.md` §4
+Цель: накопить историю сигнал → решение → результат, пройти security gate,
+сделать первую сделку на $100 как validation environment.
 
-Гейт:
-- ❌ Backtest и paper используют один и тот же execution path (ExecutionPort).
-- ❌ Метрики IS/latency/reject-rate доступны в BacktestReport.
-- ❌ Все trades привязаны к run_id.
+| ID | Задача | Приоритет |
+|----|--------|-----------|
+| C1 | Paper logger: каждый signal → simulated execution (fee/slippage модель — функция, не пакет) → лог. Еженедельный drift-отчёт (simulated vs ожидание). | P0 |
+| C2 | **Pre-Trading Security Gate** (см. ниже) — обязательный чек-лист до первого реального ордера. | P0 |
+| C3 | Накопление 50–100 сделок paper. При holding 7–30 дней это **месяцы**, не недели. Closure фазы = «loop работает», а не «стратегия найдена». | — |
+| C4 | Первый real trade на ~$100 как validation environment: проверка backtest ↔ shadow ↔ manual parity, operational/психологические эффекты. | P1 |
 
-### Фаза 5. Risk & OMS Maturity (2-3 недели) — ⚪ PLANNED
-Цель: повысить устойчивость торговли в production.
+**Pre-Trading Security Gate (= Success Gate 5):**
+- [ ] OKX trading key: **no-withdraw permission обязателен**, IP whitelist, отдельный ключ от read-only.
+- [ ] Trading-ключи вне `.env` (OS keychain / `sops` / cloud secrets).
+- [ ] Paper/live разделение режимов на уровне конфига — невозможно случайно отправить реальный ордер из research-режима.
+- [ ] `cancel-all` / `close-all` flow + процедура revoke ключа задокументированы и проверены.
 
-Задачи:
-- ❌ Доработать portfolio limits/guard policies.
-- ❌ Ввести сценарии деградации: partial-fill, timeout, cancel-all, kill-switch flows.
-- ❌ Формализовать stress-tests и failover runbook.
+**Гейт C:**
+- [ ] Paper logger накопил ≥ 30 сигналов с simulated execution.
+- [ ] Drift simulated vs actual измерен и в допустимом диапазоне.
+- [ ] Pre-Trading Security Gate полностью закрыт.
+- [ ] Первая real-сделка на $100 исполнена, данные собраны.
 
-Гейт:
-- ❌ Guard coverage для ключевых risk-сценариев.
-- ❌ Runbook покрывает критические инциденты end-to-end.
+---
 
-### Фаза 6. Shadow-Live (критично, 2-4 недели) — ⚪ PLANNED
-Цель: сравнить expected vs actual без реального риска капитала.
+## Параллельные треки (идут вдоль фаз)
 
-Задачи:
-- ❌ Запуск shadow-live режима для целевых инструментов.
-- ❌ Сравнение сигналов и исполнений с backtest baseline.
-- ❌ Еженедельный drift-анализ по PnL drivers/latency/IS.
+### Observability & Reliability Track
 
-Гейт:
-- ❌ Минимум 2-4 недели стабильной работы shadow-live.
-- ❌ Drift находится в допустимом диапазоне.
+Цель: сделать отладку воспроизводимой вместо `grep`. Идёт параллельно фазам, начиная с A.
 
-### Фаза 7. Deployment & Operations (критично, 2-3 недели) — ⚪ PLANNED
-Цель: production-ready контур развертывания.
+| ID | Задача | Фаза | Приоритет |
+|----|--------|------|-----------|
+| OB1 | Structured JSON logging → **см. A9** (перенесено в Phase A как P0). | A | P0 |
+| OB2 | **Loki + Grafana Logs.** Поднять Loki в `docker-compose`, настроить Promtail/Alloy для сбора structured logs из Airflow, CLI, cron. Запросы по `symbol`, `run_id`, `error_type` за секунды вместо `grep`. Требует OB1. | B | P1 |
+| OB3 | **Redis: distributed locks + cache.** Locks для repair/sync (исключают параллельные запуски одного job'а — дополняет A4). Cache: exchange metadata, instrument list, last ingested timestamps. Один новый сервис в `docker-compose`. | B | P1 |
+| OB4 | **OpenTelemetry traces.** Сквозная трассировка: Airflow DAG → repair → API request → DB insert → feature calc. Требует стабильного OB1–OB2. | v2 | P2 |
 
-Задачи:
-- ❌ CI/CD пайплайн с миграциями и rollback strategy.
-- ❌ Release policy: canary, rollback, version pinning.
-- ❌ Набор операционных SLO/alerts + on-call runbook.
+> **Важно:** Prometheus + Grafana metrics dashboard остаётся в v2 (см. раздел «Отложено в v2»). OB2 (Loki) добавляет только log aggregation поверх уже работающего Grafana из docker-compose, не требует полного metrics stack.
 
-Гейт:
-- ❌ Повторяемый deployment без ручных ad-hoc шагов.
-- ❌ Подтвержденный rollback за ограниченное время.
+---
 
-## Definition of Done (единый)
-Задача считается завершенной только если:
-- есть тесты (unit/integration; где нужно property-based);
-- есть типизация публичных контрактов;
-- есть метрики/логи для нового behavior;
-- есть обновление документации и runbook;
-- есть миграция/совместимость схемы данных (если затрагивается БД);
-- есть запись в changelog или release notes.
+### Tech-debt Prune Track
 
-## Technical Debt Backlog (приоритет)
-P0:
-- Shadow-live.
-- Deployment automation.
-- Unified CostModel/execution parity.
+Over-engineering сам не уйдёт — нужен явный запланированный проход.
 
-P1:
-- ~~Централизация конфигурации.~~ ✅
-- ~~Retry/backoff унификация.~~ ✅
-- Observability расширение (timing metrics, pool metrics).
+- Prune `src/features/` (158 файлов / ~28.7k строк → цель ~6–8k). Дубли `presets/` ↔ `schema/`, лишние подпакеты.
+- Prune `src/market_selection/` (30+ файлов на задачу «найти 30 ликвидных perp»).
+- Заморозить `src/ml/metalabeling/` — не развивать до v2.
 
-P2:
-- Стандартизация языка документации.
-- Переход части hot-path на Polars/DuckDB после профилирования.
-- Повышение strictness mypy поэтапно.
+### Determinism & Failure-mode Audit
 
-### Library Migration Backlog
+- Прогнать feature pipeline дважды на одних данных → diff результата.
+- Проверить все чтения из БД, влияющие на features/signals, на явный `ORDER BY`.
+- Зафиксировать политику: data quality anomaly = terminal (fail-loud).
 
-> Полный анализ и примеры кода: `docs/ideas/library_replacement_recommendations.md`
-> Порядок внедрения: Шаг 1 (ccxt + quantstats) → Шаг 2 (vectorbt) → Шаг 3 (mlfinlab + TA-Lib) → Шаг 4 (hmmlearn + alembic + riskfolio-lib)
+### Modern Data Stack Track
 
-| Приоритет | Библиотека | Заменяет | Выигрыш | Фаза |
-|-----------|------------|---------|---------|------|
-| ✅ done | `ccxt` | `candles/sync_swap_candles.py` | −600 строк HTTP, поддержка 100+ бирж | 1 |
-| 🔴 P0 | `vectorbt` | `backtest/metrics.py` (calc_pnl) | 100–1000x скорость, реальная симуляция | 4 |
-| 🔴 P0 | `quantstats` | `backtest/metrics.py` + `report.py` | 50+ метрик, HTML-отчёты | 4 |
-| 🟡 P1 | `TA-Lib` / `ta` | `features/ta_safe/fallback.py` | 5–20x скорость, −300 строк | 2 |
-| 🟡 P1 | `mlfinlab` / `skfolio` | `ml/labeling/`, `ml/validation/` | Официальный AFML, больше алгоритмов | 3 |
-| 🟡 P1 | `hmmlearn`, `ruptures` | `mtf/context/algorithms.py` | Статистически строгие режимы рынка | 3 |
-| 🟡 P1 | `alembic` | `database/migrate_*.py` | Стандарт SQLAlchemy, rollback, автогенерация | platform |
-| 🟢 P2 | `pybreaker` | `risk/guards/circuit_breaker.py` | Чище, но теряем DB-persistence | 5 |
-| 🟢 P2 | `riskfolio-lib` | `risk/limits/` | Открывает HRP/CVaR оптимизацию | 5 |
-| 🟢 P2 | `stamina` | `utils/retry.py` | Современный async API, tenacity работает | — |
+Цель: встроить dbt, lakehouse export и event streaming как реальные рабочие контуры проекта,
+а не учебные демо. PostgreSQL остаётся system of record; новые инструменты добавляются как
+проверяемые слои поверх текущего pipeline.
 
-**Что НЕ нужно заменять:** `src/signals/`, `src/mtf/consensus/`, `src/positions/calculator.py`,
-`src/risk/guards/sla_guards.py`, `deflated_sharpe_ratio()`, `src/ml/metalabeling/`, `src/features/indicator_groups/`.
+| ID | Задача | Приоритет |
+|----|--------|-----------|
+| DE1 | dbt analytics layer поверх PostgreSQL: sources для `swap_ohlcv_p`, `indicators_p`, `market_universe`, ops/audit таблиц; staging-модели; marts для OHLCV quality, feature freshness, market universe readiness; dbt tests и lineage docs. | P0 |
+| DE2 | Data quality gates через dbt: uniqueness/not-null/range/freshness tests; команда `dbt build` как отдельный validation gate рядом с `make check`, без замены Python-тестов. | P0 |
+| DE3 | Parquet/DuckDB export layer: выгрузка trusted market-data и dbt marts в partitioned Parquet; DuckDB validation row-count/min-max timestamp/duplicate keys; read path для research без нагрузки на Postgres. | P1 |
+| DE4 | MinIO/Iceberg lakehouse layer: перенести стабильный Parquet export в object storage и оформить Iceberg tables только после стабилизации DE3. | P2 |
+| DE5 | Redpanda/Kafka event bus: публиковать события после успешных pipeline actions (`ohlcv.synced`, `features.calculated`, `quality.checked`, `market_universe.refreshed`) как audit/notification/event-consumer слой, не как замену PostgreSQL ingest. | P1 |
 
-## KPI Roadmap 2.0
-- Reliability: доля успешных DAG run, MTTR, % idempotent reruns.
-- Data: freshness, hole-rate, dup-rate, fill-rate.
-- Performance: p95 feature-calc, p95 execution latency.
-- Trading quality: IS bps, reject-rate, slippage drift.
-- Research quality: доля стратегий, прошедших CPCV/DSR gates.
-- Engineering: test coverage критичных модулей, type coverage публичных интерфейсов.
+### Learning Track (явно отделён от critical path)
 
-## Порядок внедрения (30-60-90)
-- 0-30 дней: Фазы 0-1, старт Фазы 2.
-- 30-60 дней: завершение Фаз 2-4.
-- 60-90 дней: Фазы 5-7, выход на controlled production.
+Делается ради обучения, не ради продукта — не путать learning value с business
+value. Эти решения легитимны как обучение, но не должны обосновываться
+продуктовой необходимостью.
+
+| Тема | Зачем учить | Когда |
+|------|-------------|-------|
+| Airflow | Для 5 DAG достаточно cron — оставлен как DE-навык | уже используется |
+| DDD-слои | Архитектурный паттерн, реализован в `src/` | уже реализован |
+| FastAPI internal service | `GET /health`, `/signals`, `/dq/status`, `/repair/status` — превращает скрипты в platform-сервис; навык востребован в DE/backend | Phase B+ |
+| Pydantic v2 data contracts | Жёсткая схема для OHLCV / API-ответов OKX / feature-векторов; уменьшает silent corruption | Phase B+ |
+
+> `Great Expectations` / `Soda` как отдельный инструмент Data Quality не нужен: DE2 (dbt tests) покрывает uniqueness/not-null/range/freshness. Если dbt окажется недостаточным — вернуться к вопросу в v2.
+
+---
+
+## Отложено в v2
+
+После того как хотя бы одна стратегия покажет позитивный walk-forward:
+
+- `src/execution/` — ExecutionPort / CostModel / BacktestExecutor / `execution_runs`.
+  В v1 не нужно: исполнение ручное, достаточно `simulate_fill()`-функции.
+- Risk & OMS maturity: portfolio limits, partial-fill/timeout/cancel-all сценарии, stress-tests.
+- ML metalabeling iteration — после накопления decision-log и 200+ сделок.
+- Deployment: CI/CD canary deploy, rollback strategy, version pinning. *(Базовый CI/CD pipeline перенесён в Phase A как A8.)*
+- Observability stack: Prometheus + Grafana metrics dashboard (в v1 — Telegram-алертов достаточно; structured logging + Loki добавляются через OB1–OB2 трек; OpenTelemetry traces — v2).
+- Auto-execution, multi-exchange, рост капитала (см. Non-goals).
+
+### Library Backlog (v2)
+
+> Полный анализ: `docs/ideas/library_replacement_recommendations.md`
+
+| Библиотека | Заменяет | Фаза |
+|------------|----------|------|
+| `vectorbt` | `backtest/metrics.py` (`calc_pnl`) | B6 (адаптация) |
+| `quantstats` | `backtest/metrics.py` + `report.py` | B6 |
+| `TA-Lib` / `ta` | `features/ta_safe/fallback.py` | v2 |
+| `mlfinlab` / `skfolio` | `ml/labeling/`, `ml/validation/` | v2 (после A2) |
+| `hmmlearn`, `ruptures` | `mtf/context/algorithms.py` | v2 |
+| `alembic` | `db/migrations/migrate_*.py` | v2 |
+
+Не заменять: `signals/`, `mtf/consensus/`, `positions/calculator.py`,
+`risk/guards/sla_guards.py`, `deflated_sharpe_ratio()`, `ml/metalabeling/`,
+`features/indicator_groups/`.
+
+---
+
+## Architecture Boundaries
+
+Жёсткие границы, чтобы проект не разрастался обратно:
+
+1. **Signal layer изолирован от execution.** `signals` → `signal_decisions` → `manual_trades`. Manual decision позже заменяется на paper/live без переписывания signal-слоя.
+2. **domain → application → infrastructure** — соблюдать. Новые bounded-контексты не плодить.
+3. **Two-track features:** `research/` (голые функции, для notebook) ↔ `indicator_groups/` (promoted, с контрактами/тестами/миграцией).
+4. **Notebook ≠ production logic.** Labeling/backtest/features/signals — только в `src/`.
+5. **Adopt > build для quant-математики.** vectorbt/quantstats вместо custom. Custom — только для стратегической специфики.
+6. **Один источник конфигурации** — `src/config/settings.py`. Никаких россыпей `os.getenv()`.
+7. **Нет `src/execution/` в v1.** Backtest execution = функция `simulate_fill(signal, bar, fee, slippage)`.
+8. **Agent-output gate.** Код от агента не вливается в `main`, пока нет теста и пока автор не может объяснить, что код делает. Это граница против over-engineering.
+
+---
+
+## Definition of Done (единый, для задач)
+
+Задача завершена, только если:
+- есть тесты (unit/integration; где нужно — property-based / numerical-equivalence);
+- публичные контракты типизированы;
+- `make check` зелёный;
+- есть метрики/логи для нового behavior (где применимо);
+- обновлена документация;
+- есть миграция при изменении схемы БД (новый файл, не правка существующего);
+- автор может объяснить, что делает каждая строка.
+
+---
+
+## Success Criteria для v1
+
+v1 достигнут, когда закрыты все 5 гейтов.
+
+**Gate 1 — Data Trust:** ingest 30 дней без вмешательства; hole-rate < 0.1%,
+dup-rate = 0; проверенный restore из бэкапа; double-run тесты всех DAG зелёные.
+
+**Gate 2 — Research Integrity:** `ml/labeling`+`ml/validation` под тестами;
+look-ahead тест в `make check`; `make check` зелёный, coverage критичных
+модулей ≥ 80%; эксперимент воспроизводим байт-в-байт.
+
+**Gate 3 — Research Loop:** ≥ 10 гипотез через единый pipeline с `runs/`;
+сравнение с 5 baseline; reject gates автоматические; ≥ 1 гипотеза прошла
+WF + CPCV + DSR с positive expectancy после fees.
+
+**Gate 4 — Signal→Decision Loop:** сигнал → `signals` → Telegram; решения в
+`signal_decisions`; signal-to-trade conversion считается; paper logger накопил
+≥ 30 сигналов; drift измерен.
+
+**Gate 5 — Pre-Trading:** OKX key no-withdraw + IP whitelist + вне `.env`;
+paper/live разделение; cancel-all / revoke процедура проверена.
+
+### Числовые пороги (зафиксировать ДО тестирования)
+
+- **Стратегия «перспективна»:** WF Sharpe выше baseline по risk-adjusted метрикам **и** DSR > 0 **и** max DD < [TODO: порог] **и** стабильность по WF-окнам.
+- **Триггеры роста капитала:** $100 → $1000 после [TODO: N] paper-сделок с positive expectancy; $1000 → $10000 после [TODO: M] real-сделок, подтверждающих paper. Целевой рабочий капитал — $10 000. **N, M, порог DD назначаются владельцем — пока не определены.**
+
+---
+
+## KPI
+
+- **Reliability:** доля успешных DAG run, % idempotent reruns (доказано тестами).
+- **Data:** freshness, hole-rate, dup-rate, fill-rate.
+- **Reproducibility:** доля экспериментов, воспроизводимых через `runs/` артефакты.
+- **Research quality:** доля гипотез, прошедших CPCV/DSR-гейты против baseline.
+- **Trading quality** (с Phase C): IS bps, slippage drift, signal-to-trade conversion.
+- **Engineering:** coverage критичных модулей, разрыв между написанным и протестированным кодом (цель — 0).
+
+---
 
 ## Контроль исполнения
-- Еженедельный review roadmap с обновлением статусов: `planned/in_progress/blocked/done`.
-- Каждый блокирующий риск фиксируется с owner и датой mitigation.
-- Любое отклонение от OOP/DoP/DRY/KISS/SOLID документируется и проходит архитектурный review.
+
+- Еженедельный review: обновление статусов `planned/in_progress/blocked/done`.
+- Каждый блокирующий риск фиксируется с датой mitigation.
+- Новый код от агента проходит agent-output gate (см. Architecture Boundaries §8).
 
 ## Легенда статусов
 
@@ -255,9 +352,8 @@ P2:
 |--------|----------|
 | ✅ | Завершено |
 | 🟡 | В работе / частично |
-| ❌ | Не начато |
-| ⚪ | Запланировано |
-| 🔴 | Заблокировано |
+| 🔴 | Не начато / блокер / критичный риск |
+| ⚪ | Запланировано / заморожено |
 
 ---
-*Последнее обновление: 2026-03-06*
+*Roadmap 3.0 — результат discovery-аудита. Последнее обновление: 2026-06-03 (интегрированы рекомендации по observability, CI/CD, Redis, structured logging).*

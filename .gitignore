@@ -50,7 +50,8 @@ dmypy.json
 .vscode/
 .idea/
 .cursor/
-.cursorrules
+.obsidian/
+.mcp.json
 *.swp
 *.swo
 *~
@@ -76,7 +77,7 @@ logs/
 notebooks/
 
 # pyenv
-.python-version
+# .python-version is committed — it pins the runtime (Python 3.11)
 
 # Docker
 docker-compose.override.yml
@@ -91,6 +92,7 @@ ops/airflow/logs/
 .claude/
 .codex/
 .codex-pre-commit-cache
+.pre-commit-cache/
 agent_workspace/
 
 # Archives & backups
@@ -100,10 +102,6 @@ backups/
 *.backup
 *_backup.json
 *.bundle
-tests/
-!tests/
-!tests/db/
-!tests/db/test_okx_swap_repair_test_dag.py
 
 # Temp files
 *.tmp
@@ -120,35 +118,25 @@ tmp/
 data/
 
 # Working docs (not for repo)
-plan/
 reports/
-history/
-site/
+Captains_Logbook/
 input_docs/
 
 # Debug & scratch
 debug_*.json
 *.session.sql
 
-# Old/deprecated code
-src/main_with_options*.py
-src/main_v2.py
-src/_backups
-
 # Reports in src/
 src/*/reports/
-src/features/README/
 src/**/*_REPORT.md
 src/**/*_SUMMARY.md
 
-# Tests — track everything, ignore only legacy in-source tests
+# Tests — track root tests/, ignore only legacy in-source tests
 src/**/tests/
 src/**/test_*.py
 /benchmarks
-tests/
 
-# Scripts — only track .py and .sql, exclude scratch
-scripts/
-scripts/*.md
+# Scripts — ignore scratch subdirectory and temp output files
+scripts/archive/
 scripts/*.txt
 scripts/migration_report*.json

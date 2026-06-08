@@ -93,9 +93,15 @@ class MetricsCollector:
             "upsert": {
                 "count": self._upsert_latencies.count,
                 "latency_avg_ms": round(self._upsert_latencies.mean() * 1000, 3),
-                "latency_p50_ms": round(self._upsert_latencies.percentile(50) * 1000, 3),
-                "latency_p95_ms": round(self._upsert_latencies.percentile(95) * 1000, 3),
-                "latency_p99_ms": round(self._upsert_latencies.percentile(99) * 1000, 3),
+                "latency_p50_ms": round(
+                    self._upsert_latencies.percentile(50) * 1000, 3
+                ),
+                "latency_p95_ms": round(
+                    self._upsert_latencies.percentile(95) * 1000, 3
+                ),
+                "latency_p99_ms": round(
+                    self._upsert_latencies.percentile(99) * 1000, 3
+                ),
                 **{k: v for k, v in self._counters.items() if k.startswith("upsert.")},
             },
             "counters": {

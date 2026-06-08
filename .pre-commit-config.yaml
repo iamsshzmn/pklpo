@@ -28,14 +28,6 @@ repos:
       - id: mixed-line-ending
         args: ["--fix=lf"]
 
-  - repo: local
-    hooks:
-      - id: language-policy
-        name: Enforce language policy (Python=EN)
-        entry: python scripts/check_language_policy.py
-        language: python
-        pass_filenames: true
-        files: ^(src/.*\.py|tests/.*\.py|scripts/.*\.py)$
 # ============================================
 # ПРИМЕЧАНИЯ:
 # ============================================

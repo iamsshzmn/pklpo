@@ -260,8 +260,12 @@ def push_swap_sync_metrics(stats: dict[str, Any]) -> bool:
         timeout_gauge.labels(mode).set(float(stats.get("api_timeout_count", 0)))
 
         db_write = stats.get("db_write", {}) or {}
-        db_latency_avg_gauge.labels(mode).set(float(db_write.get("latency_avg_ms", 0.0)))
-        db_latency_p95_gauge.labels(mode).set(float(db_write.get("latency_p95_ms", 0.0)))
+        db_latency_avg_gauge.labels(mode).set(
+            float(db_write.get("latency_avg_ms", 0.0))
+        )
+        db_latency_p95_gauge.labels(mode).set(
+            float(db_write.get("latency_p95_ms", 0.0))
+        )
         db_batch_avg_gauge.labels(mode).set(float(db_write.get("batch_size_avg", 0.0)))
         db_batch_max_gauge.labels(mode).set(float(db_write.get("batch_size_max", 0.0)))
 
@@ -329,6 +333,147 @@ def push_swap_smoke_metrics(smoke: dict[str, Any]) -> bool:
         return False
 
 
+def push_feature_eligibility_metrics(snapshot: dict[str, Any]) -> bool:
+    """Push feature eligibility materialized-state metrics."""
+    if not snapshot:
+        return False
+
+    try:
+        registry = CollectorRegistry()
+        state_counts_gauge = Gauge(
+            "pklpo_feature_eligibility_symbols",
+            "Feature eligibility symbols by timeframe and state",
+            ["timeframe", "state"],
+            registry=registry,
+        )
+        eligible_total_gauge = Gauge(
+            "pklpo_feature_eligible_total",
+            "Feature-eligible symbols by timeframe",
+            ["timeframe"],
+            registry=registry,
+        )
+        transitions_total = Counter(
+            "pklpo_feature_eligibility_transitions_total",
+            "Feature eligibility state transitions",
+            ["from_state", "to_state"],
+            registry=registry,
+        )
+        lost_gauge = Gauge(
+            "pklpo_feature_eligibility_lost",
+            "Symbols that lost eligibility by timeframe",
+            ["timeframe"],
+            registry=registry,
+        )
+        invalid_total_gauge = Gauge(
+            "pklpo_feature_eligibility_invalid_total",
+            "Feature eligibility invalid_history count",
+            registry=registry,
+        )
+        stale_seconds_gauge = Gauge(
+            "pklpo_feature_eligibility_stale_seconds",
+            "Seconds since the latest feature eligibility evaluation",
+            registry=registry,
+        )
+
+        for (timeframe, state), count in (snapshot.get("state_counts") or {}).items():
+            state_counts_gauge.labels(str(timeframe), str(state)).set(float(count))
+        for timeframe, count in (snapshot.get("eligible_counts") or {}).items():
+            eligible_total_gauge.labels(str(timeframe)).set(float(count))
+
+        lost_counts: dict[str, int] = {}
+        for transition in snapshot.get("transitions") or []:
+            from_state = str(transition.get("from_state") or "none")
+            to_state = str(transition.get("to_state") or "none")
+            timeframe = str(transition.get("timeframe") or "")
+            transitions_total.labels(from_state, to_state).inc()
+            if from_state == "eligible" and to_state in {
+                "incomplete_history",
+                "invalid_history",
+            }:
+                lost_counts[timeframe] = lost_counts.get(timeframe, 0) + 1
+        for timeframe, count in lost_counts.items():
+            lost_gauge.labels(timeframe).set(float(count))
+
+        invalid_total_gauge.set(float(snapshot.get("invalid_total", 0)))
+        stale_seconds_gauge.set(float(snapshot.get("stale_seconds", 0.0)))
+        pushed = _push_registry(registry, job_name="feature_eligibility")
+        if pushed:
+            logger.info("Feature eligibility metrics pushed")
+        return pushed
+    except Exception:
+        logger.warning("Failed to push feature eligibility metrics", exc_info=True)
+        return False
+
+
+def push_pipeline_monitoring_metrics(snapshot: dict[str, Any]) -> bool:
+    """Push read-only pipeline monitoring snapshot metrics."""
+    if not snapshot:
+        return False
+
+    try:
+        registry = CollectorRegistry()
+        candle_lag_gauge = Gauge(
+            "pklpo_pipeline_candle_lag_seconds",
+            "Lag in seconds between now and latest candle by timeframe",
+            ["timeframe"],
+            registry=registry,
+        )
+        recalc_queue_gauge = Gauge(
+            "pklpo_pipeline_recalc_queue_rows",
+            "Indicator recalculation queue rows by status",
+            ["status"],
+            registry=registry,
+        )
+        bootstrap_state_gauge = Gauge(
+            "pklpo_pipeline_bootstrap_state_rows",
+            "Bootstrap state rows by status",
+            ["status"],
+            registry=registry,
+        )
+        eligibility_state_gauge = Gauge(
+            "pklpo_pipeline_eligibility_state_rows",
+            "Feature eligibility rows by timeframe and state",
+            ["timeframe", "state"],
+            registry=registry,
+        )
+        alerts_gauge = Gauge(
+            "pklpo_pipeline_alerts",
+            "Read-only monitoring alerts by severity",
+            ["severity"],
+            registry=registry,
+        )
+
+        for timeframe, lag in (snapshot.get("candle_lag_seconds") or {}).items():
+            candle_lag_gauge.labels(str(timeframe)).set(float(lag))
+        for status, count in (snapshot.get("recalc_queue") or {}).items():
+            recalc_queue_gauge.labels(str(status)).set(float(count))
+        for status, count in (snapshot.get("bootstrap_state") or {}).items():
+            bootstrap_state_gauge.labels(str(status)).set(float(count))
+        eligibility_state = snapshot.get("eligibility_state") or []
+        if isinstance(eligibility_state, dict):
+            eligibility_state_rows: list[dict[str, Any]] = [
+                {"timeframe": timeframe, "state": state, "count": count}
+                for (timeframe, state), count in eligibility_state.items()
+            ]
+        else:
+            eligibility_state_rows = list(eligibility_state)
+        for row in eligibility_state_rows:
+            eligibility_state_gauge.labels(
+                str(row["timeframe"]),
+                str(row["state"]),
+            ).set(float(row["count"]))
+        for severity, count in (snapshot.get("alerts") or {}).items():
+            alerts_gauge.labels(str(severity)).set(float(count))
+
+        pushed = _push_registry(registry, job_name="pipeline_monitoring")
+        if pushed:
+            logger.info("Pipeline monitoring metrics pushed")
+        return pushed
+    except Exception:
+        logger.warning("Failed to push pipeline monitoring metrics", exc_info=True)
+        return False
+
+
 def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) -> bool:
     """Push validated swap repair results to Prometheus Pushgateway."""
     if not payloads:
@@ -381,6 +526,102 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
             label_names,
             registry=registry,
         )
+        received_bars_gauge = Gauge(
+            "pklpo_swap_repair_received_bars",
+            "Bars received from OKX across all iterations of a repair run",
+            label_names,
+            registry=registry,
+        )
+        progress_gauge = Gauge(
+            "pklpo_swap_repair_progress",
+            "Net reduction in missing timestamps for a repair run",
+            label_names,
+            registry=registry,
+        )
+        api_fill_ratio_gauge = Gauge(
+            "pklpo_swap_repair_api_fill_ratio",
+            "Fraction of requested bars the exchange actually returned (received/requested)",
+            label_names,
+            registry=registry,
+        )
+        write_success_ratio_gauge = Gauge(
+            "pklpo_swap_repair_write_success_ratio",
+            "Fraction of received bars that were written to the store (written/received)",
+            label_names,
+            registry=registry,
+        )
+        remaining_missing_before_gauge = Gauge(
+            "pklpo_swap_repair_remaining_missing_before",
+            "Missing timestamps in window before the repair run",
+            label_names,
+            registry=registry,
+        )
+        remaining_missing_after_gauge = Gauge(
+            "pklpo_swap_repair_remaining_missing_after",
+            "Missing timestamps in window after the repair run",
+            label_names,
+            registry=registry,
+        )
+        outcome_total_gauge = Gauge(
+            "pklpo_swap_repair_outcome_total",
+            "Count of repair run outcomes by classification",
+            [*label_names, "outcome"],
+            registry=registry,
+        )
+        blocked_gauge = Gauge(
+            "pklpo_swap_repair_blocked",
+            "Whether a validated swap repair result ended in a blocked empty-chunk state (1/0)",
+            label_names,
+            registry=registry,
+        )
+        blocked_reason_total_gauge = Gauge(
+            "pklpo_swap_repair_blocked_reason_total",
+            "Count of blocked repair results by blocked reason",
+            [*label_names, "blocked_reason"],
+            registry=registry,
+        )
+        blocked_cause_total_gauge = Gauge(
+            "pklpo_swap_repair_blocked_cause_total",
+            "Count of blocked repair results by blocked cause",
+            [*label_names, "blocked_cause"],
+            registry=registry,
+        )
+        last200_pairs_checked_total = Counter(
+            "pklpo_last200_pairs_checked_total",
+            "Pairs checked by the last-200 closed-bars guard",
+            ["timeframe"],
+            registry=registry,
+        )
+        last200_pairs_ok_total = Counter(
+            "pklpo_last200_pairs_ok_total",
+            "Pairs that ended ok in the last-200 closed-bars guard",
+            ["timeframe"],
+            registry=registry,
+        )
+        last200_missing_bars_total = Counter(
+            "pklpo_last200_missing_bars_total",
+            "Bars requiring repair attention in the last-200 guard before final verification",
+            ["timeframe"],
+            registry=registry,
+        )
+        last200_corrupted_bars_total = Counter(
+            "pklpo_last200_corrupted_bars_total",
+            "Corrupted bars detected by the last-200 guard",
+            ["timeframe"],
+            registry=registry,
+        )
+        last200_remaining_after_total = Counter(
+            "pklpo_last200_remaining_after_total",
+            "Bars still unresolved after the last-200 guard run",
+            ["timeframe", "status"],
+            registry=registry,
+        )
+        last200_indicator_recalc_enqueued_total = Counter(
+            "pklpo_last200_indicator_recalc_enqueued_total",
+            "Feature recalculation ranges enqueued by the last-200 guard",
+            ["timeframe"],
+            registry=registry,
+        )
 
         for payload in normalized:
             labels = (
@@ -389,9 +630,13 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
                 str(payload.get("mode", "")),
                 str(payload.get("strategy", "")),
             )
-            rows_written_gauge.labels(*labels).set(float(payload.get("rows_written", 0)))
+            rows_written_gauge.labels(*labels).set(
+                float(payload.get("rows_written", 0))
+            )
             gap_tasks_gauge.labels(*labels).set(float(payload.get("gap_tasks", 0)))
-            requested_bars_gauge.labels(*labels).set(float(payload.get("requested_bars", 0)))
+            requested_bars_gauge.labels(*labels).set(
+                float(payload.get("requested_bars", 0))
+            )
             remaining_gap_tasks_gauge.labels(*labels).set(
                 float(payload.get("remaining_gap_tasks", 0))
             )
@@ -402,6 +647,52 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
             auto_apply_incomplete_gauge.labels(*labels).set(
                 1.0 if payload.get("auto_apply_incomplete") else 0.0
             )
+            received_bars_gauge.labels(*labels).set(
+                float(payload.get("received_bars", 0))
+            )
+            progress_gauge.labels(*labels).set(float(payload.get("progress", 0)))
+            api_fill_ratio_gauge.labels(*labels).set(
+                float(payload.get("api_fill_ratio", 0.0))
+            )
+            write_success_ratio_gauge.labels(*labels).set(
+                float(payload.get("write_success_ratio", 0.0))
+            )
+            remaining_missing_before_gauge.labels(*labels).set(
+                float(payload.get("remaining_missing_before", 0))
+            )
+            remaining_missing_after_gauge.labels(*labels).set(
+                float(payload.get("remaining_missing_after", 0))
+            )
+            blocked = bool(payload.get("blocked", False))
+            blocked_gauge.labels(*labels).set(1.0 if blocked else 0.0)
+            blocked_reason = payload.get("blocked_reason")
+            if blocked_reason is not None:
+                blocked_reason_total_gauge.labels(*labels, str(blocked_reason)).inc()
+            blocked_cause = payload.get("blocked_cause")
+            if blocked_cause is not None:
+                blocked_cause_total_gauge.labels(*labels, str(blocked_cause)).inc()
+            outcome_value = payload.get("outcome")
+            if outcome_value is not None:
+                outcome_total_gauge.labels(*labels, str(outcome_value)).inc()
+            if str(payload.get("strategy", "")) == "last_n_closed_bars":
+                timeframe = str(payload.get("timeframe", ""))
+                status = str(payload.get("status", "unknown"))
+                unresolved = list(payload.get("unresolved_timestamps", []))
+                missing_before = int(payload.get("repaired_count", 0)) + len(unresolved)
+                last200_pairs_checked_total.labels(timeframe).inc()
+                if status == "ok":
+                    last200_pairs_ok_total.labels(timeframe).inc()
+                if missing_before > 0:
+                    last200_missing_bars_total.labels(timeframe).inc(missing_before)
+                corrupted = int(payload.get("corrupted_count", 0))
+                if corrupted > 0:
+                    last200_corrupted_bars_total.labels(timeframe).inc(corrupted)
+                if unresolved:
+                    last200_remaining_after_total.labels(timeframe, status).inc(
+                        len(unresolved)
+                    )
+                if status == "ok" and payload.get("affected_recalc_range") is not None:
+                    last200_indicator_recalc_enqueued_total.labels(timeframe).inc()
 
         pushed = _push_registry(registry, job_name="swap_repair_v1")
         if pushed:

@@ -64,6 +64,7 @@ class SqlAlchemyFeatureStorageGateway:
         timeframe: str,
         *,
         since_ts: int | None = None,
+        until_ts: int | None = None,
         limit: int = 200,
     ) -> pd.DataFrame | None:
         from .infrastructure.db_operations import fetch_ohlcv_df
@@ -73,6 +74,7 @@ class SqlAlchemyFeatureStorageGateway:
             symbol,
             timeframe,
             since_ts=since_ts,
+            until_ts=until_ts,
             limit=limit,
         )
 

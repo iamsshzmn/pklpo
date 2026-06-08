@@ -1,4 +1,12 @@
 """
+group_metrics — KEEP (features-prune-v2 A5).
+
+Responsibility: record fill-rate and observability metrics per indicator group.
+               No calculation logic, no persistence.
+Imported by: group_orchestrator.py; also wired from compute_features_grouped()
+             via fill_rate_recorder injection from application/observability layer.
+Decision: kept separate from group_calculator and group_orchestrator per SRP.
+
 Group Metrics Recorder (SRP: metrics only).
 
 This module handles recording of metrics for indicator calculations

@@ -1,5 +1,14 @@
 from .dto import RepairCommand, RepairPreview, RepairResult
-from .planning import AutoApplyWindowPlan, plan_auto_apply_window, resolve_repair_window
+from .last_n_closed_bars import GuaranteeLastClosedBarsUseCase
+from .planning import (
+    AutoApplyWindowPlan,
+    RepairChunk,
+    RepairGap,
+    TailFirstRepairPlan,
+    plan_auto_apply_window,
+    plan_tail_first_repair,
+    resolve_repair_window,
+)
 from .ports import (
     CandleCoverageQueryPort,
     HistoricalCandleSourcePort,
@@ -20,18 +29,23 @@ from .use_cases import RunGapRepairUseCase, RunHistoricalBackfillUseCase
 __all__ = [
     "AutoApplyWindowPlan",
     "CandleCoverageQueryPort",
+    "GuaranteeLastClosedBarsUseCase",
     "HistoricalCandleSourcePort",
     "RepairCandleStorePort",
+    "RepairChunk",
     "RepairCommand",
+    "RepairGap",
     "RepairPreview",
     "RepairResult",
     "RepairSummary",
     "RepairTimeframeRequest",
     "RunGapRepairUseCase",
     "RunHistoricalBackfillUseCase",
+    "TailFirstRepairPlan",
     "build_noop_repair_summary",
     "merge_repair_summaries",
     "plan_auto_apply_window",
+    "plan_tail_first_repair",
     "preview_repair_timeframe",
     "resolve_repair_window",
     "run_repair_timeframe",

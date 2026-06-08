@@ -22,6 +22,7 @@ T = TypeVar("T")
 # Circuit Breaker
 # ---------------------------------------------------------------------------
 
+
 class CircuitState(enum.Enum):
     CLOSED = "closed"
     OPEN = "open"
@@ -70,7 +71,10 @@ class CircuitBreaker:
 
     def record_failure(self) -> None:
         self._consecutive_failures += 1
-        if self._state is CircuitState.HALF_OPEN or self._consecutive_failures >= self.failure_threshold:
+        if (
+            self._state is CircuitState.HALF_OPEN
+            or self._consecutive_failures >= self.failure_threshold
+        ):
             self._transition(CircuitState.OPEN)
 
     def _transition(self, new_state: CircuitState) -> None:
@@ -107,6 +111,7 @@ class CircuitOpenError(Exception):
 # Retry I/O
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class RetryIOPolicy:
     """Policy for retry_io wrapper.
@@ -123,7 +128,7 @@ class RetryIOPolicy:
         return isinstance(exc, self.retriable_exceptions)
 
     def delay_with_jitter(self, attempt: int) -> float:
-        exp_delay = min(self.max_delay, self.base_delay * (2 ** attempt))
+        exp_delay = min(self.max_delay, self.base_delay * (2**attempt))
         return random.uniform(0, exp_delay)
 
 

@@ -222,9 +222,7 @@ async def cmd_signals(args: argparse.Namespace):
             side_text = (
                 "LONG"
                 if signal.get("side") == 1
-                else "SHORT"
-                if signal.get("side") == -1
-                else "FLAT"
+                else "SHORT" if signal.get("side") == -1 else "FLAT"
             )
             symbol = signal.get("symbol", "Unknown")
             score = signal.get("score", 0)
