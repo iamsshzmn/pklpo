@@ -5,12 +5,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+
+if "/opt/airflow/project" not in sys.path:
+    sys.path.insert(0, "/opt/airflow/project")
+
+from src.pklpo_platform.observability import airflow_log_context
 
 logger = logging.getLogger(__name__)
 
@@ -122,69 +128,71 @@ async def _run_partition_validation_async(
 
 
 def run_partition_maintenance_task(**context) -> dict[str, Any]:
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="indicators_partition_maintenance"):
+        env = get_dag_env()
+        setup_env(env)
 
-    dag_run = context.get("dag_run")
-    conf = (dag_run.conf or {}) if dag_run else {}
-    months_back = int(conf.get("months_back", DEFAULT_MONTHS_BACK))
-    months_ahead = int(conf.get("months_ahead", DEFAULT_MONTHS_AHEAD))
-    require_parent_pk = _parse_bool(conf.get("require_parent_pk", True))
-    reference_dt = _parse_reference_dt(conf.get("reference_dt"))
+        dag_run = context.get("dag_run")
+        conf = (dag_run.conf or {}) if dag_run else {}
+        months_back = int(conf.get("months_back", DEFAULT_MONTHS_BACK))
+        months_ahead = int(conf.get("months_ahead", DEFAULT_MONTHS_AHEAD))
+        require_parent_pk = _parse_bool(conf.get("require_parent_pk", True))
+        reference_dt = _parse_reference_dt(conf.get("reference_dt"))
 
-    logger.info(
-        "partition_maintenance start months_back=%s months_ahead=%s reference_dt=%s",
-        months_back,
-        months_ahead,
-        reference_dt.isoformat() if reference_dt else "now",
-    )
-
-    loop = get_or_create_event_loop()
-    result = loop.run_until_complete(
-        _run_partition_maintenance_async(
-            months_back=months_back,
-            months_ahead=months_ahead,
-            reference_dt=reference_dt,
-            require_parent_pk=require_parent_pk,
+        logger.info(
+            "partition_maintenance start months_back=%s months_ahead=%s reference_dt=%s",
+            months_back,
+            months_ahead,
+            reference_dt.isoformat() if reference_dt else "now",
         )
-    )
 
-    logger.info(
-        "partition_maintenance finish created=%s existing=%s",
-        result.get("created_count"),
-        result.get("existing_count"),
-    )
-    return result
+        loop = get_or_create_event_loop()
+        result = loop.run_until_complete(
+            _run_partition_maintenance_async(
+                months_back=months_back,
+                months_ahead=months_ahead,
+                reference_dt=reference_dt,
+                require_parent_pk=require_parent_pk,
+            )
+        )
+
+        logger.info(
+            "partition_maintenance finish created=%s existing=%s",
+            result.get("created_count"),
+            result.get("existing_count"),
+        )
+        return result
 
 
 def validate_partition_horizon_task(**context) -> dict[str, Any]:
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="indicators_partition_maintenance"):
+        env = get_dag_env()
+        setup_env(env)
 
-    dag_run = context.get("dag_run")
-    conf = (dag_run.conf or {}) if dag_run else {}
-    months_ahead = int(conf.get("months_ahead", DEFAULT_MONTHS_AHEAD))
-    reference_dt = _parse_reference_dt(conf.get("reference_dt"))
+        dag_run = context.get("dag_run")
+        conf = (dag_run.conf or {}) if dag_run else {}
+        months_ahead = int(conf.get("months_ahead", DEFAULT_MONTHS_AHEAD))
+        reference_dt = _parse_reference_dt(conf.get("reference_dt"))
 
-    logger.info(
-        "partition_validation start months_ahead=%s reference_dt=%s",
-        months_ahead,
-        reference_dt.isoformat() if reference_dt else "now",
-    )
-
-    loop = get_or_create_event_loop()
-    result = loop.run_until_complete(
-        _run_partition_validation_async(
-            months_ahead=months_ahead,
-            reference_dt=reference_dt,
+        logger.info(
+            "partition_validation start months_ahead=%s reference_dt=%s",
+            months_ahead,
+            reference_dt.isoformat() if reference_dt else "now",
         )
-    )
 
-    logger.info(
-        "partition_validation finish actual_months_ahead=%s",
-        result.get("actual_months_ahead"),
-    )
-    return result
+        loop = get_or_create_event_loop()
+        result = loop.run_until_complete(
+            _run_partition_validation_async(
+                months_ahead=months_ahead,
+                reference_dt=reference_dt,
+            )
+        )
+
+        logger.info(
+            "partition_validation finish actual_months_ahead=%s",
+            result.get("actual_months_ahead"),
+        )
+        return result
 
 
 default_args = {

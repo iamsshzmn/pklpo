@@ -28,6 +28,7 @@ from src.features.api import (
 )
 from src.features.application import RecalcFeaturesInRange
 from src.features.application.save import save_batch
+from src.pklpo_platform.observability import airflow_log_context
 from src.utils.session_utils import get_db_session
 
 
@@ -239,16 +240,17 @@ async def _drain_indicator_recalc_queue(
 
 
 def drain_indicator_recalc_queue_task(**context: Any) -> dict[str, int]:
-    dag_run = context.get("dag_run")
-    conf = (getattr(dag_run, "conf", None) or {}) if dag_run else {}
-    run_id = getattr(dag_run, "run_id", None) or "indicators_recalc"
-    return asyncio.run(
-        _drain_indicator_recalc_queue(
-            run_id=run_id,
-            limit=_to_int(conf.get("limit"), 25),
-            stale_after_minutes=_to_int(conf.get("stale_after_minutes"), 60),
+    with airflow_log_context(context, component="indicators_recalc"):
+        dag_run = context.get("dag_run")
+        conf = (getattr(dag_run, "conf", None) or {}) if dag_run else {}
+        run_id = getattr(dag_run, "run_id", None) or "indicators_recalc"
+        return asyncio.run(
+            _drain_indicator_recalc_queue(
+                run_id=run_id,
+                limit=_to_int(conf.get("limit"), 25),
+                stale_after_minutes=_to_int(conf.get("stale_after_minutes"), 60),
+            )
         )
-    )
 
 
 os.environ.setdefault("FEATURES_LOG_FILE", "/tmp/pklpo/features.log")  # noqa: S108

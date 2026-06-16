@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 import types
+from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -74,6 +75,7 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     monkeypatch.setitem(sys.modules, "src.utils.session_utils", session_utils_module)
 
     common = types.ModuleType("_common")
+    common.airflow_log_context = lambda context, **kwargs: nullcontext("run-id")
     common.get_dag_env = lambda job_name_default=None: {  # type: ignore[attr-defined]
         "OBSERVABILITY_JOB_NAME": job_name_default or "pipeline_monitoring"
     }

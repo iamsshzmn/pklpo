@@ -29,6 +29,7 @@ if "/opt/airflow/project" not in sys.path:
     sys.path.insert(0, "/opt/airflow/project")
 
 from _common import (  # type: ignore[import-not-found]
+    airflow_log_context,
     get_dag_env as _get_common_dag_env,
     get_or_create_event_loop,
     setup_env as _setup_common_env,
@@ -110,20 +111,21 @@ async def _run_migrations_async() -> bool:
 
 def run_migrations_task(**context) -> dict[str, Any]:
     """Airflow task: run database migrations."""
-    log_ctx = _build_log_context(context)
-    logger.info("run_migrations start %s", log_ctx)
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="market_selection"):
+        log_ctx = _build_log_context(context)
+        logger.info("run_migrations start %s", log_ctx)
+        env = get_dag_env()
+        setup_env(env)
 
-    try:
-        result = _get_loop().run_until_complete(_run_migrations_async())
-    except Exception:
-        logger.exception("run_migrations failed %s", log_ctx)
-        raise
+        try:
+            result = _get_loop().run_until_complete(_run_migrations_async())
+        except Exception:
+            logger.exception("run_migrations failed %s", log_ctx)
+            raise
 
-    logger.info("run_migrations finish %s migrations_ok=%s", log_ctx, result)
+        logger.info("run_migrations finish %s migrations_ok=%s", log_ctx, result)
 
-    return {"migrations_ok": result}
+        return {"migrations_ok": result}
 
 
 async def _run_pipeline_async(params: dict[str, Any]) -> dict[str, Any]:
@@ -158,38 +160,39 @@ async def _run_pipeline_async(params: dict[str, Any]) -> dict[str, Any]:
 
 def run_pipeline_task(**context) -> dict[str, Any]:
     """Airflow task: run market selection pipeline."""
-    log_ctx = _build_log_context(context)
-    logger.info("run_pipeline start %s", log_ctx)
+    with airflow_log_context(context, component="market_selection"):
+        log_ctx = _build_log_context(context)
+        logger.info("run_pipeline start %s", log_ctx)
 
-    env = get_dag_env()
-    setup_env(env)
+        env = get_dag_env()
+        setup_env(env)
 
-    params = dict(context.get("params", {}))
-    dag_run = context.get("dag_run")
-    dag_run_conf = getattr(dag_run, "conf", None) or {}
-    params.update(dag_run_conf)
+        params = dict(context.get("params", {}))
+        dag_run = context.get("dag_run")
+        dag_run_conf = getattr(dag_run, "conf", None) or {}
+        params.update(dag_run_conf)
 
-    result = cast(
-        "dict[str, Any]",
-        _get_loop().run_until_complete(_run_pipeline_async(params)),
-    )
+        result = cast(
+            "dict[str, Any]",
+            _get_loop().run_until_complete(_run_pipeline_async(params)),
+        )
 
-    if not result["success"]:
-        logger.error(f"Pipeline failed: {result.get('error_message')}")
-        raise RuntimeError(f"Market selection failed: {result.get('error_message')}")
+        if not result["success"]:
+            logger.error(f"Pipeline failed: {result.get('error_message')}")
+            raise RuntimeError(f"Market selection failed: {result.get('error_message')}")
 
-    execution_time = _safe_execution_time(result.get("execution_time_seconds"))
-    logger.info(
-        "run_pipeline finish %s success=%s universe_size=%s regime=%s time=%s status=%s",
-        log_ctx,
-        result["success"],
-        result["universe_size"],
-        result["global_regime"],
-        execution_time,
-        result["status"],
-    )
+        execution_time = _safe_execution_time(result.get("execution_time_seconds"))
+        logger.info(
+            "run_pipeline finish %s success=%s universe_size=%s regime=%s time=%s status=%s",
+            log_ctx,
+            result["success"],
+            result["universe_size"],
+            result["global_regime"],
+            execution_time,
+            result["status"],
+        )
 
-    return result
+        return result
 
 
 async def _table_exists(session: Any, table_name: str) -> bool:

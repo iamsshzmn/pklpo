@@ -27,6 +27,7 @@ if "/opt/airflow/project" not in sys.path:
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from _common import airflow_log_context  # type: ignore[import-not-found]
 
 from src.features.api import (
     run_features_calc_short,
@@ -168,7 +169,7 @@ def get_dag_env() -> dict[str, str]:
     )
     env["OBSERVABILITY_PROMETHEUS_ENABLED"] = Variable.get(
         "observability_prometheus_enabled",
-        default_var=_project_env_default("OBSERVABILITY_PROMETHEUS_ENABLED", "false"),
+        default_var=_project_env_default("OBSERVABILITY_PROMETHEUS_ENABLED", "true"),
     )
     env["OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL"] = Variable.get(
         "observability_prometheus_pushgateway_url",
@@ -204,60 +205,62 @@ def setup_env(env: dict[str, str | None]) -> None:
 
 
 def features_calc_short_run_task(**context):
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="features_calc_short"):
+        env = get_dag_env()
+        setup_env(env)
 
-    dag_run = context.get("dag_run")
-    conf = (dag_run.conf or {}) if dag_run else {}
-    symbols = _normalize_symbols(conf.get("symbols"))
-    timeframes = _normalize_timeframes(conf.get("timeframes"))
-    max_concurrent_symbols = _to_int(conf.get("max_concurrent_symbols"), 3)
-    is_manual_run = bool(dag_run and dag_run.run_type == "manual")
+        dag_run = context.get("dag_run")
+        conf = (dag_run.conf or {}) if dag_run else {}
+        symbols = _normalize_symbols(conf.get("symbols"))
+        timeframes = _normalize_timeframes(conf.get("timeframes"))
+        max_concurrent_symbols = _to_int(conf.get("max_concurrent_symbols"), 3)
+        is_manual_run = bool(dag_run and dag_run.run_type == "manual")
 
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise RuntimeError("DATABASE_URL is not set")
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            raise RuntimeError("DATABASE_URL is not set")
 
-    start_time = time.time()
-    result = asyncio.run(
-        run_features_calc_short(
-            database_url=database_url,
-            symbols=symbols,
-            timeframes=timeframes,
-            max_concurrent_symbols=max_concurrent_symbols,
-            is_manual_run=is_manual_run,
-            max_lag_fast=_to_int(conf.get("max_lag_fast"), 240),
-            max_lag_slow=_to_int(conf.get("max_lag_slow"), 1200),
-            warmup_bars=_to_int(conf.get("warmup_bars"), 500),
+        start_time = time.time()
+        result = asyncio.run(
+            run_features_calc_short(
+                database_url=database_url,
+                symbols=symbols,
+                timeframes=timeframes,
+                max_concurrent_symbols=max_concurrent_symbols,
+                is_manual_run=is_manual_run,
+                max_lag_fast=_to_int(conf.get("max_lag_fast"), 240),
+                max_lag_slow=_to_int(conf.get("max_lag_slow"), 1200),
+                warmup_bars=_to_int(conf.get("warmup_bars"), 500),
+            )
         )
-    )
-    if isinstance(result, dict):
-        result["duration_seconds"] = round(time.time() - start_time, 2)
-    return result
+        if isinstance(result, dict):
+            result["duration_seconds"] = round(time.time() - start_time, 2)
+        return result
 
 
 def features_calc_short_validate_task(**context):
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="features_calc_short"):
+        env = get_dag_env()
+        setup_env(env)
 
-    dag_run = context.get("dag_run")
-    conf = (dag_run.conf or {}) if dag_run else {}
-    quality_enabled = _to_bool(conf.get("quality_postcheck_enabled"), True)
-    quality_send_alerts = _to_bool(conf.get("quality_send_alerts"), True)
-    quality_alert_cooldown = _to_int(conf.get("quality_alert_cooldown_minutes"), 30)
+        dag_run = context.get("dag_run")
+        conf = (dag_run.conf or {}) if dag_run else {}
+        quality_enabled = _to_bool(conf.get("quality_postcheck_enabled"), True)
+        quality_send_alerts = _to_bool(conf.get("quality_send_alerts"), True)
+        quality_alert_cooldown = _to_int(conf.get("quality_alert_cooldown_minutes"), 30)
 
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise RuntimeError("DATABASE_URL is not set")
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            raise RuntimeError("DATABASE_URL is not set")
 
-    return asyncio.run(
-        run_features_calc_short_validate(
-            database_url=database_url,
-            quality_enabled=quality_enabled,
-            quality_send_alerts=quality_send_alerts,
-            quality_alert_cooldown=quality_alert_cooldown,
+        return asyncio.run(
+            run_features_calc_short_validate(
+                database_url=database_url,
+                quality_enabled=quality_enabled,
+                quality_send_alerts=quality_send_alerts,
+                quality_alert_cooldown=quality_alert_cooldown,
+            )
         )
-    )
 
 
 default_args = {

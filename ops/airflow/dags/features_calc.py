@@ -40,6 +40,8 @@ sys.path.insert(0, "/opt/airflow/project")
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
+from src.pklpo_platform.observability import airflow_log_context
+
 
 def _normalize_async_database_uri(uri: str) -> str:
     if uri.startswith("postgresql+asyncpg://"):
@@ -89,6 +91,18 @@ except ImportError as e:
 
 
 def features_run_task(
+    symbols: str | None = None,
+    timeframes=None,
+    limit: int | None = None,
+    **context,
+):
+    with airflow_log_context(
+        context, component="features_calc", task_id="features_run"
+    ):
+        return _features_run_impl(symbols=symbols, timeframes=timeframes, limit=limit)
+
+
+def _features_run_impl(
     symbols: str | None = None, timeframes=None, limit: int | None = None
 ):
     """
@@ -472,7 +486,14 @@ def features_run_task(
     print("=" * 80)
 
 
-def smoke_validate_features_task():
+def smoke_validate_features_task(**context):
+    with airflow_log_context(
+        context, component="features_calc", task_id="smoke_validate_features"
+    ):
+        return _smoke_validate_features_impl()
+
+
+def _smoke_validate_features_impl():
     """
     Задача для проверки результатов расчёта features и получения метрик.
     Использует новую систему smoke validation из features модуля.
@@ -691,6 +712,20 @@ async def _resolve_feature_eligible_work_items(
 
 
 def combinations_run_task(
+    symbols: str | None = None,
+    timeframes=None,
+    limit: int | None = None,
+    **context,
+):
+    with airflow_log_context(
+        context, component="features_calc", task_id="combinations_run"
+    ):
+        return _combinations_run_impl(
+            symbols=symbols, timeframes=timeframes, limit=limit
+        )
+
+
+def _combinations_run_impl(
     symbols: str | None = None, timeframes=None, limit: int | None = None
 ):
     """

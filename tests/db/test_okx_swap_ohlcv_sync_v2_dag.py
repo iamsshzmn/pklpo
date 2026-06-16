@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,25 @@ def _load_okx_swap_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleTy
     airflow_operators_python = types.ModuleType("airflow.operators.python")
     airflow_operators_python.PythonOperator = _DummyOperator
     monkeypatch.setitem(sys.modules, "airflow.operators.python", airflow_operators_python)
+
+    common = types.ModuleType("_common")
+    common.airflow_log_context = lambda context, **kwargs: nullcontext("run-id")
+    monkeypatch.setitem(sys.modules, "_common", common)
+
+    src_module = types.ModuleType("src")
+    src_module.__path__ = []  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src", src_module)
+
+    candles_module = types.ModuleType("src.candles")
+    candles_module.__path__ = []  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src.candles", candles_module)
+
+    candles_interfaces = types.ModuleType("src.candles.interfaces")
+    candles_interfaces.AirflowSyncRequest = object
+    candles_interfaces.run_refresh_okx_meta = object()
+    candles_interfaces.run_smoke_validate = object()
+    candles_interfaces.run_swap_sync = object()
+    monkeypatch.setitem(sys.modules, "src.candles.interfaces", candles_interfaces)
 
     module_path = Path("D:/projects/pklpo/ops/airflow/dags/okx_swap_ohlcv_sync_v2.py")
     module_name = "tests.db._okx_swap_ohlcv_sync_v2_dag"

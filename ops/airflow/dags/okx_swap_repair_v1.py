@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from _common import (  # type: ignore[import-not-found]
+    airflow_log_context,
     coerce_float as _coerce_float,
     coerce_int as _coerce_int,
     get_dag_env as _get_common_dag_env,
@@ -415,92 +416,94 @@ def preflight_instrument_check_task(**context) -> None:
 
 
 def validate_swap_repair_conf_task(**context) -> dict[str, Any]:
-    conf = _get_run_conf(context)
-    log_ctx = _build_log_context(context)
-    logger.info("validate_swap_repair_conf start %s raw_conf=%s", log_ctx, conf)
-    trigger = str(conf.get("trigger") or DEFAULT_TRIGGER).strip()
-    validated = _build_validated_conf_from_trigger(trigger)
-    logger.info(
-        "validate_swap_repair_conf finish %s trigger=%s symbols=%d timeframes=%s mode=%s strategy=%s",
-        log_ctx,
-        validated["trigger"],
-        len(validated["symbols"]),
-        validated["timeframes"],
-        validated["mode"],
-        validated["repair_strategy"],
-    )
-    return validated
+    with airflow_log_context(context, component="swap_repair"):
+        conf = _get_run_conf(context)
+        log_ctx = _build_log_context(context)
+        logger.info("validate_swap_repair_conf start %s raw_conf=%s", log_ctx, conf)
+        trigger = str(conf.get("trigger") or DEFAULT_TRIGGER).strip()
+        validated = _build_validated_conf_from_trigger(trigger)
+        logger.info(
+            "validate_swap_repair_conf finish %s trigger=%s symbols=%d timeframes=%s mode=%s strategy=%s",
+            log_ctx,
+            validated["trigger"],
+            len(validated["symbols"]),
+            validated["timeframes"],
+            validated["mode"],
+            validated["repair_strategy"],
+        )
+        return validated
 
 
 def swap_repair_task(**context) -> list[dict[str, Any]]:
-    log_ctx = _build_log_context(context)
-    logger.info("swap_repair start %s", log_ctx)
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="swap_repair"):
+        log_ctx = _build_log_context(context)
+        logger.info("swap_repair start %s", log_ctx)
+        env = get_dag_env()
+        setup_env(env)
 
-    ti = context["ti"]
-    validated = ti.xcom_pull(task_ids="validate_swap_repair_conf", key="return_value")
-    if not isinstance(validated, dict):
-        raise ValueError("swap_repair validated config must be a dict")
-    timeframes = [str(timeframe) for timeframe in validated.get("timeframes", [])]
-    symbols = [str(symbol) for symbol in validated.get("symbols", [])]
-    if not timeframes:
-        raise ValueError(
-            "swap_repair validated config must contain non-empty timeframes"
-        )
-    if not symbols:
-        raise ValueError("swap_repair validated config must contain non-empty symbols")
-
-    summaries = []
-    for symbol in symbols:
-        per_symbol_validated = dict(validated)
-        per_symbol_validated["symbol"] = symbol
-        for timeframe in timeframes:
-            try:
-                if _is_last_n_guard(per_symbol_validated):
-                    summary = _run_last_n_guard_for_timeframe(
-                        validated=per_symbol_validated,
-                        timeframe=str(timeframe),
-                    )
-                elif bool(validated.get("auto_apply_window", False)):
-                    summary = _run_auto_apply_for_timeframe(
-                        validated=per_symbol_validated,
-                        timeframe=str(timeframe),
-                    )
-                else:
-                    summary = _run_swap_repair_once(
-                        validated=per_symbol_validated,
-                        timeframe=str(timeframe),
-                        start_ts_ms=_coerce_int(
-                            validated.get("start_ts_ms"),
-                            field_name="validated.start_ts_ms",
-                        ),
-                        end_ts_ms=_coerce_int(
-                            validated.get("end_ts_ms"),
-                            field_name="validated.end_ts_ms",
-                        ),
-                    )
-            except ValueError as exc:
-                if _is_terminal_repair_error(exc):
-                    logger.error(
-                        "swap_repair terminal failure %s symbol=%s timeframe=%s reason=%s",
-                        log_ctx,
-                        symbol,
-                        timeframe,
-                        exc,
-                    )
-                    raise AirflowFailException(str(exc)) from exc
-                raise
-            logger.info(
-                "swap_repair finish %s symbol=%s timeframe=%s summary=%s",
-                log_ctx,
-                symbol,
-                timeframe,
-                summary,
+        ti = context["ti"]
+        validated = ti.xcom_pull(task_ids="validate_swap_repair_conf", key="return_value")
+        if not isinstance(validated, dict):
+            raise ValueError("swap_repair validated config must be a dict")
+        timeframes = [str(timeframe) for timeframe in validated.get("timeframes", [])]
+        symbols = [str(symbol) for symbol in validated.get("symbols", [])]
+        if not timeframes:
+            raise ValueError(
+                "swap_repair validated config must contain non-empty timeframes"
             )
-            summaries.append(summary)
-    logger.info("swap_repair completed %s summaries=%d", log_ctx, len(summaries))
-    return summaries
+        if not symbols:
+            raise ValueError("swap_repair validated config must contain non-empty symbols")
+
+        summaries = []
+        for symbol in symbols:
+            per_symbol_validated = dict(validated)
+            per_symbol_validated["symbol"] = symbol
+            for timeframe in timeframes:
+                try:
+                    if _is_last_n_guard(per_symbol_validated):
+                        summary = _run_last_n_guard_for_timeframe(
+                            validated=per_symbol_validated,
+                            timeframe=str(timeframe),
+                        )
+                    elif bool(validated.get("auto_apply_window", False)):
+                        summary = _run_auto_apply_for_timeframe(
+                            validated=per_symbol_validated,
+                            timeframe=str(timeframe),
+                        )
+                    else:
+                        summary = _run_swap_repair_once(
+                            validated=per_symbol_validated,
+                            timeframe=str(timeframe),
+                            start_ts_ms=_coerce_int(
+                                validated.get("start_ts_ms"),
+                                field_name="validated.start_ts_ms",
+                            ),
+                            end_ts_ms=_coerce_int(
+                                validated.get("end_ts_ms"),
+                                field_name="validated.end_ts_ms",
+                            ),
+                        )
+                except ValueError as exc:
+                    if _is_terminal_repair_error(exc):
+                        logger.error(
+                            "swap_repair terminal failure %s symbol=%s timeframe=%s reason=%s",
+                            log_ctx,
+                            symbol,
+                            timeframe,
+                            exc,
+                        )
+                        raise AirflowFailException(str(exc)) from exc
+                    raise
+                logger.info(
+                    "swap_repair finish %s symbol=%s timeframe=%s summary=%s",
+                    log_ctx,
+                    symbol,
+                    timeframe,
+                    summary,
+                )
+                summaries.append(summary)
+        logger.info("swap_repair completed %s summaries=%d", log_ctx, len(summaries))
+        return summaries
 
 
 def swap_repair_preview_task(**context) -> list[dict[str, Any]]:

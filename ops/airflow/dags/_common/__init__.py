@@ -7,6 +7,11 @@ from .env import (
     project_env_default,
     setup_env,
 )
+from .observability import (
+    airflow_log_context,
+    airflow_run_id,
+    airflow_task_id,
+)
 from .repair import (
     DEFAULT_SWAP_REPAIR_SYMBOL,
     DEFAULT_SWAP_REPAIR_TIMEFRAMES,
@@ -33,6 +38,9 @@ __all__ = [
     "coerce_int",
     "get_dag_env",
     "get_or_create_event_loop",
+    "airflow_log_context",
+    "airflow_run_id",
+    "airflow_task_id",
     "normalize_async_database_uri",
     "normalize_swap_repair_conf",
     "normalize_swap_repair_summary_payloads",
