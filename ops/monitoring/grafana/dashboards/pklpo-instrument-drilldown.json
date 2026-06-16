@@ -1,0 +1,283 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 300 },
+              { "color": "red", "value": 900 }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "pklpo_data_freshness_lag_seconds{symbol=\"$symbol\",timeframe=\"$timeframe\"} or pklpo_data_freshness_lag_seconds{symbol=\"all\",timeframe=\"$timeframe\"}",
+          "legendFormat": "{{symbol}} {{timeframe}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Freshness Lag",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2 },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "pklpo_data_fill_rate{symbol=\"$symbol\",timeframe=\"$timeframe\"}",
+          "legendFormat": "fill",
+          "refId": "A"
+        },
+        {
+          "expr": "pklpo_data_hole_rate{symbol=\"$symbol\",timeframe=\"$timeframe\"}",
+          "legendFormat": "hole",
+          "refId": "B"
+        },
+        {
+          "expr": "pklpo_data_quality_score{symbol=\"$symbol\",timeframe=\"$timeframe\"}",
+          "legendFormat": "quality",
+          "refId": "C"
+        }
+      ],
+      "title": "Fill Hole Quality",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "pklpo_feature_eligibility_symbols{timeframe=\"$timeframe\"}",
+          "legendFormat": "{{state}} {{timeframe}}",
+          "refId": "A"
+        },
+        {
+          "expr": "pklpo_feature_warmup_bars_remaining{symbol=\"$symbol\",timeframe=\"$timeframe\"}",
+          "legendFormat": "warmup remaining {{symbol}} {{timeframe}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Eligibility Context by Timeframe",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.95 },
+              { "color": "green", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 5 },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "pklpo_swap_repair_remaining_gap_tasks{symbol=\"$symbol\",timeframe=\"$timeframe\"}",
+          "legendFormat": "remaining gaps",
+          "refId": "A"
+        },
+        {
+          "expr": "pklpo_swap_repair_api_fill_ratio{symbol=\"$symbol\",timeframe=\"$timeframe\"}",
+          "legendFormat": "api fill ratio",
+          "refId": "B"
+        },
+        {
+          "expr": "pklpo_swap_repair_write_success_ratio{symbol=\"$symbol\",timeframe=\"$timeframe\"}",
+          "legendFormat": "write success ratio",
+          "refId": "C"
+        }
+      ],
+      "title": "Repair Progress",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 10, "lineWidth": 2 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 5 },
+      "id": 5,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "rate(pklpo_features_rows_written_total{symbol=\"$symbol\",timeframe=\"$timeframe\"}[5m]) * 60",
+          "legendFormat": "feature rows/min",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(pklpo_upsert_failures_total{symbol=\"$symbol\",timeframe=\"$timeframe\"}[5m]) * 60",
+          "legendFormat": "upsert failures/min",
+          "refId": "B"
+        }
+      ],
+      "title": "Throughput and Failures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
+      "id": 6,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [
+        {
+          "expr": "{job=~\"pklpo_app|pklpo_airflow\"} | json |= \"$symbol\"",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Instrument Logs",
+      "type": "logs"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["pklpo", "instrument", "drilldown"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+        "hide": 0,
+        "includeAll": false,
+        "name": "DS_PROMETHEUS",
+        "query": "prometheus",
+        "type": "datasource"
+      },
+      {
+        "current": { "selected": false, "text": "Loki", "value": "Loki" },
+        "hide": 0,
+        "includeAll": false,
+        "name": "DS_LOKI",
+        "query": "loki",
+        "type": "datasource"
+      },
+      {
+        "current": { "selected": false, "text": "BTC-USDT-SWAP", "value": "BTC-USDT-SWAP" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "symbol",
+        "multi": false,
+        "name": "symbol",
+        "options": [],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      },
+      {
+        "current": { "selected": false, "text": "1m", "value": "1m" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(pklpo_data_freshness_lag_seconds, timeframe)",
+        "hide": 0,
+        "includeAll": false,
+        "label": "timeframe",
+        "multi": false,
+        "name": "timeframe",
+        "options": [],
+        "query": "label_values(pklpo_data_freshness_lag_seconds, timeframe)",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "PKLPO Instrument Drilldown",
+  "uid": "pklpo-instrument-drilldown",
+  "version": 1
+}

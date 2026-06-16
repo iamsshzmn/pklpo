@@ -19,23 +19,19 @@
   "links": [],
   "panels": [
     {
-      "title": "Freshness Lag (seconds)",
-      "description": "Data freshness lag per timeframe. SLA thresholds: 1m=90s, 5m=180s, 15m=360s, 1H=600s, 4H=1800s, 1D=7200s",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Top symbols by freshness lag, filtered by the selected symbol set.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": { "mode": "thresholds" },
           "custom": {
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisLabel": "seconds",
-            "lineWidth": 2,
             "fillOpacity": 10,
+            "lineWidth": 2,
             "thresholdsStyle": { "mode": "line" }
           },
-          "unit": "s",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -43,36 +39,42 @@
               { "color": "yellow", "value": 300 },
               { "color": "red", "value": 900 }
             ]
-          }
-        }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
       },
       "targets": [
         {
-          "expr": "pklpo_data_freshness_lag_seconds",
+          "expr": "topk($top_n, pklpo_data_freshness_lag_seconds{symbol=~\"$symbol\"} or pklpo_data_freshness_lag_seconds{symbol=\"all\"})",
           "legendFormat": "{{symbol}} {{timeframe}}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Freshness Lag (seconds)",
+      "type": "timeseries"
     },
     {
-      "title": "Fill Rate",
-      "description": "OHLCV data fill rate per timeframe. Threshold: 99.5%",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Worst fill rates for the selected symbol set.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "rate",
-            "lineWidth": 2,
             "fillOpacity": 10,
+            "lineWidth": 2,
             "thresholdsStyle": { "mode": "line" }
           },
-          "unit": "percentunit",
-          "min": 0.9,
           "max": 1,
+          "min": 0.9,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -80,36 +82,42 @@
               { "color": "yellow", "value": 0.95 },
               { "color": "green", "value": 0.995 }
             ]
-          }
-        }
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
       },
       "targets": [
         {
-          "expr": "pklpo_data_fill_rate",
+          "expr": "bottomk($top_n, pklpo_data_fill_rate{symbol=~\"$symbol\"})",
           "legendFormat": "{{symbol}} {{timeframe}}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Fill Rate",
+      "type": "timeseries"
     },
     {
-      "title": "Hole Rate (missing bars)",
-      "description": "Missing bars rate per timeframe. Threshold: 0.1%",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Top symbols by missing bar rate.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "rate",
-            "lineWidth": 2,
             "fillOpacity": 10,
+            "lineWidth": 2,
             "thresholdsStyle": { "mode": "line" }
           },
-          "unit": "percentunit",
-          "min": 0,
           "max": 0.01,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -117,99 +125,121 @@
               { "color": "yellow", "value": 0.0005 },
               { "color": "red", "value": 0.001 }
             ]
-          }
-        }
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
       },
       "targets": [
         {
-          "expr": "pklpo_data_hole_rate",
+          "expr": "topk($top_n, pklpo_data_hole_rate{symbol=~\"$symbol\"})",
           "legendFormat": "{{symbol}} {{timeframe}}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Hole Rate (missing bars)",
+      "type": "timeseries"
     },
     {
-      "title": "Duplicate Rate",
-      "description": "Duplicate rows detected. Should always be 0.",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Duplicate rows detected. Should always be 0.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "count",
-            "lineWidth": 2,
             "fillOpacity": 10,
+            "lineWidth": 2,
             "thresholdsStyle": { "mode": "line" }
           },
-          "unit": "short",
           "thresholds": {
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
               { "color": "red", "value": 1 }
             ]
-          }
-        }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
       },
       "targets": [
         {
-          "expr": "rate(pklpo_duplicate_rows_detected_total[5m])",
+          "expr": "topk($top_n, rate(pklpo_duplicate_rows_detected_total{symbol=~\"$symbol\"}[5m]))",
           "legendFormat": "{{symbol}} {{timeframe}}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Duplicate Rate",
+      "type": "timeseries"
     },
     {
-      "title": "UPSERT Duration (p50 / p95 / p99)",
-      "description": "UPSERT batch execution time percentiles",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "UPSERT batch execution time percentiles.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "seconds",
-            "lineWidth": 2,
-            "fillOpacity": 10
+            "fillOpacity": 10,
+            "lineWidth": 2
           },
           "unit": "s"
-        }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(pklpo_upsert_duration_seconds_bucket[15m]))",
+          "expr": "histogram_quantile(0.50, rate(pklpo_upsert_duration_seconds_bucket{symbol=~\"$symbol\"}[15m]))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(pklpo_upsert_duration_seconds_bucket[15m]))",
+          "expr": "histogram_quantile(0.95, rate(pklpo_upsert_duration_seconds_bucket{symbol=~\"$symbol\"}[15m]))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, rate(pklpo_upsert_duration_seconds_bucket[15m]))",
+          "expr": "histogram_quantile(0.99, rate(pklpo_upsert_duration_seconds_bucket{symbol=~\"$symbol\"}[15m]))",
           "legendFormat": "p99",
           "refId": "C"
         }
-      ]
+      ],
+      "title": "UPSERT Duration (p50 / p95 / p99)",
+      "type": "timeseries"
     },
     {
-      "title": "Batch Size Distribution",
-      "description": "UPSERT batch size histogram",
-      "type": "histogram",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "UPSERT batch size histogram for the selected symbol set.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "unit": "short"
-        }
+        },
+        "overrides": []
       },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
       "options": {
         "bucketSize": 25,
         "combine": false,
@@ -217,24 +247,22 @@
       },
       "targets": [
         {
-          "expr": "pklpo_batch_size_current",
+          "expr": "pklpo_batch_size_current{symbol=~\"$symbol\"}",
           "legendFormat": "{{symbol}} {{timeframe}}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Batch Size Distribution",
+      "type": "histogram"
     },
     {
-      "title": "Data Quality Score",
-      "description": "Composite data quality score (0.0-1.0). Higher is better.",
-      "type": "gauge",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Lowest composite data quality scores in the selected symbol set.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
-          "unit": "percentunit",
-          "min": 0,
           "max": 1,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -242,57 +270,72 @@
               { "color": "yellow", "value": 0.8 },
               { "color": "green", "value": 0.95 }
             ]
-          }
-        }
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "id": 7,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
       },
       "targets": [
         {
-          "expr": "pklpo_data_quality_score",
+          "expr": "bottomk($top_n, pklpo_data_quality_score{symbol=~\"$symbol\"})",
           "legendFormat": "{{symbol}} {{timeframe}}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Data Quality Score",
+      "type": "gauge"
     },
     {
-      "title": "Features Calculation Duration",
-      "description": "Time spent calculating features per symbol/timeframe",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Time spent calculating features per symbol/timeframe.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "seconds",
-            "lineWidth": 2,
-            "fillOpacity": 10
+            "fillOpacity": 10,
+            "lineWidth": 2
           },
           "unit": "s"
-        }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "id": 8,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(pklpo_features_calculation_duration_seconds_bucket[15m]))",
+          "expr": "histogram_quantile(0.95, rate(pklpo_features_calculation_duration_seconds_bucket{symbol=~\"$symbol\"}[15m]))",
           "legendFormat": "p95 {{symbol}} {{timeframe}}",
           "refId": "A"
         }
-      ]
+      ],
+      "title": "Features Calculation Duration",
+      "type": "timeseries"
     },
     {
-      "title": "UPSERT Failures & Rows Written",
-      "description": "Failure rate and throughput",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Failure rate and throughput for selected symbols.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": {
             "axisCenteredZero": false,
             "axisLabel": "count/min",
-            "lineWidth": 2,
-            "fillOpacity": 10
+            "fillOpacity": 10,
+            "lineWidth": 2
           },
           "unit": "short"
         },
@@ -305,20 +348,147 @@
           }
         ]
       },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "id": 9,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
+      },
       "targets": [
         {
-          "expr": "rate(pklpo_features_rows_written_total[5m]) * 60",
+          "expr": "rate(pklpo_features_rows_written_total{symbol=~\"$symbol\"}[5m]) * 60",
           "legendFormat": "rows/min {{symbol}} {{timeframe}}",
           "refId": "A"
         },
         {
-          "expr": "rate(pklpo_upsert_failures_total[5m]) * 60",
-          "legendFormat": "failures",
+          "expr": "rate(pklpo_upsert_failures_total{symbol=~\"$symbol\"}[5m]) * 60",
+          "legendFormat": "failures {{symbol}} {{timeframe}}",
           "refId": "B"
         }
-      ]
+      ],
+      "title": "UPSERT Failures & Rows Written",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Quality-score rollups by timeframe for the selected symbol set.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisLabel": "score",
+            "fillOpacity": 10,
+            "lineWidth": 2
+          },
+          "max": 1,
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 10,
+      "options": {
+        "legend": { "displayMode": "list" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "min by (timeframe) (pklpo_data_quality_score{symbol=~\"$symbol\"})",
+          "legendFormat": "min {{timeframe}}",
+          "refId": "A"
+        },
+        {
+          "expr": "avg by (timeframe) (pklpo_data_quality_score{symbol=~\"$symbol\"})",
+          "legendFormat": "avg {{timeframe}}",
+          "refId": "B"
+        },
+        {
+          "expr": "max by (timeframe) (pklpo_data_quality_score{symbol=~\"$symbol\"})",
+          "legendFormat": "max {{timeframe}}",
+          "refId": "C"
+        }
+      ],
+      "title": "Quality Score Rollups",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Count of selected symbol/timeframe series with hole rate above 0.1%.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 32 },
+      "id": 11,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "count(pklpo_data_hole_rate{symbol=~\"$symbol\"} > 0.001)",
+          "legendFormat": "hole_rate > 0.1%",
+          "refId": "A"
+        }
+      ],
+      "title": "Hole Rate Breach Count",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "description": "Active freshness-lag series after symbol filtering. Use as a dashboard cardinality budget.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 250 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 32 },
+      "id": 12,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "expr": "count(pklpo_data_freshness_lag_seconds{symbol=~\"$symbol\"} or pklpo_data_freshness_lag_seconds{symbol=\"all\"})",
+          "legendFormat": "series",
+          "refId": "A"
+        }
+      ],
+      "title": "Cardinality Budget",
+      "type": "stat"
     }
   ],
+  "refresh": "30s",
   "schemaVersion": 39,
   "tags": ["pklpo", "data-quality", "phase-1"],
   "templating": {
@@ -330,6 +500,32 @@
         "name": "DS_PROMETHEUS",
         "query": "prometheus",
         "type": "datasource"
+      },
+      {
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(pklpo_data_hole_rate, symbol)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "symbol",
+        "multi": true,
+        "name": "symbol",
+        "options": [],
+        "query": "label_values(pklpo_data_hole_rate, symbol)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "10", "value": "10" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "top_n",
+        "multi": false,
+        "name": "top_n",
+        "options": [],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
       }
     ]
   },
@@ -338,5 +534,5 @@
   "timezone": "utc",
   "title": "PKLPO Data Quality",
   "uid": "pklpo-data-quality",
-  "version": 1
+  "version": 2
 }

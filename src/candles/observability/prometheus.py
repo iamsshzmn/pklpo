@@ -22,6 +22,7 @@ try:
         Counter,
         Gauge,
         Histogram,
+        delete_from_gateway,
         push_to_gateway,
     )
 
@@ -83,6 +84,24 @@ def _push_registry(registry: CollectorRegistry, job_name: str) -> bool:
     except Exception:
         logger.warning(
             "Failed to push metrics to Pushgateway for job=%s",
+            job_name,
+            exc_info=True,
+        )
+        return False
+
+
+def delete_pushgateway_job(job_name: str) -> bool:
+    """Delete a Pushgateway job group when a job is retired or disabled."""
+    can_push, pushgateway_url = _can_push()
+    if not can_push:
+        return False
+
+    try:
+        delete_from_gateway(pushgateway_url, job=job_name)
+        return True
+    except Exception:
+        logger.warning(
+            "Failed to delete Pushgateway metrics for job=%s",
             job_name,
             exc_info=True,
         )
@@ -406,6 +425,12 @@ def push_feature_eligibility_metrics(snapshot: dict[str, Any]) -> bool:
             "Seconds since the latest feature eligibility evaluation",
             registry=registry,
         )
+        warmup_remaining_gauge = Gauge(
+            "pklpo_feature_warmup_bars_remaining",
+            "Bars remaining before a symbol/timeframe reaches the feature warm-up requirement",
+            ["symbol", "timeframe"],
+            registry=registry,
+        )
 
         for (timeframe, state), count in (snapshot.get("state_counts") or {}).items():
             state_counts_gauge.labels(str(timeframe), str(state)).set(float(count))
@@ -428,6 +453,12 @@ def push_feature_eligibility_metrics(snapshot: dict[str, Any]) -> bool:
 
         invalid_total_gauge.set(float(snapshot.get("invalid_total", 0)))
         stale_seconds_gauge.set(float(snapshot.get("stale_seconds", 0.0)))
+        for (symbol, timeframe), remaining in (
+            snapshot.get("warmup_remaining") or {}
+        ).items():
+            warmup_remaining_gauge.labels(str(symbol), str(timeframe)).set(
+                max(float(remaining), 0.0)
+            )
         pushed = _push_registry(registry, job_name="feature_eligibility")
         if pushed:
             logger.info("Feature eligibility metrics pushed")

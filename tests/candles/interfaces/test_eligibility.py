@@ -42,8 +42,38 @@ class _Result:
         return next(iter(self._rows[0].values()))
 
 
+@dataclass
+class _PushMetricsSession:
+    calls: list[str]
+
+    async def execute(self, statement: Any) -> Any:
+        sql = str(statement)
+        self.calls.append(sql)
+        if "GROUP BY timeframe, state" in sql:
+            return _Result([{"timeframe": "1H", "state": "insufficient_history", "count": 1}])
+        if "WHERE can_compute_features = TRUE" in sql:
+            return _Result([])
+        if "FROM ops.feature_eligibility_transitions" in sql:
+            return _Result([])
+        if "WHERE state = 'invalid_history'" in sql:
+            return _Result([{"count": 0}])
+        if "MAX(evaluated_at)" in sql:
+            return _Result([{"stale_seconds": 0.0}])
+        if "required_bars" in sql and "actual_bars" in sql:
+            return _Result(
+                [
+                    {
+                        "symbol": "BTC-USDT-SWAP",
+                        "timeframe": "1H",
+                        "warmup_bars_remaining": 125,
+                    }
+                ]
+            )
+        return _Result([])
+
+
 class _Repo:
-    def __init__(self, _session: Any) -> None:
+    def __init__(self, _session: Any, **_: Any) -> None:
         self.records: dict[tuple[str, str], object] = {}
 
     async def read_coverage_facts(self) -> list[CoverageFacts]:
@@ -136,3 +166,27 @@ async def test_read_helpers_query_capability_flags(monkeypatch: pytest.MonkeyPat
     assert state is not None
     assert state.state == "eligible"
     assert "can_compute_features = TRUE" in calls[0][0]
+
+
+@pytest.mark.asyncio
+async def test_push_refresh_metrics_includes_warmup_bars_remaining(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.candles.interfaces import eligibility
+
+    captured: dict[str, Any] = {}
+    session = _PushMetricsSession(calls=[])
+
+    def _push_feature_eligibility_metrics(snapshot: dict[str, Any]) -> bool:
+        captured.update(snapshot)
+        return True
+
+    monkeypatch.setattr(
+        eligibility,
+        "push_feature_eligibility_metrics",
+        _push_feature_eligibility_metrics,
+    )
+
+    await eligibility._push_refresh_metrics(session)
+
+    assert captured["warmup_remaining"] == {("BTC-USDT-SWAP", "1H"): 125}

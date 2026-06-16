@@ -32,6 +32,7 @@ def test_push_feature_eligibility_metrics_emits_state_and_transition_series(
             ],
             "invalid_total": 1,
             "stale_seconds": 42.0,
+            "warmup_remaining": {("BTC-USDT-SWAP", "1H"): 125},
         }
     )
 
@@ -47,3 +48,31 @@ def test_push_feature_eligibility_metrics_emits_state_and_transition_series(
         in text
     )
     assert 'pklpo_feature_eligibility_lost{timeframe="1H"} 1.0' in text
+    assert (
+        'pklpo_feature_warmup_bars_remaining{symbol="BTC-USDT-SWAP",timeframe="1H"} 125.0'
+        in text
+    )
+
+
+def test_delete_pushgateway_job_deletes_configured_job(monkeypatch) -> None:
+    captured: dict[str, str] = {}
+
+    def _fake_delete_from_gateway(url: str, *, job: str) -> None:
+        captured["url"] = url
+        captured["job"] = job
+
+    monkeypatch.setattr(prometheus, "delete_from_gateway", _fake_delete_from_gateway)
+    monkeypatch.setenv("OBSERVABILITY_PROMETHEUS_ENABLED", "true")
+    monkeypatch.setenv("OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", "http://gw:9091")
+
+    ok = prometheus.delete_pushgateway_job("swap_repair_v1")
+
+    assert ok is True
+    assert captured == {"url": "http://gw:9091", "job": "swap_repair_v1"}
+
+
+def test_delete_pushgateway_job_is_noop_without_gateway(monkeypatch) -> None:
+    monkeypatch.setenv("OBSERVABILITY_PROMETHEUS_ENABLED", "true")
+    monkeypatch.delenv("OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", raising=False)
+
+    assert prometheus.delete_pushgateway_job("swap_repair_v1") is False

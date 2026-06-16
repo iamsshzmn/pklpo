@@ -101,6 +101,20 @@ async def _push_refresh_metrics(session: Any) -> None:
                 )
             )
         ).scalar()
+        warmup_rows = (
+            await session.execute(
+                text(
+                    """
+                    SELECT
+                        symbol,
+                        timeframe,
+                        GREATEST(required_bars - actual_bars, 0) AS warmup_bars_remaining
+                    FROM ops.feature_eligibility
+                    WHERE required_bars > 0
+                    """
+                )
+            )
+        ).mappings().all()
         push_feature_eligibility_metrics(
             {
                 "state_counts": {
@@ -113,6 +127,12 @@ async def _push_refresh_metrics(session: Any) -> None:
                 "transitions": [dict(row) for row in transition_rows],
                 "invalid_total": int(invalid_total or 0),
                 "stale_seconds": float(stale_seconds or 0.0),
+                "warmup_remaining": {
+                    (str(row["symbol"]), str(row["timeframe"])): int(
+                        row["warmup_bars_remaining"] or 0
+                    )
+                    for row in warmup_rows
+                },
             }
         )
     except Exception:

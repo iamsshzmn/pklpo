@@ -16,6 +16,7 @@ from .context import (
 from .error_types import ErrorType, classify_error_type
 from .logging import get_category_logger, get_features_logger, get_logger
 from .metrics import (
+    delete_pushgateway_job,
     push_dependency_health_metrics,
     push_feature_eligibility_metrics,
     push_market_selection_metrics,
@@ -29,10 +30,11 @@ from .metrics import (
 __all__ = [
     "ContextFilter",
     "ErrorType",
-    "classify_error_type",
     "airflow_log_context",
     "airflow_run_id",
     "airflow_task_id",
+    "classify_error_type",
+    "delete_pushgateway_job",
     "generate_run_id",
     "get_category_logger",
     "get_current_context",

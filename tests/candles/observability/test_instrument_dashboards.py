@@ -76,6 +76,7 @@ def test_instrument_drilldown_dashboard_contract() -> None:
     assert "pklpo_swap_repair_remaining_gap_tasks" in exprs
     assert "pklpo_swap_repair_api_fill_ratio" in exprs
     assert "pklpo_swap_repair_write_success_ratio" in exprs
+    assert "pklpo_feature_warmup_bars_remaining" in exprs
     assert "rate(pklpo_features_rows_written_total" in exprs
     assert "rate(pklpo_upsert_failures_total" in exprs
     assert '|= "$symbol"' in exprs
@@ -101,3 +102,18 @@ def test_data_quality_dashboard_scales_with_symbol_variable_and_topn() -> None:
     assert any("max by (timeframe) (pklpo_data_quality_score" in expr for expr in exprs)
     assert any("count(pklpo_data_hole_rate" in expr for expr in exprs)
     assert any("count(pklpo_data_freshness_lag_seconds" in expr for expr in exprs)
+
+
+def test_freshness_panels_fall_back_to_aggregate_symbol() -> None:
+    """Current freshness lag is emitted by smoke checks as symbol=all."""
+    data_quality = _load_dashboard("data_quality.json")
+    drilldown = _load_dashboard("pklpo-instrument-drilldown.json")
+
+    freshness_exprs = [
+        expr
+        for expr in [*_target_exprs(data_quality), *_target_exprs(drilldown)]
+        if "pklpo_data_freshness_lag_seconds" in expr
+    ]
+
+    assert freshness_exprs
+    assert all('symbol="all"' in expr for expr in freshness_exprs)

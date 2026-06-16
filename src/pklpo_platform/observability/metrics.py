@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 _CANDLES_PROMETHEUS_PATH = (
     Path(__file__).resolve().parents[3]
@@ -32,6 +34,7 @@ def _load_candles_prometheus() -> ModuleType:
 
 _prometheus = _load_candles_prometheus()
 
+delete_pushgateway_job: Any = _prometheus.delete_pushgateway_job
 push_market_selection_metrics: Any = _prometheus.push_market_selection_metrics
 push_dependency_health_metrics: Any = _prometheus.push_dependency_health_metrics
 push_feature_eligibility_metrics: Any = _prometheus.push_feature_eligibility_metrics
@@ -42,9 +45,10 @@ push_swap_smoke_metrics: Any = _prometheus.push_swap_smoke_metrics
 push_swap_sync_metrics: Any = _prometheus.push_swap_sync_metrics
 
 __all__ = [
-    "push_market_selection_metrics",
+    "delete_pushgateway_job",
     "push_dependency_health_metrics",
     "push_feature_eligibility_metrics",
+    "push_market_selection_metrics",
     "push_pipeline_monitoring_metrics",
     "push_quality_metrics",
     "push_swap_repair_metrics",
