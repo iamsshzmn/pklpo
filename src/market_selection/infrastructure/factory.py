@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from ..application.pipeline import MarketSelectionPipeline
 from .database import MarketSelectionDB
-from .monitoring import MarketSelectionMonitoring
+from .monitoring import MarketSelectionPushMonitoring
 from .persistence import MarketSelectionPersistence
 
 if TYPE_CHECKING:
@@ -25,5 +25,5 @@ def build_market_selection_pipeline(
         config=config,
         db=MarketSelectionDB(session, config),
         persistence=MarketSelectionPersistence(session),
-        monitoring=MarketSelectionMonitoring(),
+        monitoring=MarketSelectionPushMonitoring(),
     )

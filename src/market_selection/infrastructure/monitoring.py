@@ -416,3 +416,58 @@ class MarketSelectionMonitoring:
             error_message=error_message,
             reason_flags=reason_flags,
         )
+
+
+class MarketSelectionPushMonitoring:
+    """``MonitoringPort`` adapter that pushes metrics to Pushgateway.
+
+    This is the production adapter for Airflow DAG runs.  It replaces the
+    ``start_http_server`` pull pattern with a fire-and-forget push on each
+    pipeline completion, consistent with how every other in-loop DAG delivers
+    metrics (``push_swap_sync_metrics``, ``push_swap_repair_metrics``, …).
+
+    ``record_error`` logs only; error counts surface through the ERROR-level
+    logs already captured by Loki (and the ``level="ERROR"`` fallback on the
+    Error Events panel added in T6.4).
+    """
+
+    def record_error(self, error_type: str, message: str) -> None:
+        logger.error("Market selection error (%s): %s", error_type, message)
+
+    def record_pipeline_metrics(
+        self,
+        *,
+        ts_version: int,
+        ts_eval: int,
+        success: bool,
+        status: str,
+        universe_size: int,
+        execution_time_seconds: float,
+        global_regime: str | None = None,
+        regime_strength: float = 0.0,
+        regime_stale: bool = False,
+        eligible_counts: dict[str, int] | None = None,
+        total_symbols: int = 0,
+        error_message: str | None = None,
+        reason_flags: list[str] | None = None,
+    ) -> None:
+        metrics = PipelineMetrics(
+            ts_version=ts_version,
+            ts_eval=ts_eval,
+            success=success,
+            status=status,
+            universe_size=universe_size,
+            execution_time_seconds=execution_time_seconds,
+            global_regime=global_regime,
+            regime_strength=regime_strength,
+            regime_stale=regime_stale,
+            eligible_counts=eligible_counts or {},
+            total_symbols=total_symbols,
+            error_message=error_message,
+            reason_flags=reason_flags or [],
+        )
+        from src.pklpo_platform.observability.metrics import (
+            push_market_selection_metrics,
+        )
+
+        push_market_selection_metrics(metrics.to_dict())
