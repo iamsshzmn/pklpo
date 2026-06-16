@@ -304,7 +304,12 @@ async def sync_swap_candles(
         provider_options=runtime_config,
     )
 
-    with trace_sync_run(mode=request.mode.value, symbols_count=len(request.symbols)):
+    run_id = runtime_config.get("run_id")
+    with trace_sync_run(
+        mode=request.mode.value,
+        symbols_count=len(request.symbols),
+        run_id=run_id if isinstance(run_id, str) else None,
+    ):
         market_adapter = _build_market_adapter(runtime_config)
         result = await run_candle_sync(
             request,

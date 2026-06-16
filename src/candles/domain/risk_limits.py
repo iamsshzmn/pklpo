@@ -12,10 +12,11 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-from ..infrastructure.logging_config import get_logger
+from src.logging import get_logger
+
 from .metadata import MarketMetadata
 
-logger = get_logger("risk_limits")
+logger = get_logger("market_meta.risk_limits")
 
 
 class RiskLevel(Enum):

@@ -4,6 +4,8 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from src.pklpo_platform.observability.error_types import classify_error_type
+
 from src.candles.application.bootstrap.dto import (
     BootstrapCommand,
     BootstrapProgress,
@@ -209,6 +211,8 @@ class RunBootstrapUseCase:
                             status="error",
                             error=str(exc),
                         ),
+                        error_type=classify_error_type(exc),
+                        exc_info=True,
                     )
                 if error_streak >= command.circuit_break_after:
                     live_rec = await self._coverage.count_valid_candles(
@@ -333,6 +337,8 @@ class RunBootstrapUseCase:
                             status="error",
                             error=str(exc),
                         ),
+                        error_type=classify_error_type(exc),
+                        exc_info=True,
                     )
                 raise
 
@@ -523,5 +529,4 @@ def _progress_pct(
     total = target_end_ts - target_start_ts
     if total <= 0:
         return 100.0
-    completed = target_end_ts - checkpoint_ts
-    return min(100.0, max(0.0, completed / total * 100.0))
+    compl
