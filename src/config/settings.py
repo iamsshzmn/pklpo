@@ -415,6 +415,26 @@ class LoggingSettings(BaseSettings):
     mask_secrets: bool = True
 
 
+class RedisSettings(BaseSettings):
+    """Redis settings for distributed locks and short-lived cache."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="REDIS_",
+        extra="ignore",
+    )
+
+    url: str = "redis://localhost:6379/0"
+    key_prefix: str = "pklpo"
+    # Distributed lock defaults
+    lock_timeout_seconds: int = 300  # 5 min max lease; fail-closed if not released
+    lock_retry_delay_ms: int = 100
+    lock_retry_attempts: int = 3
+    # Cache TTLs
+    cache_ttl_exchange_metadata_seconds: int = 3600   # 1 hour
+    cache_ttl_instrument_list_seconds: int = 300       # 5 min
+    cache_ttl_last_timestamp_seconds: int = 60         # 1 min
+
+
 class AirflowSettings(BaseSettings):
     """Airflow settings."""
 
@@ -575,6 +595,7 @@ class Settings(BaseSettings):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     airflow: AirflowSettings = Field(default_factory=AirflowSettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
     quant: QuantSettings = Field(default_factory=QuantSettings)
 
     # Paths
