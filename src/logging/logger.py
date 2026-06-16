@@ -10,16 +10,12 @@ import os
 import time
 from dataclasses import dataclass, field
 from logging import Logger
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .context import generate_run_id, get_current_run_id
 from .filters import SensitiveDataFilter
 from .handlers import _build_console_handler, _build_file_handler, get_log_directory
 from .levels import LogCategory
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
 
 # =============================================================================
 # CATEGORY LOGGER
@@ -97,11 +93,19 @@ def _ensure_base_logger() -> Logger:
 
     # Build handlers (each handler has its own ContextFilter)
     get_log_directory()
-    handlers: Iterable[logging.Handler] = (
-        _build_console_handler(),
-        _build_file_handler("pklpo_debug.log", logging.DEBUG),
-        _build_file_handler("pklpo_errors.log", logging.ERROR),
-    )
+    handlers: list[logging.Handler] = [_build_console_handler()]
+    for filename, level in (
+        ("pklpo_debug.log", logging.DEBUG),
+        ("pklpo_errors.log", logging.ERROR),
+    ):
+        try:
+            handlers.append(_build_file_handler(filename, level))
+        except OSError as exc:
+            logging.getLogger("pklpo.setup").warning(
+                "file logging disabled: cannot write to %s (%s)",
+                get_log_directory() / filename,
+                exc,
+            )
     for handler in handlers:
         logger.addHandler(handler)
 

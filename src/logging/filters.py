@@ -30,6 +30,10 @@ class SensitiveDataFilter(logging.Filter):
         r'token["\']?\s*[:=]\s*["\']?[^"\s]+["\']?',
         r'auth["\']?\s*[:=]\s*["\']?[^"\s]+["\']?',
         r'credential["\']?\s*[:=]\s*["\']?[^"\s]+["\']?',
+        # URL-embedded credentials: postgresql://user:pass@host, redis://:pass@host, etc.
+        # Lookbehind/lookahead preserve the scheme and host; only user:pass is masked.
+        # Username is optional ([^:@\s]*) to handle forms like redis://:pass@host.
+        r'(?<=://)[^:@\s]*:[^@\s]+(?=@)',
     ]
 
     # Default sensitive dict keys

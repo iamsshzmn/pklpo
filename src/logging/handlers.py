@@ -118,9 +118,10 @@ def _build_file_handler(
         encoding="utf-8",
     )
     handler.setLevel(level)
-    handler.setFormatter(_build_formatter())
+    # File handlers always use JSON for structured log aggregation (Promtail/Loki)
+    handler.setFormatter(_build_formatter(use_json=True))
 
-    # Add context filter to inject run_id, symbol, timeframe
+    # Add context filter to inject run_id, symbol, timeframe, component, error_type
     handler.addFilter(ContextFilter())
 
     return handler

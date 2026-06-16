@@ -147,13 +147,14 @@ def log_risk_check(symbol: str, risk_level: str, details: str) -> None:
 
 
 def auto_configure() -> None:
-    """Автоматическая настройка логирования из переменных окружения."""
+    """Автоматическая настройка логирования из переменных окружения.
+
+    T8.3: No longer called automatically at import time to avoid creating file
+    handlers as a side-effect of ``import logging_config``.  Call explicitly
+    if needed; prefer ``from src.logging import setup_logging`` directly.
+    """
     level = os.getenv("MARKET_META_LOG_LEVEL", DEFAULT_LOG_LEVEL)
     configure_logging(level=level)
-
-
-# Auto-configure on import
-auto_configure()
 
 
 __all__ = [
