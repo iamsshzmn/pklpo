@@ -8,11 +8,18 @@ services:
     command: ["sleep", "infinity"]
     volumes:
       - ..:/workspace
+      - pklpo_app_logs:/var/log/pklpo
+    environment:
+      LOG_FORMAT: 'json'
+      LOG_DIR: '/var/log/pklpo'
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     env_file:
       - ../.env
     depends_on:
       db:
         condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - pklpo_network
 
@@ -53,6 +60,23 @@ services:
     networks:
       - pklpo_network
 
+  redis:
+    image: redis:7.2-alpine
+    container_name: pklpo_redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - pklpo_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   metabase:
     image: metabase/metabase:v0.57.6.x
     container_name: pklpo_metabase
@@ -80,6 +104,9 @@ volumes:
   pgdata:
   pgadmin_data:
   metabase_data:
+  redis_data:
+  pklpo_app_logs:
+    name: pklpo-app-logs
 
 networks:
   pklpo_network:

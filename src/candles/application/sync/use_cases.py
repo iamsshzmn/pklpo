@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import exc as sa_exc
 
+from src.pklpo_platform.observability.error_types import classify_error_type
+
 from ...domain.okx_calendar import StorageCalendar
 from ...domain.repair import RepairWindow
 from ...domain.timeframes import TF_TO_MS
@@ -92,6 +94,10 @@ def _is_db_outage_error(error: BaseException) -> bool:
         if any(marker in str(current).lower() for marker in transient_messages):
             return True
     return False
+
+
+def _telemetry_error_type(error: BaseException) -> str:
+    return classify_error_type(error)
 
 
 class RefreshInstrumentCatalogUseCase:
@@ -393,6 +399,8 @@ class RunCandleSyncUseCase:
                     symbol=symbol,
                     timeframe=timeframe,
                     error=str(exc),
+                    error_type=_telemetry_error_type(exc),
+                    exc_info=True,
                 )
             if _is_db_outage_error(exc):
                 raise DatabaseUnavailableError("database_unavailable") from exc

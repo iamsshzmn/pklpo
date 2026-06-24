@@ -5,6 +5,8 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from src.pklpo_platform.observability.error_types import classify_error_type
+
 from src.candles.domain.repair import (
     BackfillPlan,
     GapTask,
@@ -195,6 +197,8 @@ class _BaseRepairUseCase:
                         status="error",
                         error=str(exc),
                     ),
+                    error_type=classify_error_type(exc),
+                    exc_info=True,
                 )
                 raise
 

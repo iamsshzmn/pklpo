@@ -1,0 +1,15 @@
+apiVersion: 1
+
+datasources:
+  - name: Mimir
+    uid: Mimir
+    type: prometheus
+    access: proxy
+    url: http://mimir:9009/prometheus
+    isDefault: false
+    editable: false
+    jsonData:
+      # Mimir supports Prometheus query API; no extra auth for single-tenant mode.
+      httpMethod: POST
+      prometheusType: Mimir
+      prometheusVersion: "2.0.0"

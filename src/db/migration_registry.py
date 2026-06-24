@@ -71,6 +71,9 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_create_ops_indicator_recalc_queue import (
         migrate_create_ops_indicator_recalc_queue,
     )
+    from src.db.migrations.migrate_create_ops_pipeline_recovery_decisions import (
+        migrate_create_ops_pipeline_recovery_decisions,
+    )
     from src.db.migrations.migrate_create_ops_swap_ohlcv_bootstrap_state import (
         migrate_create_ops_swap_ohlcv_bootstrap_state,
     )
@@ -315,5 +318,10 @@ def get_migrations() -> list[Migration]:
             "440_ops_indicator_recalc_queue",
             "create ops indicator recalculation queue",
             migrate_create_ops_indicator_recalc_queue,
+        ),
+        Migration(
+            "450_ops_pipeline_recovery_decisions",
+            "create ops pipeline recovery decisions table",
+            migrate_create_ops_pipeline_recovery_decisions,
         ),
     ]

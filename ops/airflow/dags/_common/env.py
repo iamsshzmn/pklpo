@@ -74,7 +74,7 @@ def get_dag_env(*, job_name_default: str) -> dict[str, str]:
     )
     env["OBSERVABILITY_PROMETHEUS_ENABLED"] = Variable.get(
         "observability_prometheus_enabled",
-        default_var=project_env_default("OBSERVABILITY_PROMETHEUS_ENABLED", "false"),
+        default_var=project_env_default("OBSERVABILITY_PROMETHEUS_ENABLED", "true"),
     )
     env["OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL"] = Variable.get(
         "observability_prometheus_pushgateway_url",

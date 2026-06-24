@@ -22,6 +22,7 @@ from sqlalchemy import text
 
 from src.candles.bootstrap import create_candles_airflow_callbacks
 from src.candles.infrastructure.ohlcv_write_lock import ohlcv_retention_write_lock
+from src.pklpo_platform.observability import airflow_log_context
 from src.utils.session_utils import get_db_session
 
 logger = logging.getLogger(__name__)
@@ -96,33 +97,36 @@ async def _bootstrap_cleanup_is_safe() -> bool:
 
 
 def cleanup_swap_ohlcv_task(**context) -> dict[str, Any]:
-    env = get_dag_env()
-    setup_env(env)
-    dag_run = context.get("dag_run")
-    run_id = getattr(dag_run, "run_id", None)
+    with airflow_log_context(context, component="swap_ohlcv_retention"):
+        env = get_dag_env()
+        setup_env(env)
+        dag_run = context.get("dag_run")
+        run_id = getattr(dag_run, "run_id", None)
 
-    if not _get_loop().run_until_complete(_bootstrap_cleanup_is_safe()):
-        raise AirflowSkipException("bootstrap in progress; skipping retention cleanup")
+        if not _get_loop().run_until_complete(_bootstrap_cleanup_is_safe()):
+            raise AirflowSkipException(
+                "bootstrap in progress; skipping retention cleanup"
+            )
 
-    rows = _get_loop().run_until_complete(
-        _run_cleanup(triggered_by="airflow:swap_ohlcv_retention", run_id=run_id)
-    )
-    deleted_total = sum(row["deleted_count"] for row in rows)
-    skipped = [row for row in rows if row["skipped_reason"]]
-    duration_total_ms = sum(row["duration_ms"] for row in rows)
-    logger.info(
-        "swap_ohlcv_retention completed rows=%d deleted_total=%d skipped=%d duration_ms=%d",
-        len(rows),
-        deleted_total,
-        len(skipped),
-        duration_total_ms,
-    )
-    return {
-        "rows": rows,
-        "deleted_total": deleted_total,
-        "skipped": len(skipped),
-        "duration_ms": duration_total_ms,
-    }
+        rows = _get_loop().run_until_complete(
+            _run_cleanup(triggered_by="airflow:swap_ohlcv_retention", run_id=run_id)
+        )
+        deleted_total = sum(row["deleted_count"] for row in rows)
+        skipped = [row for row in rows if row["skipped_reason"]]
+        duration_total_ms = sum(row["duration_ms"] for row in rows)
+        logger.info(
+            "swap_ohlcv_retention completed rows=%d deleted_total=%d skipped=%d duration_ms=%d",
+            len(rows),
+            deleted_total,
+            len(skipped),
+            duration_total_ms,
+        )
+        return {
+            "rows": rows,
+            "deleted_total": deleted_total,
+            "skipped": len(skipped),
+            "duration_ms": duration_total_ms,
+        }
 
 
 default_args = {

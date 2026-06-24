@@ -33,6 +33,7 @@ class AirflowSyncRequest:
     conf: Mapping[str, Any]
     logical_date: datetime | None
     run_type: str | None = None
+    run_id: str | None = None
 
     @property
     def is_manual(self) -> bool:
@@ -82,6 +83,7 @@ async def run_swap_sync(request: AirflowSyncRequest) -> dict[str, Any]:
             "max_retries": config.get("max_retries", 5),
             "retry_delay": config.get("retry_delay", 1.5),
             "timeout_seconds": timeout_seconds,
+            "run_id": request.run_id,
         },
     )
     payload = format_stats_for_xcom(stats, config)

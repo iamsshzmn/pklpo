@@ -415,6 +415,26 @@ class LoggingSettings(BaseSettings):
     mask_secrets: bool = True
 
 
+class RedisSettings(BaseSettings):
+    """Redis settings for distributed locks and short-lived cache."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="REDIS_",
+        extra="ignore",
+    )
+
+    url: str = "redis://localhost:6379/0"
+    key_prefix: str = "pklpo"
+    # Distributed lock defaults
+    lock_timeout_seconds: int = 300  # 5 min max lease; fail-closed if not released
+    lock_retry_delay_ms: int = 100
+    lock_retry_attempts: int = 3
+    # Cache TTLs
+    cache_ttl_exchange_metadata_seconds: int = 3600   # 1 hour
+    cache_ttl_instrument_list_seconds: int = 300       # 5 min
+    cache_ttl_last_timestamp_seconds: int = 60         # 1 min
+
+
 class AirflowSettings(BaseSettings):
     """Airflow settings."""
 
@@ -439,6 +459,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return float(raw)
 
 
 def _without_week_anchor_source(
@@ -478,6 +505,23 @@ class ObservabilitySettings(BaseModel):
     )
     job_name: str = Field(
         default_factory=lambda: os.getenv("OBSERVABILITY_JOB_NAME", "features_pipeline")
+    )
+    otel_enabled: bool = Field(
+        default_factory=lambda: _env_bool("OBSERVABILITY_OTEL_ENABLED", False)
+    )
+    otel_service_name: str = Field(
+        default_factory=lambda: os.getenv("OBSERVABILITY_OTEL_SERVICE_NAME", "pklpo")
+    )
+    otel_exporter_otlp_endpoint: str = Field(
+        default_factory=lambda: os.getenv(
+            "OBSERVABILITY_OTEL_EXPORTER_OTLP_ENDPOINT",
+            "http://localhost:4317",
+        )
+    )
+    otel_sample_ratio: float = Field(
+        default_factory=lambda: _env_float("OBSERVABILITY_OTEL_SAMPLE_RATIO", 1.0),
+        ge=0.0,
+        le=1.0,
     )
 
 
@@ -561,7 +605,7 @@ class Settings(BaseSettings):
     )
 
     # Environment
-    environment: Literal["development", "staging", "production"] = "development"
+    environment: Literal["development", "test", "staging", "production"] = "development"
     debug: bool = False
 
     # Sub-settings
@@ -575,6 +619,7 @@ class Settings(BaseSettings):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     airflow: AirflowSettings = Field(default_factory=AirflowSettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
     quant: QuantSettings = Field(default_factory=QuantSettings)
 
     # Paths

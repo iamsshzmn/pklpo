@@ -1,0 +1,402 @@
+apiVersion: 1
+
+# Pipeline Observability v1 alert rules
+# Layer 1 thresholds from docs/ARCHITECTURE.md В§4:
+#   - Freshness lag > 600s (1h timeframe) в†’ warning
+#   - Hole rate > 0.001 в†’ warning
+#   - Lock conflict (any event) в†’ warning
+#   - Dependency down в†’ critical (inhibits downstream)
+#
+# Anti-storm inhibition: when postgres_down fires, downstream data-pipeline
+# alerts (freshness, hole_rate, recalc queue) are suppressed.
+# NOTE: Grafana unified alerting does not support inhibition natively.
+# Use the "Inhibit downstream on postgres_down" rule + label matching in
+# your alert routing (Alertmanager-compatible receiver) to suppress.
+
+groups:
+  - orgId: 1
+    name: PKLPO Pipeline Observability
+    folder: PKLPO
+    interval: 1m
+    rules:
+
+      # -----------------------------------------------------------------------
+      # Dependency health (root-cause; inhibits downstream when postgres=0)
+      # -----------------------------------------------------------------------
+      - uid: pklpo-postgres-down
+        title: "Postgres DOWN"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_dependency_postgres_up
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+              refId: C
+        for: 2m
+        labels:
+          severity: critical
+          team: data
+          inhibit_downstream: "true"
+        annotations:
+          summary: "PostgreSQL is unreachable"
+          description: "pklpo_dependency_postgres_up=0 for >2m. All data-pipeline alerts may be downstream effects."
+          runbook: "Check pklpo_db container, asyncpg pool, network pklpo_network."
+
+      - uid: pklpo-okx-down
+        title: "OKX API DOWN"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_dependency_okx_up
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+          inhibit_downstream: "true"
+        annotations:
+          summary: "OKX API is unreachable"
+          description: "pklpo_dependency_okx_up=0 for >5m. Fetch errors and candle lag are expected."
+          runbook: "Check OKX status page; network egress from Airflow container."
+
+      # -----------------------------------------------------------------------
+      # Freshness lag (Layer 1 threshold: >600s = warning for 1h TF)
+      # -----------------------------------------------------------------------
+      - uid: pklpo-candle-lag-warning
+        title: "Candle Freshness Lag Warning (>600s)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_pipeline_candle_lag_seconds{timeframe="1H"}
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [600] }
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+          downstream: "true"
+        annotations:
+          summary: "1H candle freshness lag > 600s"
+          description: "Lag = {{ $value }}s. okx_swap_ohlcv_sync_v2 may be stalled or skipping."
+
+      - uid: pklpo-candle-lag-critical
+        title: "Candle Freshness Lag Critical (>1800s)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_pipeline_candle_lag_seconds{timeframe="1H"}
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [1800] }
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          team: data
+          downstream: "true"
+        annotations:
+          summary: "1H candle freshness lag > 1800s вЂ” data pipeline likely broken"
+          description: "Lag = {{ $value }}s. Check swap_sync DAG and OKX connectivity."
+
+      # -----------------------------------------------------------------------
+      # Hole rate (Layer 1 threshold: >0.001)
+      # -----------------------------------------------------------------------
+      - uid: pklpo-pipeline-hole-rate-warning
+        title: "Pipeline Hole Rate Warning (>0.1%)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_data_hole_rate
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0.001] }
+              refId: C
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+          downstream: "true"
+        annotations:
+          summary: "Hole rate > 0.1% вЂ” gaps detected in candle history"
+          description: "Hole rate = {{ $value | humanizePercentage }}. Run swap_repair_v1 to close gaps."
+
+      # -----------------------------------------------------------------------
+      # Recalc queue depth
+      # -----------------------------------------------------------------------
+      - uid: pklpo-recalc-queue-depth
+        title: "Recalc Queue Depth High (failed/blocked)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_pipeline_recalc_queue_rows{status=~"failed|blocked"}
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: sum
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+              refId: C
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+          downstream: "true"
+        annotations:
+          summary: "Indicator recalc queue has failed/blocked tasks"
+          description: "failed+blocked recalc tasks = {{ $value }}. Check indicators_recalc DAG logs."
+
+      # -----------------------------------------------------------------------
+      # Pushgateway staleness (T7.2)
+      # Fires when dependency_health or pipeline_monitoring metrics have not
+      # been refreshed in >90 minutes вЂ” indicates a stalled or stopped DAG
+      # whose stale values (postgres_up, lag_seconds) would otherwise mask
+      # real failures.  Uses push_time_seconds exposed by Pushgateway в‰Ґ0.4.
+      # -----------------------------------------------------------------------
+      - uid: pklpo-pushgateway-stale
+        title: "Pushgateway metrics stale (>90m without push)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: "time() - push_time_seconds{job=~\"dependency_health|pipeline_monitoring|features_pipeline|swap_ohlcv_sync|swap_repair_v1|market_selection\"}"
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [5400] }
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Pushgateway metrics not refreshed in >90 min (job={{ $labels.job }})"
+          description: >
+            push_time_seconds for {{ $labels.job }} is >5400s old.
+            The DAG may be stopped or crashing before its push call.
+            Stale postgres_up / lag_seconds / eligibility values may mask real failures
+            in downstream alerts (pklpo-postgres-down, pklpo-candle-lag-*).
+          runbook: >
+            Check DAG schedule in Airflow. If the DAG is stopped intentionally,
+            delete the Pushgateway group manually:
+            curl -X DELETE http://pushgateway:9091/metrics/job/{{ $labels.job }}.
+            Code path equivalent: delete_pushgateway_job({{ $labels.job }}).
+
+      # -----------------------------------------------------------------------
+      # Instrument onboarding stalls
+      # -----------------------------------------------------------------------
+      - uid: pklpo-instrument-bootstrap-stalled
+        title: "Instrument Bootstrap Stalled (>6h running)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 21600, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: "max_over_time(pklpo_pipeline_bootstrap_state_rows{status=\"running\"}[6h])"
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              refId: C
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+          downstream: "true"
+        annotations:
+          summary: "Instrument bootstrap has been running for >6h"
+          description: "One or more bootstrap rows stayed in running state during the last 6h. Check bootstrap DAG logs and per-symbol checkpoint state."
+
+      - uid: pklpo-instrument-warmup-stalled
+        title: "Instrument Warm-up Stalled (>6h remaining bars)"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 21600, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: "min_over_time(pklpo_feature_warmup_bars_remaining{symbol!=\"\",timeframe!=\"\"}[6h])"
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: max
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              refId: C
+        for: 10m
+        labels:
+          severity: warning
+          team: data
+          downstream: "true"
+        annotations:
+          summary: "Instrument warm-up did not progress to zero remaining bars"
+          description: "pklpo_feature_warmup_bars_remaining stayed above zero for at least 6h. Check ingestion gaps and feature eligibility state for {{ $labels.symbol }} {{ $labels.timeframe }}."
+
+      # -----------------------------------------------------------------------
+      # Pipeline alerts counter (critical)
+      # -----------------------------------------------------------------------
+      - uid: pklpo-pipeline-alerts-critical
+        title: "Pipeline Critical Alerts Nonzero"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: Prometheus
+            model:
+              expr: pklpo_pipeline_alerts{severity="critical"}
+              refId: A
+          - refId: B
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              refId: C
+        for: 5m
+        labels:
+          severity: critical
+          team: data
+          downstream: "true"
+        annotations:
+          summary: "Pipeline monitoring reports {{ $value }} critical alert(s)"
+          description: "Check pipeline_monitoring task output and recalc/bootstrap state tables."

@@ -17,7 +17,14 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 try:
-    from prometheus_client import CollectorRegistry, Counter, Gauge, push_to_gateway
+    from prometheus_client import (
+        CollectorRegistry,
+        Counter,
+        Gauge,
+        Histogram,
+        delete_from_gateway,
+        push_to_gateway,
+    )
 
     _HAS_PROMETHEUS = True
 except ImportError:  # pragma: no cover
@@ -52,6 +59,21 @@ def _can_push() -> tuple[bool, str]:
 
 
 def _push_registry(registry: CollectorRegistry, job_name: str) -> bool:
+    """Push *registry* to Pushgateway under *job_name*.
+
+    Staleness note (T7.2): Pushgateway retains metrics indefinitely until the
+    grouping-key group is explicitly deleted.  After a DAG stops running, stale
+    values (especially ``postgres_up`` and ``*_lag_seconds``) remain and can mask
+    real failures.  Two mitigations are in place:
+
+    1. **Staleness alert** — ``pipeline_observability_alerts.yml`` rule
+       ``pklpo-pushgateway-stale`` fires when ``push_time_seconds`` for
+       ``dependency_health`` or ``pipeline_monitoring`` exceeds 90 minutes.
+
+    2. **Delete-on-completion (future v2)** — to explicitly clean up after a DAG
+       finishes, call ``delete_from_gateway(pushgateway_url, job=job_name)`` in the
+       DAG teardown callback.  Not wired yet; the alert is the active mitigation.
+    """
     can_push, pushgateway_url = _can_push()
     if not can_push:
         return False
@@ -62,6 +84,24 @@ def _push_registry(registry: CollectorRegistry, job_name: str) -> bool:
     except Exception:
         logger.warning(
             "Failed to push metrics to Pushgateway for job=%s",
+            job_name,
+            exc_info=True,
+        )
+        return False
+
+
+def delete_pushgateway_job(job_name: str) -> bool:
+    """Delete a Pushgateway job group when a job is retired or disabled."""
+    can_push, pushgateway_url = _can_push()
+    if not can_push:
+        return False
+
+    try:
+        delete_from_gateway(pushgateway_url, job=job_name)
+        return True
+    except Exception:
+        logger.warning(
+            "Failed to delete Pushgateway metrics for job=%s",
             job_name,
             exc_info=True,
         )
@@ -173,20 +213,20 @@ def push_swap_sync_metrics(stats: dict[str, Any]) -> bool:
             registry=registry,
         )
         rows_gauge = Gauge(
-            "pklpo_swap_sync_rows_upserted_total",
-            "Rows upserted during swap_ohlcv sync run",
+            "pklpo_swap_sync_rows_upserted",
+            "Rows upserted during swap_ohlcv sync run (per-run Gauge, not a Counter)",
             ["mode"],
             registry=registry,
         )
         symbols_gauge = Gauge(
-            "pklpo_swap_sync_symbols_processed_total",
-            "Symbols processed during swap_ohlcv sync run",
+            "pklpo_swap_sync_symbols_processed",
+            "Symbols processed during swap_ohlcv sync run (per-run Gauge, not a Counter)",
             ["mode"],
             registry=registry,
         )
         errors_gauge = Gauge(
-            "pklpo_swap_sync_errors_total",
-            "Errors observed during swap_ohlcv sync run",
+            "pklpo_swap_sync_errors",
+            "Errors observed during swap_ohlcv sync run (per-run Gauge, not a Counter)",
             ["mode"],
             registry=registry,
         )
@@ -197,14 +237,14 @@ def push_swap_sync_metrics(stats: dict[str, Any]) -> bool:
             registry=registry,
         )
         rate_limit_gauge = Gauge(
-            "pklpo_swap_sync_api_rate_limit_hits_total",
-            "Rate limit hits observed during swap_ohlcv sync run",
+            "pklpo_swap_sync_api_rate_limit_hits",
+            "Rate limit hits observed during swap_ohlcv sync run (per-run Gauge)",
             ["mode"],
             registry=registry,
         )
         timeout_gauge = Gauge(
-            "pklpo_swap_sync_api_timeouts_total",
-            "Timeouts observed during swap_ohlcv sync run",
+            "pklpo_swap_sync_api_timeouts",
+            "Timeouts observed during swap_ohlcv sync run (per-run Gauge)",
             ["mode"],
             registry=registry,
         )
@@ -214,10 +254,20 @@ def push_swap_sync_metrics(stats: dict[str, Any]) -> bool:
             ["mode"],
             registry=registry,
         )
+        # Legacy/debug scalar — use pklpo_swap_sync_db_write_latency_seconds histogram instead
         db_latency_p95_gauge = Gauge(
             "pklpo_swap_sync_db_write_latency_p95_ms",
-            "P95 DB write latency for swap_ohlcv sync run",
+            "P95 DB write latency for swap_ohlcv sync run (legacy; prefer histogram)",
             ["mode"],
+            registry=registry,
+        )
+        # Histogram for latency distribution — populated with avg_ms/1000 as representative sample.
+        # Becomes properly multi-sample when per-write latency tracking is added (v2).
+        db_latency_histogram = Histogram(
+            "pklpo_swap_sync_db_write_latency_seconds",
+            "DB write latency distribution for swap_ohlcv sync (seconds)",
+            ["mode"],
+            buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
             registry=registry,
         )
         db_batch_avg_gauge = Gauge(
@@ -239,14 +289,14 @@ def push_swap_sync_metrics(stats: dict[str, Any]) -> bool:
             registry=registry,
         )
         adapter_init_attempts_gauge = Gauge(
-            "pklpo_swap_sync_adapter_init_attempts_total",
-            "Attempts used to initialize the swap_ohlcv market adapter",
+            "pklpo_swap_sync_adapter_init_attempts",
+            "Attempts used to initialize the swap_ohlcv market adapter (per-run Gauge)",
             ["mode"],
             registry=registry,
         )
         adapter_init_retries_gauge = Gauge(
-            "pklpo_swap_sync_adapter_init_retries_total",
-            "Retries used to initialize the swap_ohlcv market adapter",
+            "pklpo_swap_sync_adapter_init_retries",
+            "Retries used to initialize the swap_ohlcv market adapter (per-run Gauge)",
             ["mode"],
             registry=registry,
         )
@@ -260,12 +310,13 @@ def push_swap_sync_metrics(stats: dict[str, Any]) -> bool:
         timeout_gauge.labels(mode).set(float(stats.get("api_timeout_count", 0)))
 
         db_write = stats.get("db_write", {}) or {}
-        db_latency_avg_gauge.labels(mode).set(
-            float(db_write.get("latency_avg_ms", 0.0))
-        )
-        db_latency_p95_gauge.labels(mode).set(
-            float(db_write.get("latency_p95_ms", 0.0))
-        )
+        latency_avg_ms = float(db_write.get("latency_avg_ms", 0.0))
+        latency_p95_ms = float(db_write.get("latency_p95_ms", 0.0))
+        db_latency_avg_gauge.labels(mode).set(latency_avg_ms)
+        db_latency_p95_gauge.labels(mode).set(latency_p95_ms)
+        # Observe representative sample in histogram (avg as best available summary stat)
+        if latency_avg_ms > 0:
+            db_latency_histogram.labels(mode).observe(latency_avg_ms / 1000.0)
         db_batch_avg_gauge.labels(mode).set(float(db_write.get("batch_size_avg", 0.0)))
         db_batch_max_gauge.labels(mode).set(float(db_write.get("batch_size_max", 0.0)))
 
@@ -374,6 +425,12 @@ def push_feature_eligibility_metrics(snapshot: dict[str, Any]) -> bool:
             "Seconds since the latest feature eligibility evaluation",
             registry=registry,
         )
+        warmup_remaining_gauge = Gauge(
+            "pklpo_feature_warmup_bars_remaining",
+            "Bars remaining before a symbol/timeframe reaches the feature warm-up requirement",
+            ["symbol", "timeframe"],
+            registry=registry,
+        )
 
         for (timeframe, state), count in (snapshot.get("state_counts") or {}).items():
             state_counts_gauge.labels(str(timeframe), str(state)).set(float(count))
@@ -396,6 +453,12 @@ def push_feature_eligibility_metrics(snapshot: dict[str, Any]) -> bool:
 
         invalid_total_gauge.set(float(snapshot.get("invalid_total", 0)))
         stale_seconds_gauge.set(float(snapshot.get("stale_seconds", 0.0)))
+        for (symbol, timeframe), remaining in (
+            snapshot.get("warmup_remaining") or {}
+        ).items():
+            warmup_remaining_gauge.labels(str(symbol), str(timeframe)).set(
+                max(float(remaining), 0.0)
+            )
         pushed = _push_registry(registry, job_name="feature_eligibility")
         if pushed:
             logger.info("Feature eligibility metrics pushed")
@@ -471,6 +534,52 @@ def push_pipeline_monitoring_metrics(snapshot: dict[str, Any]) -> bool:
         return pushed
     except Exception:
         logger.warning("Failed to push pipeline monitoring metrics", exc_info=True)
+        return False
+
+
+def push_dependency_health_metrics(
+    postgres_up: bool,
+    okx_up: bool,
+) -> bool:
+    """Push postgres_up / okx_up dependency health gauges to Pushgateway.
+
+    These two gauges are the root-cause signals for alert inhibition: when
+    postgres_up=0, downstream data-pipeline alerts are expected and should be
+    suppressed.  When okx_up=0, fetch errors are expected.
+
+    Args:
+        postgres_up: True if the DB accepted a SELECT 1 query.
+        okx_up: True if the OKX API returned a non-empty instruments list.
+    """
+    can_push, _ = _can_push()
+    if not can_push:
+        return False
+
+    try:
+        registry = CollectorRegistry()
+        postgres_gauge = Gauge(
+            "pklpo_dependency_postgres_up",
+            "1 if PostgreSQL is reachable, 0 otherwise",
+            registry=registry,
+        )
+        okx_gauge = Gauge(
+            "pklpo_dependency_okx_up",
+            "1 if OKX API is reachable, 0 otherwise",
+            registry=registry,
+        )
+        postgres_gauge.set(1.0 if postgres_up else 0.0)
+        okx_gauge.set(1.0 if okx_up else 0.0)
+
+        pushed = _push_registry(registry, job_name="dependency_health")
+        if pushed:
+            logger.info(
+                "Dependency health metrics pushed postgres_up=%s okx_up=%s",
+                int(postgres_up),
+                int(okx_up),
+            )
+        return pushed
+    except Exception:
+        logger.warning("Failed to push dependency health metrics", exc_info=True)
         return False
 
 
@@ -700,4 +809,87 @@ def push_swap_repair_metrics(payloads: list[dict[str, Any]] | dict[str, Any]) ->
         return pushed
     except Exception:
         logger.warning("Failed to push swap repair metrics", exc_info=True)
+        return False
+
+
+def push_market_selection_metrics(stats: dict[str, Any]) -> bool:
+    """Push per-run market selection universe metrics to Pushgateway.
+
+    ``stats`` is the ``PipelineMetrics.to_dict()`` payload.  Pushes low-cardinality
+    Gauge snapshots only — no ``run_id`` label (correlation lives in logs).
+    """
+    if not stats:
+        return False
+
+    try:
+        registry = CollectorRegistry()
+
+        run_success_gauge = Gauge(
+            "pklpo_market_selection_run_success",
+            "1 if the last market selection run succeeded, 0 otherwise",
+            registry=registry,
+        )
+        universe_size_gauge = Gauge(
+            "pklpo_market_selection_universe_size",
+            "Number of symbols selected into the trading universe",
+            registry=registry,
+        )
+        duration_gauge = Gauge(
+            "pklpo_market_selection_duration_seconds",
+            "Execution time of the last market selection pipeline run",
+            registry=registry,
+        )
+        eligible_count_gauge = Gauge(
+            "pklpo_market_selection_eligible_count",
+            "Number of eligible symbols per timeframe",
+            ["timeframe"],
+            registry=registry,
+        )
+        regime_gauge = Gauge(
+            "pklpo_market_selection_regime",
+            "1 if this regime is current, 0 otherwise",
+            ["regime"],
+            registry=registry,
+        )
+        score_min_gauge = Gauge(
+            "pklpo_market_selection_score_min",
+            "Minimum score in the selected universe",
+            registry=registry,
+        )
+        score_max_gauge = Gauge(
+            "pklpo_market_selection_score_max",
+            "Maximum score in the selected universe",
+            registry=registry,
+        )
+        score_mean_gauge = Gauge(
+            "pklpo_market_selection_score_mean",
+            "Mean score in the selected universe",
+            registry=registry,
+        )
+
+        run_success_gauge.set(1.0 if stats.get("success") else 0.0)
+        universe_size_gauge.set(float(stats.get("universe_size", 0)))
+        duration_gauge.set(float(stats.get("execution_time_seconds", 0.0)))
+
+        for tf, count in (stats.get("eligible_counts") or {}).items():
+            eligible_count_gauge.labels(str(tf)).set(float(count))
+
+        current_regime = stats.get("global_regime")
+        for regime in ("TREND_UP", "TREND_DOWN", "RANGE", "VOLATILE"):
+            regime_gauge.labels(regime).set(1.0 if regime == current_regime else 0.0)
+
+        score_min_gauge.set(float(stats.get("score_min", 0.0)))
+        score_max_gauge.set(float(stats.get("score_max", 0.0)))
+        score_mean_gauge.set(float(stats.get("score_mean", 0.0)))
+
+        pushed = _push_registry(registry, job_name="market_selection")
+        if pushed:
+            logger.info(
+                "Market selection metrics pushed (universe_size=%d, success=%s)",
+                stats.get("universe_size", 0),
+                stats.get("success"),
+            )
+        return pushed
+    except Exception:
+        logger.warning("Failed to push market selection metrics", exc_info=True)
         return False

@@ -1,9 +1,11 @@
+"""Market metadata domain exceptions."""
+
 from __future__ import annotations
 
 
-class InstrumentNotFoundError(Exception):
-    """Raised when an instrument symbol is not found in the instruments table or OKX API."""
+class InstrumentNotFoundError(ValueError):
+    """Raised when an instrument is absent from the registered catalog."""
 
     def __init__(self, symbol: str) -> None:
-        super().__init__(f"Instrument not found: {symbol!r}")
         self.symbol = symbol
+        super().__init__(f"Instrument not found: {symbol}")

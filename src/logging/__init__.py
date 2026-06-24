@@ -81,6 +81,12 @@ else:
         setup_features_logging,
         setup_logging,
     )
+    from .tracing import (
+        configure_tracing,
+        get_trace_ids,
+        set_span_attributes,
+        start_span,
+    )
 
     # Backward compatibility: LOG_DIR as a property-like access
     LOG_DIR = get_log_directory()
@@ -102,6 +108,7 @@ else:
         "_build_console_handler",
         "_build_file_handler",
         "_build_formatter",
+        "configure_tracing",
         "create_run_summary",
         "generate_run_id",
         "get_category_logger",
@@ -115,6 +122,7 @@ else:
         "get_log_format",
         "get_log_level",
         "get_logger",
+        "get_trace_ids",
         "get_verbosity",
         "is_category_enabled",
         "log_bad_record",
@@ -128,8 +136,10 @@ else:
         "performance_timer",
         "set_enabled_categories",
         "set_log_context",
+        "set_span_attributes",
         "set_verbosity",
         "setup_features_logging",
         "setup_logging",
         "should_log",
+        "start_span",
     ]

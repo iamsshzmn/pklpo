@@ -13,10 +13,18 @@ x-environment: &airflow_env
   AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@${AIRFLOW_DB_HOST:-postgres}:${AIRFLOW_DB_PORT:-5432}/${AIRFLOW_DB_NAME:-airflow_db}
   AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'false'
   DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://pklpo_user:strongpassword@pklpo_db:5432/pklpo}
-  OBSERVABILITY_PROMETHEUS_ENABLED: ${OBSERVABILITY_PROMETHEUS_ENABLED:-false}
+  OBSERVABILITY_PROMETHEUS_ENABLED: ${OBSERVABILITY_PROMETHEUS_ENABLED:-true}
   OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL: ${OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL:-http://pushgateway:9091}
   OBSERVABILITY_JOB_NAME: ${OBSERVABILITY_JOB_NAME:-features_pipeline}
   OBSERVABILITY_METRICS_PREFIX: ${OBSERVABILITY_METRICS_PREFIX:-pklpo}
+  OBSERVABILITY_OTEL_ENABLED: ${OBSERVABILITY_OTEL_ENABLED:-false}
+  OBSERVABILITY_OTEL_SERVICE_NAME: ${OBSERVABILITY_OTEL_SERVICE_NAME:-pklpo-airflow}
+  OBSERVABILITY_OTEL_EXPORTER_OTLP_ENDPOINT: ${OBSERVABILITY_OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4317}
+  OBSERVABILITY_OTEL_SAMPLE_RATIO: ${OBSERVABILITY_OTEL_SAMPLE_RATIO:-1.0}
+  # Structured JSON logs — written to shared volume, scraped by Promtail
+  LOG_FORMAT: 'json'
+  LOG_DIR: '/var/log/pklpo'
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
 
 services:
   postgres:
@@ -39,22 +47,43 @@ services:
       retries: 20
     restart: always
 
+  redis:
+    image: redis:7.2-alpine
+    container_name: pklpo-airflow-redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - af_redis_data:/data
+    networks:
+      - pklpo_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   airflow-init:
     build:
       context: ../../
       dockerfile: ops/airflow/Dockerfile.airflow
+    user: "0:0"
     environment:
       <<: *airflow_env
       AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+    volumes:
+      - pklpo_airflow_logs:/var/log/pklpo
     entrypoint:
       - bash
       - -c
       - |
-        airflow db init
-        airflow users create --username admin --firstname Air --lastname Flow --role Admin --email admin@example.com --password $${AIRFLOW_ADMIN_PASSWORD} || true
-        airflow pools set ohlcv_write_pool 1 "Serialize swap_ohlcv_p writers"
-        airflow pools set okx_api_pool 2 "Limit OKX API calls"
-        airflow pools set compute_pool 2 "Limit feature and recalc compute"
+        mkdir -p /var/log/pklpo
+        chown -R 50000:0 /var/log/pklpo
+        chmod -R 775 /var/log/pklpo
+        su -m airflow -s /bin/bash -c 'airflow db init'
+        su -m airflow -s /bin/bash -c "airflow users create --username admin --firstname Air --lastname Flow --role Admin --email admin@example.com --password \"$${AIRFLOW_ADMIN_PASSWORD}\" || true"
+        su -m airflow -s /bin/bash -c 'airflow pools set ohlcv_write_pool 1 "Serialize swap_ohlcv_p writers"'
+        su -m airflow -s /bin/bash -c 'airflow pools set okx_api_pool 2 "Limit OKX API calls"'
+        su -m airflow -s /bin/bash -c 'airflow pools set compute_pool 2 "Limit feature and recalc compute"'
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +107,8 @@ services:
       - pklpo_network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - pklpo_airflow_logs:/var/log/pklpo
     # volumes:
     #   - ./dags:/opt/airflow/dags:ro  # disabled: WSL2 mount issue on Windows
     develop:
@@ -106,6 +137,8 @@ services:
       - pklpo_network
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - pklpo_airflow_logs:/var/log/pklpo
     # volumes:
     #   - ./dags:/opt/airflow/dags:ro  # disabled: WSL2 mount issue on Windows
     develop:
@@ -122,3 +155,7 @@ services:
 volumes:
   af_pg_data:
     name: pklpo-airflow-pg-data
+  pklpo_airflow_logs:
+    name: pklpo-airflow-logs
+  af_redis_data:
+    name: pklpo-airflow-redis-data

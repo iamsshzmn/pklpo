@@ -4,6 +4,7 @@
 
 ## Содержание
 
+- [pipeline_recovery_controller](#pipeline_recovery_controller) - Контроллер автоматического восстановления (dry mode)
 - [okx_swap_ohlcv_sync_v2](#okx_swap_ohlcv_sync_v2) - Синхронизация OHLCV данных
 - [okx_swap_repair_v1](#okx_swap_repair_v1) - Ручной repair пробелов и повреждённых свечей
 - [features_calc_short](#features_calc_short) - Расчёт коротких фичей
@@ -12,6 +13,87 @@
 - [indicators_partition_maintenance](#indicators_partition_maintenance) - Обслуживание monthly partitions
 - [Общие настройки](#общие-настройки)
 - [Тестирование](#тестирование)
+
+---
+
+## pipeline_recovery_controller
+
+**DAG ID:** `pipeline_recovery_controller`
+
+**Назначение:**
+Scheduled decision controller. Читает состояние пайплайна, записывает решение в
+`ops.pipeline_recovery_decisions` и (в будущих фазах) запускает не более одного
+ограниченного recovery-действия за прогон.
+
+Текущая фаза: **dry mode** (`DRY_MODE=True`). Branch всегда идёт в `skip_recovery`.
+Trigger-ветки определены, но не активны. Решения записываются в каждом прогоне.
+
+**Расписание:** `*/30 * * * *` (каждые 30 минут). `max_active_runs=1`.
+
+**Граф задач:**
+
+```text
+collect_recovery_state
+-> choose_recovery_action
+-> branch_recovery_action
+-> [trigger_repair | trigger_bootstrap | skip_recovery]
+-> record_controller_completion
+```
+
+`record_controller_completion` работает с `trigger_rule=NONE_FAILED_MIN_ONE_SUCCESS`.
+
+**Источники сигналов:**
+
+- Bootstrap: `bootstrap_interface.build_coverage_report` + `reconcile_bootstrap_state`
+  → `ops.swap_ohlcv_bootstrap_state`
+- Repair: `repair_interface.plan_swap_repair` (dry-run precheck) → `swap_ohlcv_p`
+- Active DagRun: Airflow Session query по `okx_swap_repair_v1`, `okx_swap_ohlcv_bootstrap_v1`
+- Cooldown: `ops.pipeline_recovery_decisions`
+
+**Safety rules:**
+- Fail closed: Postgres / OKX недоступен → skip + reason=`dependency_unhealthy`
+- Нет repair пока bootstrap активен, нет bootstrap пока repair активен
+- Cooldown ключ: `action_kind + target_dag_id + symbol + timeframe` (240 мин)
+- Лимиты per-run: max 3 символа, 2 TF, 6 пар
+
+**Enum причин (`reason`):**
+
+| Причина | Когда |
+|---------|-------|
+| `dependency_unhealthy` | Postgres или OKX недоступен |
+| `conflicting_recovery_active` | конкурирующий DAG запущен |
+| `cooldown_active` | повтор в cooldown-окне |
+| `rate_limit_no_candidates` | превышен лимит пар за прогон |
+| `no_recovery_needed` | нет кандидатов для действия |
+| `bootstrap_state_missing` | state row отсутствует |
+| `bootstrap_state_incomplete` | state=incomplete/failed/stuck |
+| `bootstrap_state_reconciled_incomplete` | reconcile понизил completed state |
+| `repair_gap_detected` | precheck нашёл gap_tasks/requested_bars |
+| `repair_corrupted_recent_closed_bars` | найдены corrupted закрытые бары |
+| `precheck_guardrail_risk` | precheck заблокирован guardrails |
+| `trigger_failed` | попытка trigger завершилась ошибкой |
+| `triggered` | trigger успешно запущен |
+
+**Controller trigger-контракты для `okx_swap_repair_v1`:**
+
+| Пресет | Стратегия | Обязательные поля | Allowed TF |
+|--------|-----------|-------------------|------------|
+| `controller-gap-repair` | GAP_REPAIR | `symbols` (non-empty, ⊆ curated) | 1H, 4H |
+| `controller-last-closed-bars` | last_n_closed_bars | `symbols` (non-empty, ⊆ curated) | 1H, 4H, 1D, 1W, 1M |
+
+Оба controller-пресета отклоняют отсутствующие или пустые `symbols`.
+Ручные пресеты `repair-all-swaps` и `last-200-guard` работают без изменений.
+
+**Controller trigger-контракт для `okx_swap_ohlcv_bootstrap_v1`:**
+
+При `triggered_by=pipeline_recovery_controller`:
+- Обязательны явные `symbols` и `timeframes` (не null, не пустые).
+- Поля `controller_decision_id` и `reason` логируются, на исполнение не влияют.
+- Ручной запуск с дефолтами (null symbols) продолжает работать без изменений.
+
+**Откат:**
+Вернуть `DRY_MODE=True` в DAG-файле — таблица решений остаётся, триггеры прекращаются.
+Controller-пресеты в repair/bootstrap DAG аддитивны и не затрагивают ручные пути.
 
 ---
 

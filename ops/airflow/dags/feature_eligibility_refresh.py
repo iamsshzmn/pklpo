@@ -17,6 +17,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 from src.candles.interfaces import eligibility as eligibility_interface
+from src.pklpo_platform.observability import airflow_log_context
 
 if TYPE_CHECKING:
     import asyncio
@@ -27,11 +28,12 @@ def _get_loop() -> asyncio.AbstractEventLoop:
 
 
 def refresh_eligibility_task(**context: object) -> dict[str, int]:
-    dag_run = context.get("dag_run")
-    run_id = getattr(dag_run, "run_id", None) or "feature_eligibility_refresh"
-    return _get_loop().run_until_complete(
-        eligibility_interface.refresh_eligibility(evaluator_run_id=run_id)
-    )
+    with airflow_log_context(context, component="feature_eligibility_refresh"):
+        dag_run = context.get("dag_run")
+        run_id = getattr(dag_run, "run_id", None) or "feature_eligibility_refresh"
+        return _get_loop().run_until_complete(
+            eligibility_interface.refresh_eligibility(evaluator_run_id=run_id)
+        )
 
 
 default_args = {

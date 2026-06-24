@@ -9,19 +9,34 @@ flowchart TD
   features_calc_short["features_calc_short<br/>*/15 min"]
   market_selection["market_selection<br/>0 */4 * * *"]
   features_calc["features_calc<br/>manual / triggered"]
+  recovery_controller["pipeline_recovery_controller<br/>*/30 min"]
+  repair["okx_swap_repair_v1<br/>manual / controller"]
+  bootstrap["okx_swap_ohlcv_bootstrap_v1<br/>manual / controller"]
 
   features_calc_short -->|"ExternalTaskSensor:<br/>features_calc_short_validate success"| market_selection
   market_selection -->|"TriggerDagRunOperator<br/>if universe non-empty"| features_calc
+  recovery_controller -->|"TriggerDagRunOperator<br/>controller-gap-repair or<br/>controller-last-closed-bars"| repair
+  recovery_controller -->|"TriggerDagRunOperator<br/>bounded symbols/timeframes"| bootstrap
 ```
 
-The only explicit cross-DAG orchestration currently found in code is:
+Explicit cross-DAG orchestration:
 
 ```text
 features_calc_short -> market_selection -> features_calc
+pipeline_recovery_controller -> okx_swap_repair_v1       (controller trigger presets)
+pipeline_recovery_controller -> okx_swap_ohlcv_bootstrap_v1  (bounded bootstrap trigger)
 ```
 
 - `market_selection` waits for `features_calc_short.features_calc_short_validate`.
 - `market_selection` triggers `features_calc` when the produced universe is not empty.
+- `pipeline_recovery_controller` triggers `okx_swap_repair_v1` using the
+  `controller-gap-repair` or `controller-last-closed-bars` preset with bounded
+  `symbols` and `timeframes` from the decision conf.
+- `pipeline_recovery_controller` triggers `okx_swap_ohlcv_bootstrap_v1` with
+  explicit bounded `symbols` and `timeframes` only when bootstrap state is
+  missing, incomplete, stuck, or reconcile-downgraded.
+- Both target DAGs enforce that controller triggers must include explicit, bounded
+  `symbols`/`timeframes`; unbounded or null values are rejected at validation time.
 
 ## Data Dependencies
 
@@ -97,9 +112,60 @@ refresh_okx_meta
 
 Primary output: `swap_ohlcv_p`.
 
+### pipeline_recovery_controller
+
+Scheduled decision controller for automatic recovery orchestration. Dry mode by default.
+
+Task graph:
+
+```text
+collect_recovery_state
+-> choose_recovery_action
+-> branch_recovery_action
+-> [trigger_repair | trigger_bootstrap | skip_recovery]
+-> record_controller_completion
+```
+
+Schedule: `*/30 * * * *`. `max_active_runs=1`. `catchup=False`.
+
+Current phase: **dry mode** — `DRY_MODE=True` in the DAG file. Branch always goes
+to `skip_recovery`. Trigger tasks exist but do not fire. Decision rows are written to
+`ops.pipeline_recovery_decisions` every run.
+
+Controller trigger presets used when triggering `okx_swap_repair_v1`:
+
+| Preset | Strategy | Symbols | Timeframes |
+|--------|----------|---------|------------|
+| `controller-gap-repair` | GAP_REPAIR | bounded from conf | 1H, 4H |
+| `controller-last-closed-bars` | last_n_closed_bars | bounded from conf | 1H, 4H, 1D, 1W, 1M |
+
+Both presets reject missing or unbounded `symbols`. Manual `repair-all-swaps` and
+`last-200-guard` triggers are unaffected.
+
+Bootstrap trigger: passes `triggered_by=pipeline_recovery_controller`,
+`controller_decision_id`, `reason`, `symbols`, and `timeframes`. Bootstrap DAG
+rejects controller triggers without explicit bounded `symbols`/`timeframes`.
+
+Primary output: `ops.pipeline_recovery_decisions`.
+
+Audit reason enum: `dependency_unhealthy`, `conflicting_recovery_active`,
+`cooldown_active`, `rate_limit_no_candidates`, `no_recovery_needed`,
+`bootstrap_state_missing`, `bootstrap_state_incomplete`,
+`bootstrap_state_reconciled_incomplete`, `repair_gap_detected`,
+`repair_corrupted_recent_closed_bars`, `precheck_guardrail_risk`,
+`trigger_failed`, `triggered`.
+
+Safety rules:
+- Does not repair while bootstrap is active.
+- Does not bootstrap while repair is active.
+- Cooldown key: `action_kind + target_dag_id + symbol + timeframe`.
+- Default cooldown: 240 minutes.
+- Per-run limits: max 3 symbols, 2 timeframes, 6 pairs.
+- Fail closed: any dependency/inspection failure → skip + audit reason.
+
 ### okx_swap_ohlcv_bootstrap_v1
 
-Manual historical OHLCV backfill.
+Manual historical OHLCV backfill. Also triggered by `pipeline_recovery_controller`.
 
 Task chain:
 

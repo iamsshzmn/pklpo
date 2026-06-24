@@ -26,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from _common import (  # type: ignore[import-not-found]
+    airflow_log_context,
     coerce_int as _coerce_int,
     get_dag_env as _get_common_dag_env,
     get_or_create_event_loop,
@@ -62,6 +63,9 @@ PROVIDER_MAX_LOOKBACK_DAYS = 36_500
 DEFAULT_CHUNK_BARS = 500
 DEFAULT_CIRCUIT_BREAK_AFTER = 3
 FEATURE_RECALC_EXCLUDED_TIMEFRAMES = {"1M"}
+
+# Identifier used by the recovery controller when it triggers this DAG.
+CONTROLLER_TRIGGERED_BY = "pipeline_recovery_controller"
 
 
 def _normalize_string_list(raw: object, field: str) -> list[str] | None:
@@ -139,177 +143,223 @@ def _lookback_days_for_timeframe(timeframe: str, default_lookback_days: int) -> 
 
 
 def task_validate_conf(**context: Any) -> dict[str, Any]:
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="swap_bootstrap"):
+        env = get_dag_env()
+        setup_env(env)
 
-    conf = _get_run_conf(context)
-    lookback_days = _coerce_int(
-        conf.get("lookback_days", DEFAULT_LOOKBACK_DAYS),
-        field_name="lookback_days",
-    )
-    if lookback_days <= 0:
-        raise AirflowFailException("lookback_days must be positive")
+        conf = _get_run_conf(context)
 
-    symbols_raw = conf.get("symbols")
-    symbols = _normalize_string_list(symbols_raw, "symbols")
-    if not symbols:
-        symbols = _load_curated_swap_symbols()
-    if not symbols:
-        raise AirflowFailException("symbol list is empty")
+        # --- Controller pass-through audit fields (do not affect execution) ---
+        triggered_by: str | None = conf.get("triggered_by") or None
+        controller_decision_id = conf.get("controller_decision_id")
+        controller_reason: str | None = conf.get("reason") or None
 
-    timeframes_raw = conf.get("timeframes")
-    timeframes = _normalize_string_list(timeframes_raw, "timeframes") or list(
-        SUPPORTED_TIMEFRAMES
-    )
+        is_controller_run = triggered_by == CONTROLLER_TRIGGERED_BY
 
-    unknown = [tf for tf in timeframes if tf not in _TF_TO_MS]
-    if unknown:
-        raise AirflowFailException(
-            f"unknown timeframe(s) in conf: {unknown}. "
-            "Each entry must be a separate string like '1H', not '1H, 4H'."
+        if is_controller_run:
+            logger.info(
+                "bootstrap triggered by controller: controller_decision_id=%s reason=%s",
+                controller_decision_id,
+                controller_reason,
+            )
+
+        lookback_days = _coerce_int(
+            conf.get("lookback_days", DEFAULT_LOOKBACK_DAYS),
+            field_name="lookback_days",
         )
+        if lookback_days <= 0:
+            raise AirflowFailException("lookback_days must be positive")
 
-    chunk_bars = _coerce_int(
-        conf.get("chunk_bars", DEFAULT_CHUNK_BARS), field_name="chunk_bars"
-    )
-    circuit_break_after = _coerce_int(
-        conf.get("circuit_break_after", DEFAULT_CIRCUIT_BREAK_AFTER),
-        field_name="circuit_break_after",
-    )
-    dry_run = bool(conf.get("dry_run", False))
-    skip_recalc = bool(conf.get("skip_recalc", False))
+        symbols_raw = conf.get("symbols")
+        symbols = _normalize_string_list(symbols_raw, "symbols")
 
-    validated = {
-        "lookback_days": lookback_days,
-        "symbols": symbols,
-        "timeframes": timeframes,
-        "chunk_bars": chunk_bars,
-        "circuit_break_after": circuit_break_after,
-        "dry_run": dry_run,
-        "skip_recalc": skip_recalc,
-    }
-    logger.info(
-        "bootstrap conf validated: %d symbols, %s TFs, lookback=%d days",
-        len(symbols),
-        timeframes,
-        lookback_days,
-    )
-    return validated
+        # Controller runs MUST provide explicit bounded symbols — reject null/empty.
+        if is_controller_run and not symbols:
+            raise AirflowFailException(
+                "bootstrap triggered by pipeline_recovery_controller requires explicit "
+                "'symbols' list; null or missing symbols are not allowed for controller runs"
+            )
+
+        if not symbols:
+            # Manual run: fall back to curated universe
+            symbols = _load_curated_swap_symbols()
+        if not symbols:
+            raise AirflowFailException("symbol list is empty")
+
+        timeframes_raw = conf.get("timeframes")
+        timeframes = _normalize_string_list(timeframes_raw, "timeframes")
+
+        # Controller runs MUST provide explicit bounded timeframes.
+        if is_controller_run and not timeframes:
+            raise AirflowFailException(
+                "bootstrap triggered by pipeline_recovery_controller requires explicit "
+                "'timeframes' list; null or missing timeframes are not allowed for controller runs"
+            )
+
+        if not timeframes:
+            timeframes = list(SUPPORTED_TIMEFRAMES)
+
+        unknown = [tf for tf in timeframes if tf not in _TF_TO_MS]
+        if unknown:
+            raise AirflowFailException(
+                f"unknown timeframe(s) in conf: {unknown}. "
+                "Each entry must be a separate string like '1H', not '1H, 4H'."
+            )
+
+        chunk_bars = _coerce_int(
+            conf.get("chunk_bars", DEFAULT_CHUNK_BARS), field_name="chunk_bars"
+        )
+        circuit_break_after = _coerce_int(
+            conf.get("circuit_break_after", DEFAULT_CIRCUIT_BREAK_AFTER),
+            field_name="circuit_break_after",
+        )
+        dry_run = bool(conf.get("dry_run", False))
+        skip_recalc = bool(conf.get("skip_recalc", False))
+
+        validated: dict[str, Any] = {
+            "lookback_days": lookback_days,
+            "symbols": symbols,
+            "timeframes": timeframes,
+            "chunk_bars": chunk_bars,
+            "circuit_break_after": circuit_break_after,
+            "dry_run": dry_run,
+            "skip_recalc": skip_recalc,
+        }
+        # Propagate controller audit fields into validated conf for downstream tasks
+        if triggered_by is not None:
+            validated["triggered_by"] = triggered_by
+        if controller_decision_id is not None:
+            validated["controller_decision_id"] = controller_decision_id
+        if controller_reason is not None:
+            validated["controller_reason"] = controller_reason
+
+        logger.info(
+            "bootstrap conf validated: %d symbols, %s TFs, lookback=%d days triggered_by=%s",
+            len(symbols),
+            timeframes,
+            lookback_days,
+            triggered_by,
+        )
+        return validated
 
 
 def task_preflight_instrument_check(**context: Any) -> None:
-    validated = _get_validated_conf(context)
-    symbols: list[str] = validated["symbols"]
-    logger.info("preflight: %d symbols queued for bootstrap", len(symbols))
+    with airflow_log_context(context, component="swap_bootstrap"):
+        validated = _get_validated_conf(context)
+        symbols: list[str] = validated["symbols"]
+        logger.info("preflight: %d symbols queued for bootstrap", len(symbols))
 
 
 def task_init_bootstrap_state(**context: Any) -> dict[str, Any]:
-    env = get_dag_env()
-    setup_env(env)
-    validated = _get_validated_conf(context)
-    result = {"pending": [], "skipped": []}
-    for timeframe in validated["timeframes"]:
-        timeframe_result = _get_loop().run_until_complete(
-            bootstrap_interface.init_bootstrap_state(
-                symbols=validated["symbols"],
-                timeframes=[timeframe],
-                lookback_days=_lookback_days_for_timeframe(
-                    timeframe, validated["lookback_days"]
-                ),
-                chunk_bars=validated["chunk_bars"],
+    with airflow_log_context(context, component="swap_bootstrap"):
+        env = get_dag_env()
+        setup_env(env)
+        validated = _get_validated_conf(context)
+        result: dict[str, list[Any]] = {"pending": [], "skipped": []}
+        for timeframe in validated["timeframes"]:
+            timeframe_result = _get_loop().run_until_complete(
+                bootstrap_interface.init_bootstrap_state(
+                    symbols=validated["symbols"],
+                    timeframes=[timeframe],
+                    lookback_days=_lookback_days_for_timeframe(
+                        timeframe, validated["lookback_days"]
+                    ),
+                    chunk_bars=validated["chunk_bars"],
+                )
             )
+            result["pending"].extend(timeframe_result["pending"])
+            result["skipped"].extend(timeframe_result["skipped"])
+        logger.info(
+            "init_bootstrap_state: %d pending, %d skipped",
+            len(result["pending"]),
+            len(result["skipped"]),
         )
-        result["pending"].extend(timeframe_result["pending"])
-        result["skipped"].extend(timeframe_result["skipped"])
-    logger.info(
-        "init_bootstrap_state: %d pending, %d skipped",
-        len(result["pending"]),
-        len(result["skipped"]),
-    )
-    return result
+        return result
 
 
 def task_coverage_report(**context: Any) -> list[dict[str, Any]]:
-    env = get_dag_env()
-    setup_env(env)
-    validated = _get_validated_conf(context)
-    report = _get_loop().run_until_complete(
-        bootstrap_interface.build_coverage_report(
-            symbols=validated["symbols"],
-            timeframes=validated["timeframes"],
+    with airflow_log_context(context, component="swap_bootstrap"):
+        env = get_dag_env()
+        setup_env(env)
+        validated = _get_validated_conf(context)
+        report = _get_loop().run_until_complete(
+            bootstrap_interface.build_coverage_report(
+                symbols=validated["symbols"],
+                timeframes=validated["timeframes"],
+            )
         )
-    )
-    for row in report:
-        logger.info(
-            "coverage: %s/%s status=%s coverage_pct=%s missing=%s",
-            row["symbol"],
-            row["timeframe"],
-            row["status"],
-            row.get("coverage_pct"),
-            row.get("missing_bars"),
-        )
-    if validated.get("dry_run"):
-        logger.info("dry_run=True — stopping after coverage report")
-        from airflow.exceptions import AirflowSkipException
+        for row in report:
+            logger.info(
+                "coverage: %s/%s status=%s coverage_pct=%s missing=%s",
+                row["symbol"],
+                row["timeframe"],
+                row["status"],
+                row.get("coverage_pct"),
+                row.get("missing_bars"),
+            )
+        if validated.get("dry_run"):
+            logger.info("dry_run=True — stopping after coverage report")
+            from airflow.exceptions import AirflowSkipException
 
-        raise AirflowSkipException("dry_run=True")
-    return report
+            raise AirflowSkipException("dry_run=True")
+        return report
 
 
 def task_bootstrap_symbol_tf(**context: Any) -> list[dict[str, Any]]:
     """Bootstrap all pending (symbol, timeframe) pairs sequentially."""
-    env = get_dag_env()
-    setup_env(env)
-    ti = context["ti"]
+    with airflow_log_context(context, component="swap_bootstrap"):
+        env = get_dag_env()
+        setup_env(env)
+        ti = context["ti"]
 
-    validated = _get_validated_conf(context)
-    init_result = (
-        ti.xcom_pull(task_ids="init_bootstrap_state", key="return_value") or {}
-    )
-    pending: list[str] = init_result.get("pending", [])
-
-    if not pending:
-        logger.info("no pending pairs to bootstrap")
-        return []
-
-    all_results: list[dict[str, Any]] = []
-    for pair in pending:
-        symbol, timeframe = pair.split("/", 1)
-        command = BootstrapCommand(
-            symbol=symbol,
-            timeframe=timeframe,
-            lookback_days=_lookback_days_for_timeframe(
-                timeframe, validated["lookback_days"]
-            ),
-            chunk_bars=validated["chunk_bars"],
-            circuit_break_after=validated["circuit_break_after"],
-            dry_run=bool(validated.get("dry_run", False)),
+        validated = _get_validated_conf(context)
+        init_result = (
+            ti.xcom_pull(task_ids="init_bootstrap_state", key="return_value") or {}
         )
-        try:
-            result = _get_loop().run_until_complete(
-                bootstrap_interface.run_bootstrap(command)
-            )
-            logger.info(
-                "bootstrap %s/%s → status=%s missing=%d rows_written=%d",
-                symbol,
-                timeframe,
-                result.status,
-                result.missing_bars,
-                result.rows_written,
-            )
-            all_results.append(result.to_dict())
-        except Exception as exc:
-            logger.error("bootstrap %s/%s failed: %s", symbol, timeframe, exc)
-            all_results.append(
-                {
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "status": "failed",
-                    "error": str(exc),
-                }
-            )
+        pending: list[str] = init_result.get("pending", [])
 
-    return all_results
+        if not pending:
+            logger.info("no pending pairs to bootstrap")
+            return []
+
+        all_results: list[dict[str, Any]] = []
+        for pair in pending:
+            symbol, timeframe = pair.split("/", 1)
+            command = BootstrapCommand(
+                symbol=symbol,
+                timeframe=timeframe,
+                lookback_days=_lookback_days_for_timeframe(
+                    timeframe, validated["lookback_days"]
+                ),
+                chunk_bars=validated["chunk_bars"],
+                circuit_break_after=validated["circuit_break_after"],
+                dry_run=bool(validated.get("dry_run", False)),
+            )
+            try:
+                result = _get_loop().run_until_complete(
+                    bootstrap_interface.run_bootstrap(command)
+                )
+                logger.info(
+                    "bootstrap %s/%s → status=%s missing=%d rows_written=%d",
+                    symbol,
+                    timeframe,
+                    result.status,
+                    result.missing_bars,
+                    result.rows_written,
+                )
+                all_results.append(result.to_dict())
+            except Exception as exc:
+                logger.error("bootstrap %s/%s failed: %s", symbol, timeframe, exc)
+                all_results.append(
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "status": "failed",
+                        "error": str(exc),
+                    }
+                )
+
+        return all_results
 
 
 def task_validate_bootstrap_xcom(**context: Any) -> list[dict[str, Any]]:
@@ -321,109 +371,119 @@ def task_validate_bootstrap_xcom(**context: Any) -> list[dict[str, Any]]:
 
 
 def task_enqueue_indicator_recalc(**context: Any) -> None:
-    import time as _time_mod
+    with airflow_log_context(context, component="swap_bootstrap"):
+        import time as _time_mod
 
-    env = get_dag_env()
-    setup_env(env)
-    ti = context["ti"]
-    results = ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
-    validated = _get_validated_conf(context)
+        env = get_dag_env()
+        setup_env(env)
+        ti = context["ti"]
+        results = (
+            ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
+        )
+        validated = _get_validated_conf(context)
 
-    if validated.get("skip_recalc", False):
-        logger.info("skip_recalc=True — skipping indicator recalc enqueue")
-        return
+        if validated.get("skip_recalc", False):
+            logger.info("skip_recalc=True — skipping indicator recalc enqueue")
+            return
 
-    now_ms = int(_time_mod.time() * 1000)
-    day_ms = 86_400_000
+        now_ms = int(_time_mod.time() * 1000)
+        day_ms = 86_400_000
 
-    seen: set[tuple[str, str]] = set()
-    for r in results:
-        if not isinstance(r, dict) or r.get("status") != "completed":
-            continue
-        symbol = str(r.get("symbol", "")).strip()
-        timeframe = str(r.get("timeframe", "")).strip()
-        if not symbol or not timeframe or (symbol, timeframe) in seen:
-            continue
-        if timeframe in FEATURE_RECALC_EXCLUDED_TIMEFRAMES:
-            logger.info(
-                "skipping indicator recalc for %s/%s: informational_only timeframe",
-                symbol,
-                timeframe,
-            )
-            continue
-        seen.add((symbol, timeframe))
-        try:
-            lookback_days = _lookback_days_for_timeframe(
-                timeframe, int(validated.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
-            )
-            _get_loop().run_until_complete(
-                repair_interface.enqueue_indicator_recalc(
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    start_ts_ms=now_ms - lookback_days * day_ms,
-                    end_ts_ms=now_ms,
+        seen: set[tuple[str, str]] = set()
+        for r in results:
+            if not isinstance(r, dict) or r.get("status") != "completed":
+                continue
+            symbol = str(r.get("symbol", "")).strip()
+            timeframe = str(r.get("timeframe", "")).strip()
+            if not symbol or not timeframe or (symbol, timeframe) in seen:
+                continue
+            if timeframe in FEATURE_RECALC_EXCLUDED_TIMEFRAMES:
+                logger.info(
+                    "skipping indicator recalc for %s/%s: informational_only timeframe",
+                    symbol,
+                    timeframe,
                 )
-            )
-            logger.info("enqueued indicator recalc for %s/%s", symbol, timeframe)
-        except Exception as exc:
-            logger.warning(
-                "enqueue_indicator_recalc failed for %s/%s: %s", symbol, timeframe, exc
-            )
+                continue
+            seen.add((symbol, timeframe))
+            try:
+                lookback_days = _lookback_days_for_timeframe(
+                    timeframe,
+                    int(validated.get("lookback_days", DEFAULT_LOOKBACK_DAYS)),
+                )
+                _get_loop().run_until_complete(
+                    repair_interface.enqueue_indicator_recalc(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        start_ts_ms=now_ms - lookback_days * day_ms,
+                        end_ts_ms=now_ms,
+                    )
+                )
+                logger.info("enqueued indicator recalc for %s/%s", symbol, timeframe)
+            except Exception as exc:
+                logger.warning(
+                    "enqueue_indicator_recalc failed for %s/%s: %s",
+                    symbol,
+                    timeframe,
+                    exc,
+                )
 
 
 def task_publish_bootstrap_report(**context: Any) -> dict[str, Any]:
-    ti = context["ti"]
-    results_raw = (
-        ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
-    )
+    with airflow_log_context(context, component="swap_bootstrap"):
+        ti = context["ti"]
+        results_raw = (
+            ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
+        )
 
-    results: list[BootstrapResult] = []
-    for r in results_raw:
-        d = _payload_to_dict(r)
-        try:
-            results.append(
-                BootstrapResult(
-                    symbol=str(d["symbol"]),
-                    timeframe=str(d["timeframe"]),
-                    status=str(d["status"]),
-                    chunks_fetched=int(d.get("chunks_fetched", 0)),
-                    rows_written=int(d.get("rows_written", 0)),
-                    expected_bars=int(d.get("expected_bars", 0)),
-                    actual_bars=int(d.get("actual_bars", 0)),
-                    missing_bars=int(d.get("missing_bars", 0)),
-                    coverage_pct=float(d.get("coverage_pct", 0.0)),
-                    elapsed_seconds=float(d.get("elapsed_seconds", 0.0)),
-                    error=d.get("error"),
+        results: list[BootstrapResult] = []
+        for r in results_raw:
+            d = _payload_to_dict(r)
+            try:
+                results.append(
+                    BootstrapResult(
+                        symbol=str(d["symbol"]),
+                        timeframe=str(d["timeframe"]),
+                        status=str(d["status"]),
+                        chunks_fetched=int(d.get("chunks_fetched", 0)),
+                        rows_written=int(d.get("rows_written", 0)),
+                        expected_bars=int(d.get("expected_bars", 0)),
+                        actual_bars=int(d.get("actual_bars", 0)),
+                        missing_bars=int(d.get("missing_bars", 0)),
+                        coverage_pct=float(d.get("coverage_pct", 0.0)),
+                        elapsed_seconds=float(d.get("elapsed_seconds", 0.0)),
+                        error=d.get("error"),
+                    )
                 )
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            logger.warning("skipping malformed result in report: %s", exc)
+            except (KeyError, TypeError, ValueError) as exc:
+                logger.warning("skipping malformed result in report: %s", exc)
 
-    summary = merge_bootstrap_results(results)
-    logger.info("bootstrap summary: %s", summary.to_dict())
-    return summary.to_dict()
+        summary = merge_bootstrap_results(results)
+        logger.info("bootstrap summary: %s", summary.to_dict())
+        return summary.to_dict()
 
 
 def task_publish_bootstrap_ops(**context: Any) -> None:
-    ti = context["ti"]
-    summary_dict = (
-        ti.xcom_pull(task_ids="publish_bootstrap_report", key="return_value") or {}
-    )
-    logger.info(
-        "bootstrap ops metrics: coverage_pct=%.2f missing_bars=%s",
-        summary_dict.get("overall_coverage_pct", 0),
-        summary_dict.get("total_missing_bars", 0),
-    )
+    with airflow_log_context(context, component="swap_bootstrap"):
+        ti = context["ti"]
+        summary_dict = (
+            ti.xcom_pull(task_ids="publish_bootstrap_report", key="return_value") or {}
+        )
+        logger.info(
+            "bootstrap ops metrics: coverage_pct=%.2f missing_bars=%s",
+            summary_dict.get("overall_coverage_pct", 0),
+            summary_dict.get("total_missing_bars", 0),
+        )
 
 
 def task_refresh_eligibility(**context: Any) -> dict[str, int]:
-    env = get_dag_env()
-    setup_env(env)
-    dag_run = context.get("dag_run")
-    run_id = getattr(dag_run, "run_id", None) or "okx_swap_ohlcv_bootstrap_v1"
-    return _get_loop().run_until_complete(
-        eligibility_interface.refresh_eligibility(evaluator_run_id=run_id)
-    )
+    with airflow_log_context(context, component="swap_bootstrap"):
+        env = get_dag_env()
+        setup_env(env)
+        dag_run = context.get("dag_run")
+        run_id = getattr(dag_run, "run_id", None) or "okx_swap_ohlcv_bootstrap_v1"
+        return _get_loop().run_until_complete(
+            eligibility_interface.refresh_eligibility(evaluator_run_id=run_id)
+        )
 
 
 # ---------------------------------------------------------------------------

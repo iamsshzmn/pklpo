@@ -25,12 +25,17 @@ Schedule
 
 import asyncio
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from _common import airflow_log_context  # type: ignore[import-not-found]
 
 from src.candles.interfaces import (
     AirflowSyncRequest,
@@ -117,7 +122,7 @@ def get_dag_env() -> dict[str, str]:
     )
     env["OBSERVABILITY_PROMETHEUS_ENABLED"] = Variable.get(
         "observability_prometheus_enabled",
-        default_var=_project_env_default("OBSERVABILITY_PROMETHEUS_ENABLED", "false"),
+        default_var=_project_env_default("OBSERVABILITY_PROMETHEUS_ENABLED", "true"),
     )
     env["OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL"] = Variable.get(
         "observability_prometheus_pushgateway_url",
@@ -166,121 +171,126 @@ def _build_request(context) -> AirflowSyncRequest:
         conf=conf,
         logical_date=context.get("logical_date"),
         run_type=_normalize_run_type(getattr(dag_run, "run_type", None)),
+        run_id=getattr(dag_run, "run_id", None),
     )
 
 
 def refresh_okx_meta_task(**context):
     """Refresh the instruments catalogue using the candles interface entrypoint."""
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="swap_sync"):
+        env = get_dag_env()
+        setup_env(env)
 
-    result = _get_loop().run_until_complete(run_refresh_okx_meta(_build_request(context)))
-    if result["refreshed"]:
-        print("[refresh_okx_meta] load_instruments finished OK")
-    else:
-        print("[refresh_okx_meta] Cache is fresh -> skipping instruments refresh")
-    return result
+        result = _get_loop().run_until_complete(run_refresh_okx_meta(_build_request(context)))
+        if result["refreshed"]:
+            print("[refresh_okx_meta] load_instruments finished OK")
+        else:
+            print("[refresh_okx_meta] Cache is fresh -> skipping instruments refresh")
+        return result
 
 
 def swap_sync_task(**context):
     """Run swap sync via the candles interface entrypoint."""
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="swap_sync"):
+        env = get_dag_env()
+        setup_env(env)
 
-    request = _build_request(context)
-    if request.is_manual:
-        print("[swap_sync] Manual run -> bypassing freshness gate")
+        request = _build_request(context)
+        if request.is_manual:
+            print("[swap_sync] Manual run -> bypassing freshness gate")
 
-    result = _get_loop().run_until_complete(run_swap_sync(request))
-    if result.get("skipped"):
-        print(f"[swap_sync] Skipped -> {result['reason']}")
-    else:
-        print(f"[swap_sync] Completed: {result}")
-    return result
+        result = _get_loop().run_until_complete(run_swap_sync(request))
+        if result.get("skipped"):
+            print(f"[swap_sync] Skipped -> {result['reason']}")
+        else:
+            print(f"[swap_sync] Completed: {result}")
+        return result
 
 
 def smoke_validate_task(**context):
     """Run smoke validation via the candles interface entrypoint."""
-    env = get_dag_env()
-    setup_env(env)
+    with airflow_log_context(context, component="swap_sync"):
+        env = get_dag_env()
+        setup_env(env)
 
-    result = _get_loop().run_until_complete(run_smoke_validate(_build_request(context)))
+        result = _get_loop().run_until_complete(run_smoke_validate(_build_request(context)))
 
-    print(f"[smoke_validate] total_rows={result['total_rows']:,}")
-    if result["lag_sec"] is not None:
-        print(f"[smoke_validate] max_ts lag={result['lag_sec']:.0f}s")
-    print(
-        f"[smoke_validate] today rows={result['rows_today']} "
-        f"FR={result['fr_filled']} OI={result['oi_filled']}"
-    )
-    for tf, lag in result.get("tf_lags", {}).items():
-        print(f"[smoke_validate] lag {tf}: {lag:.0f}s")
-    if result["fr_pct"] is not None:
+        print(f"[smoke_validate] total_rows={result['total_rows']:,}")
+        if result["lag_sec"] is not None:
+            print(f"[smoke_validate] max_ts lag={result['lag_sec']:.0f}s")
         print(
-            f"[smoke_validate] FR fill={result['fr_pct']:.1f}% "
-            f"OI fill={result['oi_pct']:.1f}%"
+            f"[smoke_validate] today rows={result['rows_today']} "
+            f"FR={result['fr_filled']} OI={result['oi_filled']}"
         )
-        if result["fr_pct"] < 50:
-            print(f"WARNING: Low funding_rate fill rate: {result['fr_pct']:.1f}%")
-        if result["oi_pct"] is not None and result["oi_pct"] < 50:
-            print(f"WARNING: Low open_interest fill rate: {result['oi_pct']:.1f}%")
+        for tf, lag in result.get("tf_lags", {}).items():
+            print(f"[smoke_validate] lag {tf}: {lag:.0f}s")
+        if result["fr_pct"] is not None:
+            print(
+                f"[smoke_validate] FR fill={result['fr_pct']:.1f}% "
+                f"OI fill={result['oi_pct']:.1f}%"
+            )
+            if result["fr_pct"] < 50:
+                print(f"WARNING: Low funding_rate fill rate: {result['fr_pct']:.1f}%")
+            if result["oi_pct"] is not None and result["oi_pct"] < 50:
+                print(f"WARNING: Low open_interest fill rate: {result['oi_pct']:.1f}%")
 
-    print("[smoke_validate] finished OK")
-    return result
+        print("[smoke_validate] finished OK")
+        return result
 
 
 def validate_swap_sync_xcom_task(**context):
     """Read and validate swap_sync XCom payload."""
-    ti = context["ti"]
-    payload = ti.xcom_pull(task_ids="swap_sync", key="return_value")
-    if not isinstance(payload, dict):
-        raise ValueError(f"swap_sync XCom must be dict, got {type(payload).__name__}")
+    with airflow_log_context(context, component="swap_sync"):
+        ti = context["ti"]
+        payload = ti.xcom_pull(task_ids="swap_sync", key="return_value")
+        if not isinstance(payload, dict):
+            raise ValueError(f"swap_sync XCom must be dict, got {type(payload).__name__}")
 
-    required_keys = ("mode",)
-    missing_keys = [key for key in required_keys if key not in payload]
-    if missing_keys:
-        raise ValueError(f"swap_sync XCom missing required keys: {missing_keys}")
+        required_keys = ("mode",)
+        missing_keys = [key for key in required_keys if key not in payload]
+        if missing_keys:
+            raise ValueError(f"swap_sync XCom missing required keys: {missing_keys}")
 
-    skipped = bool(payload.get("skipped", False))
+        skipped = bool(payload.get("skipped", False))
 
-    if skipped:
+        if skipped:
+            print(
+                f"[validate_swap_sync_xcom] skipped mode={payload.get('mode')} "
+                f"reason={payload.get('reason', 'unknown')}"
+            )
+            return payload
+
+        sync_required_keys = (
+            "mode",
+            "timeframes",
+            "symbols_count",
+            "total_symbols_processed",
+            "duration_sec",
+            "rows_upserted_total",
+            "errors_count",
+            "candles_per_second",
+            "api_429_count",
+            "api_timeout_count",
+            "today_fill",
+        )
+        missing_sync_keys = [key for key in sync_required_keys if key not in payload]
+        if missing_sync_keys:
+            raise ValueError(f"swap_sync XCom missing sync keys: {missing_sync_keys}")
+        if payload["rows_upserted_total"] == 0:
+            raise ValueError("swap_sync total failure: rows_upserted_total == 0")
+        if payload["total_symbols_processed"] == 0:
+            raise ValueError("swap_sync total failure: total_symbols_processed == 0")
+
         print(
-            f"[validate_swap_sync_xcom] skipped mode={payload.get('mode')} "
-            f"reason={payload.get('reason', 'unknown')}"
+            "[validate_swap_sync_xcom] "
+            f"mode={payload['mode']} "
+            f"timeframes={payload['timeframes']} "
+            f"symbols_count={payload['symbols_count']} "
+            f"total_symbols_processed={payload['total_symbols_processed']} "
+            f"rows_upserted_total={payload['rows_upserted_total']} "
+            f"api_429_count={payload['api_429_count']}"
         )
         return payload
-
-    sync_required_keys = (
-        "mode",
-        "timeframes",
-        "symbols_count",
-        "total_symbols_processed",
-        "duration_sec",
-        "rows_upserted_total",
-        "errors_count",
-        "candles_per_second",
-        "api_429_count",
-        "api_timeout_count",
-        "today_fill",
-    )
-    missing_sync_keys = [key for key in sync_required_keys if key not in payload]
-    if missing_sync_keys:
-        raise ValueError(f"swap_sync XCom missing sync keys: {missing_sync_keys}")
-    if payload["rows_upserted_total"] == 0:
-        raise ValueError("swap_sync total failure: rows_upserted_total == 0")
-    if payload["total_symbols_processed"] == 0:
-        raise ValueError("swap_sync total failure: total_symbols_processed == 0")
-
-    print(
-        "[validate_swap_sync_xcom] "
-        f"mode={payload['mode']} "
-        f"timeframes={payload['timeframes']} "
-        f"symbols_count={payload['symbols_count']} "
-        f"total_symbols_processed={payload['total_symbols_processed']} "
-        f"rows_upserted_total={payload['rows_upserted_total']} "
-        f"api_429_count={payload['api_429_count']}"
-    )
-    return payload
 
 
 def quality_pipeline_task(**context):

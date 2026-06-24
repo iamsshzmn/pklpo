@@ -18,6 +18,7 @@ from src.database import get_async_session
 from src.models import INDICATORS_TABLE_NAME
 
 from .compute import ScoringEngine
+from .observability import push_scoring_metrics
 
 logger = logging.getLogger(__name__)
 # Настраиваем логгер для записи только в файл, а не в консоль
@@ -317,6 +318,7 @@ class ScoringProcessor:
 
                 logger.info("🎉 Расчёт scores завершён успешно!")
 
+                push_scoring_metrics(total_processed, total_errors)
                 return {
                     "processed": total_processed,
                     "errors": total_errors,
@@ -390,6 +392,7 @@ class ScoringProcessor:
                     f"{total_processed} обработано, {total_errors} ошибок"
                 )
 
+                push_scoring_metrics(total_processed, total_errors)
                 return {
                     "processed": total_processed,
                     "errors": total_errors,

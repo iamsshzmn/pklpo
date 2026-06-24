@@ -238,40 +238,6 @@ groups:
           summary: "Duplicate rows are being detected"
           description: "Duplicates detected for {{ $labels.symbol }} {{ $labels.timeframe }}"
 
-      # --- UPSERT Failures ---
-      - uid: pklpo-upsert-failures
-        title: "UPSERT Failures"
-        condition: C
-        data:
-          - refId: A
-            relativeTimeRange:
-              from: 900
-              to: 0
-            datasourceUid: Prometheus
-            model:
-              expr: rate(pklpo_upsert_failures_total[5m])
-              refId: A
-          - refId: B
-            datasourceUid: __expr__
-            model:
-              type: reduce
-              expression: A
-              reducer: max
-              refId: B
-          - refId: C
-            datasourceUid: __expr__
-            model:
-              type: threshold
-              expression: B
-              conditions:
-                - evaluator:
-                    type: gt
-                    params: [0]
-              refId: C
-        for: 5m
-        labels:
-          severity: critical
-          team: data
-        annotations:
-          summary: "UPSERT operations are failing"
-          description: "UPSERT failures for {{ $labels.symbol }} {{ $labels.timeframe }}. Check database connectivity and schema."
+      # NOTE: pklpo_upsert_failures_total was removed вЂ” metric is not published
+      # by any current producer. Replaced by swap_sync error tracking via
+      # pklpo_swap_sync_errors_total (in pipeline_observability_alerts.yml).

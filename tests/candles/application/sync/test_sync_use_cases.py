@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import importlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -44,21 +46,42 @@ class _CandleStoreStub:
         return len(candles)
 
 
+class _FailingCandleStore(_CandleStoreStub):
+    async def upsert_candles(self, **kwargs: Any) -> int:
+        raise RuntimeError("write failed")
+
+
 @dataclass
 class _InstrumentCatalogStub:
     pass
+
+
+@dataclass
+class _TelemetrySpy:
+    events: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+
+    def increment(self, metric: str, value: int | float = 1, **tags: str) -> None:
+        return None
+
+    def observe(self, metric: str, value: int | float, **tags: str) -> None:
+        return None
+
+    def event(self, name: str, **payload: Any) -> None:
+        self.events.append((name, payload))
 
 
 def _use_case(
     *,
     market_data: _MarketDataStub,
     candle_store: _CandleStoreStub,
+    telemetry: _TelemetrySpy | None = None,
 ) -> RunCandleSyncUseCase:
     return RunCandleSyncUseCase(
         market_data=market_data,
         candle_store=candle_store,
         instrument_catalog=_InstrumentCatalogStub(),
         retry_policy=RetryPolicy(max_retries=1, retry_delay=0, batch_size=100),
+        telemetry=telemetry,
     )
 
 
@@ -214,7 +237,14 @@ async def test_sync_bar_drops_open_candle_only(
     use_case = _use_case(
         market_data=_MarketDataStub(
             candles=[
-                {"ts": 180_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
+                {
+                    "ts": 180_000,
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 1,
+                },
             ]
         ),
         candle_store=store,
@@ -250,8 +280,22 @@ async def test_sync_bar_drops_open_candle_saves_closed(
     use_case = _use_case(
         market_data=_MarketDataStub(
             candles=[
-                {"ts": 120_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
-                {"ts": 180_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
+                {
+                    "ts": 120_000,
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 1,
+                },
+                {
+                    "ts": 180_000,
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 1,
+                },
             ]
         ),
         candle_store=store,
@@ -268,3 +312,62 @@ async def test_sync_bar_drops_open_candle_saves_closed(
 
     assert [int(c["ts"]) for c in store.calls[0]["candles"]] == [120_000]
     assert store.calls[0]["window"] == RepairWindow(120_000, 180_000)
+
+
+def test_sync_bar_upsert_failed_emits_error_type_and_exc_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asyncio.run(_run_sync_bar_upsert_failed_emits_error_type_and_exc_info(monkeypatch))
+
+
+async def _run_sync_bar_upsert_failed_emits_error_type_and_exc_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_cases = importlib.import_module("src.candles.application.sync.use_cases")
+
+    class _FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            return datetime(1970, 1, 1, 0, 3, 30, tzinfo=UTC)
+
+    monkeypatch.setattr(use_cases, "datetime", _FixedDateTime)
+    telemetry = _TelemetrySpy()
+    use_case = _use_case(
+        market_data=_MarketDataStub(
+            candles=[
+                {
+                    "ts": 120_000,
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 1,
+                },
+            ]
+        ),
+        candle_store=_FailingCandleStore(),
+        telemetry=telemetry,
+    )
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        await use_case._sync_bar(
+            symbol="BTC-USDT-SWAP",
+            timeframe="1m",
+            before=None,
+            latest_stored_ts=60_000,
+            extra_data_loader=None,
+            stats=_SyncStats(),
+        )
+
+    assert telemetry.events == [
+        (
+            "upsert_failed",
+            {
+                "symbol": "BTC-USDT-SWAP",
+                "timeframe": "1m",
+                "error": "write failed",
+                "error_type": "unexpected_error",
+                "exc_info": True,
+            },
+        )
+    ]

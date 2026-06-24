@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from _common import (  # type: ignore[import-not-found]
+    airflow_log_context,
     get_dag_env as _get_common_dag_env,
     get_or_create_event_loop,
     setup_env as _setup_common_env,
@@ -21,11 +22,17 @@ from sqlalchemy import text
 if "/opt/airflow/project" not in sys.path:
     sys.path.insert(0, "/opt/airflow/project")
 
-from src.candles.observability.prometheus import push_pipeline_monitoring_metrics
+from src.candles.observability.prometheus import (
+    push_dependency_health_metrics,
+    push_pipeline_monitoring_metrics,
+)
+from src.logging import get_logger, set_span_attributes
 from src.utils.session_utils import get_db_session
 
 if TYPE_CHECKING:
     import asyncio
+
+LOGGER = get_logger(__name__)
 
 
 def _get_loop() -> asyncio.AbstractEventLoop:
@@ -58,6 +65,36 @@ async def _fetch_keyed_counts(
             key = tuple(str(row[field]) for field in key_fields)
         output[key] = int(row["count"])
     return output
+
+
+async def _probe_dependency_health() -> dict[str, bool]:
+    """Lightweight probes for Postgres and OKX reachability."""
+    from sqlalchemy import text
+
+    postgres_up = False
+    okx_up = False
+
+    try:
+        async with get_db_session() as session:
+            await session.execute(text("SELECT 1"))
+        postgres_up = True
+    except Exception:
+        pass
+
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=5.0)
+        ) as session:
+            async with session.get(
+                "https://www.okx.com/api/v5/public/time"
+            ) as resp:
+                okx_up = resp.status == 200
+    except Exception:
+        pass
+
+    return {"postgres_up": postgres_up, "okx_up": okx_up}
 
 
 async def _collect_pipeline_monitoring_snapshot() -> dict[str, Any]:
@@ -127,12 +164,38 @@ async def _collect_pipeline_monitoring_snapshot() -> dict[str, Any]:
 
 
 def collect_pipeline_monitoring_task(**context: Any) -> dict[str, Any]:
-    del context
-    env = get_dag_env()
-    setup_env(env)
-    snapshot = _get_loop().run_until_complete(_collect_pipeline_monitoring_snapshot())
-    metrics_pushed = push_pipeline_monitoring_metrics(snapshot)
-    return {**snapshot, "metrics_pushed": metrics_pushed}
+    with airflow_log_context(context, component="pipeline_monitoring"):
+        env = get_dag_env()
+        setup_env(env)
+        snapshot = _get_loop().run_until_complete(_collect_pipeline_monitoring_snapshot())
+        processed_count = len(snapshot.get("eligibility_state", []))
+        set_span_attributes({"processed_count": processed_count})
+        LOGGER.info(
+            "pipeline_monitoring_snapshot_collected",
+            extra={
+                "event": "pipeline_monitoring_snapshot_collected",
+                "processed_count": processed_count,
+            },
+        )
+        metrics_pushed = push_pipeline_monitoring_metrics(snapshot)
+        dep_health = _get_loop().run_until_complete(_probe_dependency_health())
+        dep_metrics_pushed = push_dependency_health_metrics(
+            postgres_up=dep_health["postgres_up"],
+            okx_up=dep_health["okx_up"],
+        )
+        LOGGER.info(
+            "pipeline_monitoring_metrics_pushed",
+            extra={
+                "event": "pipeline_monitoring_metrics_pushed",
+                "processed_count": int(metrics_pushed) + int(dep_metrics_pushed),
+            },
+        )
+        return {
+            **snapshot,
+            "metrics_pushed": metrics_pushed,
+            "dep_health": dep_health,
+            "dep_metrics_pushed": dep_metrics_pushed,
+        }
 
 
 default_args = {

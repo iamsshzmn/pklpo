@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from src.candles.domain.repair import RepairExecutionMode, RepairStrategy
 from src.candles.interfaces.repair import run_swap_repair
+from src.pklpo_platform.distributed_lock import LockConflict, RedisLockError, job_lock
 
 
 def _parse_utc_timestamp_ms(value: str) -> int:
@@ -55,20 +56,38 @@ async def handle(args) -> None:
 
     start_ts_ms = _parse_utc_timestamp_ms(args.start)
     requested_end_ts_ms = _parse_utc_timestamp_ms(args.end)
+    symbol = symbols[0]
+
     summaries = []
     for timeframe in timeframes:
-        summary = await run_swap_repair(
-            symbol=symbols[0],
-            timeframe=timeframe,
-            start_ts_ms=start_ts_ms,
-            end_ts_ms=min(requested_end_ts_ms, _utc_now_ts_ms()),
-            mode=RepairExecutionMode(args.mode),
-            strategy=RepairStrategy(args.repair_strategy),
-            max_gap_tasks_per_run=args.max_gap_tasks_per_run,
-            max_requested_bars_per_run=args.max_requested_bars_per_run,
-            max_range_days=args.max_range_days,
-            max_fail_ratio=args.max_fail_ratio,
-            padding_bars=args.padding_bars,
-        )
-        summaries.append(summary)
+        try:
+            async with job_lock(
+                "swap_repair",
+                symbol=symbol,
+                timeframe=timeframe,
+                component="swap_repair",
+            ):
+                summary = await run_swap_repair(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start_ts_ms=start_ts_ms,
+                    end_ts_ms=min(requested_end_ts_ms, _utc_now_ts_ms()),
+                    mode=RepairExecutionMode(args.mode),
+                    strategy=RepairStrategy(args.repair_strategy),
+                    max_gap_tasks_per_run=args.max_gap_tasks_per_run,
+                    max_requested_bars_per_run=args.max_requested_bars_per_run,
+                    max_range_days=args.max_range_days,
+                    max_fail_ratio=args.max_fail_ratio,
+                    padding_bars=args.padding_bars,
+                )
+                summaries.append(summary)
+        except LockConflict as exc:
+            raise SystemExit(
+                f"[lock_conflict] swap-repair skipped: {exc}"
+            ) from exc
+        except RedisLockError as exc:
+            raise SystemExit(
+                f"[lock_error] Redis unavailable, aborting repair (fail-closed): {exc}"
+            ) from exc
+
     print(json.dumps(summaries, ensure_ascii=True, indent=2))

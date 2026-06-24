@@ -1,5 +1,16 @@
 """
-Сборщик метрик для мониторинга производительности и состояния системы
+Сборщик метрик для мониторинга производительности и состояния системы.
+
+DEPRECATED (G-12):  This is an in-memory metrics store with no Prometheus
+integration.  No production code outside src/metrics/ imports from this module
+(confirmed 2026-06-09).  This module is retained for test compatibility only
+and will be removed once MetricsPort adapters replace its usages.
+
+New code should use:
+  - src/platform/ports.py MetricsPort  — abstract interface
+  - src/candles/observability/prometheus.py  — candles push helpers
+  - src/features/observability/prometheus.py — features push helpers
+  - src/scoring_engine/observability.py       — scoring push helpers
 """
 
 import asyncio

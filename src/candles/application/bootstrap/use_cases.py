@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from src.candles.application.bootstrap.dto import (
     BootstrapCommand,
@@ -19,8 +19,11 @@ from src.candles.domain.repair import (
     sanitize_repair_candle,
 )
 from src.candles.domain.timeframes import TF_TO_MS
+from src.pklpo_platform.observability.error_types import classify_error_type
 
 if TYPE_CHECKING:
+    from typing import SupportsInt
+
     from src.candles.application.bootstrap.ports import BootstrapStatePort
     from src.candles.application.repair.ports import (
         CandleCoverageQueryPort,
@@ -209,6 +212,8 @@ class RunBootstrapUseCase:
                             status="error",
                             error=str(exc),
                         ),
+                        error_type=classify_error_type(exc),
+                        exc_info=True,
                     )
                 if error_streak >= command.circuit_break_after:
                     live_rec = await self._coverage.count_valid_candles(
@@ -260,14 +265,10 @@ class RunBootstrapUseCase:
                 error_streak = 0
                 chunks_fetched += 1
                 chunk_oldest_ts = (
-                    min(int(candle["timestamp"]) for candle in candles)
-                    if candles
-                    else None
+                    min(_candle_ts(candle) for candle in candles) if candles else None
                 )
                 chunk_newest_ts = (
-                    max(int(candle["timestamp"]) for candle in candles)
-                    if candles
-                    else None
+                    max(_candle_ts(candle) for candle in candles) if candles else None
                 )
 
                 db_write_started = time.perf_counter()
@@ -287,7 +288,7 @@ class RunBootstrapUseCase:
 
                 # Advance checkpoint backward after the write succeeds.
                 if candles:
-                    min_ts = min(int(c["timestamp"]) for c in candles)
+                    min_ts = min(_candle_ts(c) for c in candles)
                     checkpoint_after = min(min_ts, chunk_start)
                 else:
                     checkpoint_after = chunk_start
@@ -333,6 +334,8 @@ class RunBootstrapUseCase:
                             status="error",
                             error=str(exc),
                         ),
+                        error_type=classify_error_type(exc),
+                        exc_info=True,
                     )
                 raise
 
@@ -439,6 +442,11 @@ def _should_reinitialize_bootstrap(
     )
 
 
+def _candle_ts(candle: dict[str, object]) -> int:
+    """Coerce a normalized candle's ``timestamp`` (typed ``object``) to ``int``."""
+    return int(cast("SupportsInt | str", candle["timestamp"]))
+
+
 def _normalize_bootstrap_candle(
     candle: dict[str, object],
     *,
@@ -524,4 +532,4 @@ def _progress_pct(
     if total <= 0:
         return 100.0
     completed = target_end_ts - checkpoint_ts
-    return min(100.0, max(0.0, completed / total * 100.0))
+    return max(0.0, min(100.0, completed / total * 100.0))

@@ -11,10 +11,11 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from ..infrastructure.logging_config import get_logger
+from src.logging import get_logger
+
 from .metadata import MarginMode, MarketMetadata
 
-logger = get_logger("validators")
+logger = get_logger("market_meta.validators")
 
 
 @dataclass

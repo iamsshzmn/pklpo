@@ -1,0 +1,62 @@
+# Mimir single-binary (monolithic) configuration.
+# All components run in one process — dev / single-host only.
+# No multi-tenancy; filesystem backend; 365-day metrics retention.
+
+target: all
+
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 9009
+  grpc_listen_port: 9095
+  log_level: warn
+
+# memberlist provides ring coordination without an external KV store.
+memberlist:
+  join_members:
+    - localhost:7946
+
+# Shared filesystem root for all components that use common storage.
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data/mimir
+
+blocks_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/mimir/blocks
+  tsdb:
+    dir: /data/mimir/tsdb
+    # In-memory head retention before flushing blocks to disk.
+    retention_period: 13h
+
+ingester:
+  ring:
+    # Single-node: bind on loopback so the ring token is stable.
+    instance_addr: 127.0.0.1
+    replication_factor: 1
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+
+compactor: {}
+
+# Per-tenant limits (also applies globally when multitenancy_enabled: false).
+# blocks_retention_period moved from compactor to limits in Mimir 3.x.
+limits:
+  # Long-term retention target — satisfies R2 (≥ 365 days).
+  compactor_blocks_retention_period: 1y
+
+# Alertmanager and ruler storage — required by target=all even if unused.
+alertmanager_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/mimir/alertmanager
+
+ruler_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/mimir/ruler
