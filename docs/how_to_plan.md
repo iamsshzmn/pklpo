@@ -1,7 +1,9 @@
 # How to Plan (Agent-Oriented Guide)
 
 ## Purpose
+
 This document defines how to structure, execute, and track work using agents and reusable skills. It is designed to be:
+
 - Human-readable
 - Agent-executable
 - Minimal in tokens
@@ -9,6 +11,7 @@ This document defines how to structure, execute, and track work using agents and
 ---
 
 ## Core Principles
+
 - Break work into small, verifiable steps
 - One task = one clear outcome
 - Always define acceptance criteria
@@ -72,6 +75,7 @@ Stages can be skipped or merged if not needed.
 ## Task Design Rules
 
 Each task must:
+
 - Be atomic (cannot be split further)
 - Be testable
 - Have clear input/output
@@ -256,6 +260,34 @@ Detect missing OHLCV candles
 - output: gap detection query
 - acceptance: query finds gaps correctly
 ```
+
+## Observability
+
+Every production-relevant task must define observability before it is marked done.
+
+Required output:
+
+- metrics
+- structured logs
+- correlation/run context
+- dashboard expectation
+- alert expectation
+- validation method
+
+### Task: Add observability contract
+
+- owner: feature-implementer
+- skill: implement_observability_contract
+- status: planned
+- input: module/service/DAG behavior
+- output: telemetry contract
+- acceptance:
+
+  - metrics expose status, duration, errors, processed count
+  - logs are searchable by run_id/correlation_id
+  - failures include stable error_type and reason
+  - dashboard/alert expectations are documented
+  - no secrets or high-cardinality labels are emitted
 
 ---
 

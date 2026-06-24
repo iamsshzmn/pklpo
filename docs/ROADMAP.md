@@ -114,7 +114,7 @@ registry, Protocol-контракты, coverage-таргеты) без *прак
 | A5 | Параметризовать SQL в `scoring_engine/processor.py:440/445` (symbol/timeframe). Allowlist для `ema_col` в `market_selection`. | P1 |
 | A6 | Запустить `make check`, зафиксировать baseline, починить до зелёного. | P0 |
 | A7 | Ручной тест repair: вырезать сутки данных → repair → проверить hole-rate. Заодно зафиксировать политику fail-loud. | P1 |
-| A8 | **CI/CD: GitHub Actions.** Pipeline на каждый push/PR: `ruff check` + `ruff format --check` + `mypy src` + `pytest` (fast-маркеры). Smoke-тест import на staging-конфиге. Блокирует merge при падении. | P0 |
+| A8 | ✅ **CI/CD: GitHub Actions.** Pipeline на каждый push/PR: `ruff check` + `ruff format --check` + `mypy src` + `pytest` (fast-маркеры). Smoke-тест import на staging-конфиге. Блокирует merge при падении. `.github/workflows/ci.yml` создан 2026-06-10. | P0 |
 | A9 | **Structured JSON logging.** Единый `src/platform/logging.py` с JSON-форматтером. Обязательные поля: `timestamp`, `level`, `component`, `symbol`, `timeframe`, `run_id`, `error_type`. Заменяет plaintext-логи во всех компонентах (repair, ingest, features, signals). | P0 |
 
 **Гейт A (= Success Gate 1 + 2):**
@@ -124,7 +124,7 @@ registry, Protocol-контракты, coverage-таргеты) без *прак
 - [ ] `make check` зелёный; coverage `candles`/`ml`/`signals` ≥ 80%.
 - [ ] Все DAG: double-run тест зелёный.
 - [ ] Repair прогнан против реального gap-сценария.
-- [ ] GitHub Actions pipeline зелёный на `main`.
+- [x] GitHub Actions pipeline создан (`.github/workflows/ci.yml`); должен стать зелёным после A6.
 - [ ] Structured JSON logging подключён; `run_id` + `symbol` прослеживается в логах repair/ingest.
 
 ### Фаза B — Research Loop (4–5 недель) — ядро продукта
