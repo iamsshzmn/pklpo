@@ -26,6 +26,7 @@ from .metrics import (
     push_swap_smoke_metrics,
     push_swap_sync_metrics,
 )
+from .tracing import configure_tracing, get_trace_ids, set_span_attributes, start_span
 
 __all__ = [
     "ContextFilter",
@@ -34,6 +35,7 @@ __all__ = [
     "airflow_run_id",
     "airflow_task_id",
     "classify_error_type",
+    "configure_tracing",
     "delete_pushgateway_job",
     "generate_run_id",
     "get_category_logger",
@@ -41,6 +43,7 @@ __all__ = [
     "get_current_run_id",
     "get_features_logger",
     "get_logger",
+    "get_trace_ids",
     "push_dependency_health_metrics",
     "push_feature_eligibility_metrics",
     "push_market_selection_metrics",
@@ -50,4 +53,6 @@ __all__ = [
     "push_swap_smoke_metrics",
     "push_swap_sync_metrics",
     "set_log_context",
+    "set_span_attributes",
+    "start_span",
 ]

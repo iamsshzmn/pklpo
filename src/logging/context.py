@@ -26,6 +26,8 @@ class _LogContextState:
     symbol: str | None = None
     timeframe: str | None = None
     component: str | None = None
+    trace_id: str | None = None
+    span_id: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -47,6 +49,8 @@ def set_log_context(
     symbol: str | None = None,
     timeframe: str | None = None,
     component: str | None = None,
+    trace_id: str | None = None,
+    span_id: str | None = None,
     **extra: Any,
 ) -> Generator[str, None, None]:
     """
@@ -57,6 +61,8 @@ def set_log_context(
         symbol: Trading symbol
         timeframe: Timeframe
         component: Logical component name (e.g. "swap_sync", "repair", "features")
+        trace_id: Optional trace ID override
+        span_id: Optional span ID override
         **extra: Additional context fields
 
     Yields:
@@ -71,6 +77,8 @@ def set_log_context(
         symbol=symbol,
         timeframe=timeframe,
         component=component,
+        trace_id=trace_id,
+        span_id=span_id,
         extra=dict(extra),
     )
     token = _log_context.set(current)
@@ -98,6 +106,8 @@ def get_current_context() -> dict[str, Any]:
         "symbol": context.symbol,
         "timeframe": context.timeframe,
         "component": context.component,
+        "trace_id": context.trace_id,
+        "span_id": context.span_id,
         **context.extra,
     }
 
@@ -116,6 +126,11 @@ class ContextFilter(logging.Filter):
         record.symbol = context.symbol or "-"
         record.timeframe = context.timeframe or "-"
         record.component = getattr(record, "component", None) or context.component or "-"
+        trace_id, span_id = _get_active_trace_ids()
+        record.trace_id = (
+            getattr(record, "trace_id", None) or context.trace_id or trace_id
+        )
+        record.span_id = getattr(record, "span_id", None) or context.span_id or span_id
         # error_type: caller can set via extra={"error_type": ...}; default "-"
         if not hasattr(record, "error_type"):
             record.error_type = "-"
@@ -126,3 +141,12 @@ class ContextFilter(logging.Filter):
             if not hasattr(record, key):
                 setattr(record, key, value)
         return True
+
+
+def _get_active_trace_ids() -> tuple[str, str]:
+    try:
+        from src.logging.tracing import get_trace_ids
+    except ImportError:
+        return "-", "-"
+
+    return get_trace_ids()

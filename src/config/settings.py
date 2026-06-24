@@ -461,6 +461,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return float(raw)
+
+
 def _without_week_anchor_source(
     source: PydanticBaseSettingsSource,
 ) -> PydanticBaseSettingsSource:
@@ -498,6 +505,23 @@ class ObservabilitySettings(BaseModel):
     )
     job_name: str = Field(
         default_factory=lambda: os.getenv("OBSERVABILITY_JOB_NAME", "features_pipeline")
+    )
+    otel_enabled: bool = Field(
+        default_factory=lambda: _env_bool("OBSERVABILITY_OTEL_ENABLED", False)
+    )
+    otel_service_name: str = Field(
+        default_factory=lambda: os.getenv("OBSERVABILITY_OTEL_SERVICE_NAME", "pklpo")
+    )
+    otel_exporter_otlp_endpoint: str = Field(
+        default_factory=lambda: os.getenv(
+            "OBSERVABILITY_OTEL_EXPORTER_OTLP_ENDPOINT",
+            "http://localhost:4317",
+        )
+    )
+    otel_sample_ratio: float = Field(
+        default_factory=lambda: _env_float("OBSERVABILITY_OTEL_SAMPLE_RATIO", 1.0),
+        ge=0.0,
+        le=1.0,
     )
 
 

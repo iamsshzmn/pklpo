@@ -6,7 +6,7 @@ This module provides formatters for log output.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging import Formatter, LogRecord
 
 
@@ -27,7 +27,7 @@ class JsonFormatter(Formatter):
 
         Example output: ``2026-06-13T18:30:45.123Z``
         """
-        dt = datetime.fromtimestamp(record.created, tz=timezone.utc)
+        dt = datetime.fromtimestamp(record.created, tz=UTC)
         return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
     def format(self, record: LogRecord) -> str:
@@ -40,6 +40,8 @@ class JsonFormatter(Formatter):
             "run_id": getattr(record, "run_id", "-"),
             "symbol": getattr(record, "symbol", "-"),
             "timeframe": getattr(record, "timeframe", "-"),
+            "trace_id": getattr(record, "trace_id", "-"),
+            "span_id": getattr(record, "span_id", "-"),
             "error_type": getattr(record, "error_type", "-"),
             "category": getattr(record, "category", "-"),
         }

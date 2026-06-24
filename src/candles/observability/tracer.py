@@ -18,14 +18,11 @@ from src.logging.context import (
     get_current_run_id,
     set_log_context,
 )
+from src.logging.tracing import get_trace_ids
 
 logger = logging.getLogger(__name__)
 
 _correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
-_trace_context: ContextVar[dict[str, str] | None] = ContextVar(
-    "trace_context",
-    default=None,
-)
 
 
 def get_correlation_id() -> str:
@@ -34,7 +31,16 @@ def get_correlation_id() -> str:
 
 
 def get_trace_context() -> dict[str, str]:
-    return _trace_context.get() or {}
+    context = get_current_context()
+    trace_id, span_id = get_trace_ids()
+    result: dict[str, str] = {}
+    for key in ("run_id", "mode", "symbols_count"):
+        value = context.get(key)
+        if value is not None:
+            result[key] = str(value)
+    result["trace_id"] = trace_id
+    result["span_id"] = span_id
+    return result
 
 
 @contextmanager
@@ -58,14 +64,12 @@ def trace_sync_run(
 
     rid = run_id or correlation_id or get_current_run_id() or generate_run_id()
     token_id = _correlation_id.set(rid)
-    token_ctx = _trace_context.set(
-        {
-            "run_id": rid,
-            "mode": mode,
-            "symbols_count": str(symbols_count),
-        }
-    )
-    with set_log_context(run_id=rid, component="swap_sync"):
+    with set_log_context(
+        run_id=rid,
+        component="swap_sync",
+        mode=mode,
+        symbols_count=str(symbols_count),
+    ):
         logger.info(
             "sync_run.start run_id=%s mode=%s symbols=%d",
             rid,
@@ -77,7 +81,6 @@ def trace_sync_run(
         finally:
             logger.info("sync_run.end run_id=%s", rid)
             _correlation_id.reset(token_id)
-            _trace_context.reset(token_ctx)
 
 
 class CorrelationLogFilter(logging.Filter):

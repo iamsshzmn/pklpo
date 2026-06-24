@@ -89,6 +89,8 @@ def test_telemetry_event_reaches_pklpo_json_handler_with_top_level_fields() -> N
             "run_id": "run-json-456",
             "symbol": "BTC-USDT-SWAP",
             "timeframe": "1m",
+            "trace_id": "-",
+            "span_id": "-",
             "error_type": "-",
             "category": "-",
             "event": "sync_started",
@@ -134,6 +136,8 @@ def test_failure_event_json_has_error_type_and_traceback() -> None:
     assert upsert_failed[0]["run_id"] == "run-json-789"
     assert upsert_failed[0]["symbol"] == "BTC-USDT-SWAP"
     assert upsert_failed[0]["timeframe"] == "1m"
+    assert upsert_failed[0]["trace_id"] == "-"
+    assert upsert_failed[0]["span_id"] == "-"
     assert upsert_failed[0]["event"] == "upsert_failed"
     assert upsert_failed[0]["error_type"] == "unexpected_error"
     assert "RuntimeError: write failed" in upsert_failed[0]["exception"]

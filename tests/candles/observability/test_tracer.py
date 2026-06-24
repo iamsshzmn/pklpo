@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
-import importlib.util
-from pathlib import Path
 from io import StringIO
+from pathlib import Path
 
-from src.logging.context import get_current_run_id
-from src.logging.context import ContextFilter
+from src.logging.context import ContextFilter, get_current_run_id
 from src.logging.formatters import JsonFormatter
 
 _TRACER_PATH = Path(__file__).parents[3] / "src" / "candles" / "observability" / "tracer.py"
@@ -31,6 +30,8 @@ def test_trace_sync_run_sets_structured_run_id() -> None:
             "run_id": "manual__2026-06-09T00:00:00+00:00",
             "mode": "fast",
             "symbols_count": "2",
+            "trace_id": "-",
+            "span_id": "-",
         }
 
     assert get_current_run_id() is None
@@ -104,6 +105,8 @@ def test_trace_event_reaches_pklpo_json_with_structured_fields() -> None:
             "run_id": "run-json-123",
             "symbol": "BTC-USDT-SWAP",
             "timeframe": "1m",
+            "trace_id": "-",
+            "span_id": "-",
             "error_type": "-",
             "category": "-",
             "event": "sync_started",
