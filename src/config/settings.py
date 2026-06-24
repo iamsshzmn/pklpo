@@ -605,7 +605,7 @@ class Settings(BaseSettings):
     )
 
     # Environment
-    environment: Literal["development", "staging", "production"] = "development"
+    environment: Literal["development", "test", "staging", "production"] = "development"
     debug: bool = False
 
     # Sub-settings
