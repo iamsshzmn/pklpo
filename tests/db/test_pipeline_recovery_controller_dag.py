@@ -101,11 +101,11 @@ def test_controller_dag_catchup_disabled(
     assert controller_dag_module.dag.kwargs["catchup"] is False
 
 
-def test_controller_dag_dry_mode_is_true(
+def test_controller_dag_dry_mode_is_false(
     controller_dag_module: types.ModuleType,
 ) -> None:
-    """DRY_MODE must be True — dry mode is the default safe state."""
-    assert controller_dag_module.DRY_MODE is True
+    """DRY_MODE is False — Stage 6 enables real recovery triggers."""
+    assert controller_dag_module.DRY_MODE is False
 
 
 def test_controller_dag_task_ids_present(

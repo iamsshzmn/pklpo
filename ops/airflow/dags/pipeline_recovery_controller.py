@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Rollout flag — set to False to enable real triggers (Stage 6 only)
 # ---------------------------------------------------------------------------
-DRY_MODE: bool = True
+DRY_MODE: bool = False
 
 CONTROLLER_DAG_ID = "pipeline_recovery_controller"
 REPAIR_DAG_ID = "okx_swap_repair_v1"
