@@ -26,6 +26,11 @@ docker compose -f ops/monitoring/docker-compose.monitoring.yml up -d loki alloy 
 Grafana открывается на http://localhost:3001 (admin / admin).  
 Loki datasource провижинится автоматически из `grafana/provisioning/datasources/loki.yml`.
 
+## Local tools
+
+- `jq` — useful for reading Loki, Airflow, and Docker JSON responses.
+- `gh` — optional; useful for GitHub PR/CI investigation.
+
 ## Поиск по run_id
 
 Найти все события одного logical run:
