@@ -58,6 +58,21 @@ SUPPORTED_TIMEFRAMES = ("1H", "4H")
 LAST_200_GUARD_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
 LAST_200_GUARD_TRIGGER = "last-200-guard"
 DEFAULT_TRIGGER = "repair-all-swaps"
+
+# Controller-specific trigger presets (bounded symbols/timeframes from conf).
+# These require explicit ``symbols`` in conf — manual run without symbols is rejected.
+CONTROLLER_GAP_REPAIR_TRIGGER = "controller-gap-repair"
+CONTROLLER_LAST_CLOSED_BARS_TRIGGER = "controller-last-closed-bars"
+# Timeframes allowed per controller preset
+CONTROLLER_GAP_REPAIR_TIMEFRAMES: frozenset[str] = frozenset(SUPPORTED_TIMEFRAMES)
+CONTROLLER_LAST_CLOSED_BARS_TIMEFRAMES: frozenset[str] = frozenset(
+    LAST_200_GUARD_TIMEFRAMES
+)
+# All triggers that require explicit bounded symbols
+CONTROLLER_TRIGGERS: frozenset[str] = frozenset(
+    {CONTROLLER_GAP_REPAIR_TRIGGER, CONTROLLER_LAST_CLOSED_BARS_TRIGGER}
+)
+
 REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
     DEFAULT_TRIGGER: {
         "timeframes": list(SUPPORTED_TIMEFRAMES),
@@ -77,6 +92,36 @@ REPAIR_TRIGGER_PRESETS: dict[str, dict[str, Any]] = {
         "no_progress_threshold": 3,
     },
     LAST_200_GUARD_TRIGGER: {
+        "timeframes": list(LAST_200_GUARD_TIMEFRAMES),
+        "mode": RepairExecutionMode.APPLY.value,
+        "repair_strategy": "last_n_closed_bars",
+        "bars": 500,
+        "publish_on_statuses": ["partial", "blocked", "deferred", "not_matured"],
+        "recalc_specs": [],
+        "critical_timeframes": ["1H"],
+    },
+    # Controller-bounded gap-repair preset.
+    # Symbols and timeframes MUST come from controller conf.
+    CONTROLLER_GAP_REPAIR_TRIGGER: {
+        # timeframes is a placeholder; overridden by conf at validation time
+        "timeframes": list(SUPPORTED_TIMEFRAMES),
+        "mode": RepairExecutionMode.APPLY.value,
+        "repair_strategy": RepairStrategy.GAP_REPAIR.value,
+        "padding_bars": 0,
+        "max_gap_tasks_per_run": 50,
+        "max_requested_bars_per_run": 10_000,
+        "max_range_days": 7,
+        "max_fail_ratio": 1.0,
+        "auto_apply_anchor_strategy": "listing-date",
+        "anchor_ts_ms": None,
+        "auto_apply_window": True,
+        "start_ts_ms": None,
+        "end_ts_ms": None,
+        "critical_timeframes": ["1H"],
+        "no_progress_threshold": 3,
+    },
+    # Controller-bounded last-closed-bars preset.
+    CONTROLLER_LAST_CLOSED_BARS_TRIGGER: {
         "timeframes": list(LAST_200_GUARD_TIMEFRAMES),
         "mode": RepairExecutionMode.APPLY.value,
         "repair_strategy": "last_n_closed_bars",
@@ -113,9 +158,7 @@ def _build_log_context(context: dict[str, Any]) -> str:
     ti = context.get("ti")
     try_number = getattr(ti, "try_number", "unknown")
     return (
-        f"dag_run_id={dag_run_id} "
-        f"logical_date={logical_date} "
-        f"try_number={try_number}"
+        f"dag_run_id={dag_run_id} logical_date={logical_date} try_number={try_number}"
     )
 
 
@@ -137,7 +180,56 @@ def _load_curated_swap_symbols() -> list[str]:
     return load_symbols_from_file(resolve_repo_instruments_file(), logger=logger)
 
 
-def _build_validated_conf_from_trigger(trigger: str) -> dict[str, Any]:
+def _validate_controller_trigger_symbols(
+    trigger: str,
+    conf_symbols: list[str] | None,
+    conf_timeframes: list[str] | None,
+    curated_symbols: list[str],
+) -> tuple[list[str], list[str]]:
+    """Validate and return (symbols, timeframes) for controller-specific trigger presets.
+
+    Rules:
+    - ``symbols`` must be explicitly provided (non-empty).
+    - Each symbol must be in the curated universe.
+    - ``timeframes`` must be a subset of allowed timeframes for the preset.
+    - Raises ValueError on any violation (causes AirflowFailException at caller).
+    """
+    if not conf_symbols:
+        raise ValueError(
+            f"controller trigger {trigger!r} requires explicit 'symbols' in conf; "
+            "missing or empty symbols list is not allowed for controller runs"
+        )
+    curated_set = frozenset(curated_symbols)
+    unknown_symbols = [s for s in conf_symbols if s not in curated_set]
+    if unknown_symbols:
+        raise ValueError(
+            f"controller trigger {trigger!r}: symbols not in curated universe: {unknown_symbols}"
+        )
+
+    if trigger == CONTROLLER_GAP_REPAIR_TRIGGER:
+        allowed_tfs = CONTROLLER_GAP_REPAIR_TIMEFRAMES
+    else:
+        allowed_tfs = CONTROLLER_LAST_CLOSED_BARS_TIMEFRAMES
+
+    timeframes: list[str]
+    if conf_timeframes:
+        unknown_tfs = [tf for tf in conf_timeframes if tf not in allowed_tfs]
+        if unknown_tfs:
+            raise ValueError(
+                f"controller trigger {trigger!r}: timeframes not allowed for preset: {unknown_tfs}. "
+                f"Allowed: {sorted(allowed_tfs)}"
+            )
+        timeframes = conf_timeframes
+    else:
+        timeframes = sorted(allowed_tfs)
+
+    return conf_symbols, timeframes
+
+
+def _build_validated_conf_from_trigger(
+    trigger: str,
+    raw_conf: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     preset = REPAIR_TRIGGER_PRESETS.get(trigger)
     if preset is None:
         supported = ", ".join(sorted(REPAIR_TRIGGER_PRESETS))
@@ -145,13 +237,50 @@ def _build_validated_conf_from_trigger(trigger: str) -> dict[str, Any]:
             f"unsupported trigger {trigger!r}; expected one of: {supported}"
         )
 
-    symbols = _load_curated_swap_symbols()
-    if not symbols:
+    curated_symbols = _load_curated_swap_symbols()
+    if not curated_symbols:
         raise ValueError("curated symbol list is empty; cannot run swap repair trigger")
 
+    if trigger in CONTROLLER_TRIGGERS:
+        # Controller runs require explicit bounded symbols/timeframes
+        conf_symbols_raw = (raw_conf or {}).get("symbols")
+        conf_timeframes_raw = (raw_conf or {}).get("timeframes")
+        conf_symbols: list[str] | None = (
+            [str(s).strip() for s in conf_symbols_raw if str(s).strip()]
+            if isinstance(conf_symbols_raw, list)
+            else (
+                [conf_symbols_raw.strip()]
+                if isinstance(conf_symbols_raw, str) and conf_symbols_raw.strip()
+                else None
+            )
+        )
+        conf_timeframes: list[str] | None = (
+            [str(tf).strip() for tf in conf_timeframes_raw if str(tf).strip()]
+            if isinstance(conf_timeframes_raw, list)
+            else (
+                [s.strip() for s in conf_timeframes_raw.split(",") if s.strip()]
+                if isinstance(conf_timeframes_raw, str) and conf_timeframes_raw.strip()
+                else None
+            )
+        )
+        symbols, timeframes = _validate_controller_trigger_symbols(
+            trigger, conf_symbols, conf_timeframes, curated_symbols
+        )
+        controller_decision_id = (raw_conf or {}).get("controller_decision_id")
+        result: dict[str, Any] = {
+            "trigger": trigger,
+            "symbols": symbols,
+            **preset,
+            "timeframes": timeframes,
+        }
+        if controller_decision_id is not None:
+            result["controller_decision_id"] = controller_decision_id
+        return result
+
+    # Manual triggers: expand to full curated universe
     return {
         "trigger": trigger,
-        "symbols": symbols,
+        "symbols": curated_symbols,
         **preset,
     }
 
@@ -165,7 +294,7 @@ def _get_validated_conf(context: dict[str, Any]) -> dict[str, Any]:
 
     conf = _get_run_conf(context)
     trigger = str(conf.get("trigger") or DEFAULT_TRIGGER).strip()
-    return _build_validated_conf_from_trigger(trigger)
+    return _build_validated_conf_from_trigger(trigger, raw_conf=conf)
 
 
 TERMINAL_REPAIR_ERROR_PREFIXES: tuple[str, ...] = (
@@ -421,7 +550,7 @@ def validate_swap_repair_conf_task(**context) -> dict[str, Any]:
         log_ctx = _build_log_context(context)
         logger.info("validate_swap_repair_conf start %s raw_conf=%s", log_ctx, conf)
         trigger = str(conf.get("trigger") or DEFAULT_TRIGGER).strip()
-        validated = _build_validated_conf_from_trigger(trigger)
+        validated = _build_validated_conf_from_trigger(trigger, raw_conf=conf)
         logger.info(
             "validate_swap_repair_conf finish %s trigger=%s symbols=%d timeframes=%s mode=%s strategy=%s",
             log_ctx,
@@ -442,7 +571,9 @@ def swap_repair_task(**context) -> list[dict[str, Any]]:
         setup_env(env)
 
         ti = context["ti"]
-        validated = ti.xcom_pull(task_ids="validate_swap_repair_conf", key="return_value")
+        validated = ti.xcom_pull(
+            task_ids="validate_swap_repair_conf", key="return_value"
+        )
         if not isinstance(validated, dict):
             raise ValueError("swap_repair validated config must be a dict")
         timeframes = [str(timeframe) for timeframe in validated.get("timeframes", [])]
@@ -452,7 +583,9 @@ def swap_repair_task(**context) -> list[dict[str, Any]]:
                 "swap_repair validated config must contain non-empty timeframes"
             )
         if not symbols:
-            raise ValueError("swap_repair validated config must contain non-empty symbols")
+            raise ValueError(
+                "swap_repair validated config must contain non-empty symbols"
+            )
 
         summaries = []
         for symbol in symbols:
@@ -745,7 +878,8 @@ def publish_swap_repair_ops_task(**context) -> dict[str, Any]:
         guard_results = _get_verified_results(context)
         if not guard_results:
             logger.warning(
-                "publish_swap_repair_ops guard branch: no verified results found %s", log_ctx
+                "publish_swap_repair_ops guard branch: no verified results found %s",
+                log_ctx,
             )
         metrics_pushed = push_swap_repair_metrics(guard_results)
         dag_run = context.get("dag_run")
@@ -821,7 +955,11 @@ dag = DAG(
             DEFAULT_TRIGGER,
             type="string",
             enum=sorted(REPAIR_TRIGGER_PRESETS),
-            description="Manual trigger preset. Runtime repair settings live in code.",
+            description=(
+                "Trigger preset. Manual: repair-all-swaps, last-200-guard. "
+                "Controller (bounded symbols required): controller-gap-repair, "
+                "controller-last-closed-bars."
+            ),
         ),
     },
 )

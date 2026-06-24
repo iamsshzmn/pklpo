@@ -123,13 +123,16 @@ def test_repair_dag_appends_refresh_eligibility_task(
 def test_repair_dag_params_contract_snapshot(
     repair_dag_module: types.ModuleType,
 ) -> None:
-    assert _normalize_param_contract(repair_dag_module.dag.kwargs["params"]) == {
-        "trigger": {
-            "default": "repair-all-swaps",
-            "type": "string",
-            "enum": ["last-200-guard", "repair-all-swaps"],
-            "description": "Manual trigger preset. Runtime repair settings live in code.",
-        }
+    params = _normalize_param_contract(repair_dag_module.dag.kwargs["params"])
+    trigger = params["trigger"]
+    assert trigger["default"] == "repair-all-swaps"
+    assert trigger["type"] == "string"
+    # All four presets must be listed
+    assert set(trigger["enum"]) == {
+        "repair-all-swaps",
+        "last-200-guard",
+        "controller-gap-repair",
+        "controller-last-closed-bars",
     }
 
 
@@ -1131,9 +1134,9 @@ def test_swap_repair_task_translates_guardrail_valueerror_to_airflow_fail(
     monkeypatch.setattr(repair_dag_module, "setup_env", lambda env: None)
 
     airflow_exceptions = sys.modules.get("airflow.exceptions")
-    assert (
-        airflow_exceptions is not None
-    ), "airflow.exceptions not loaded via DAG module"
+    assert airflow_exceptions is not None, (
+        "airflow.exceptions not loaded via DAG module"
+    )
     AirflowFailException = airflow_exceptions.AirflowFailException
 
     with pytest.raises(AirflowFailException, match="apply blocked by guardrails"):
@@ -1339,3 +1342,148 @@ def test_publish_swap_repair_ops_calls_guard_audit_for_last_n_strategy(
     assert result["audit_rows_written"] == 1
     assert len(audit_calls) == 1
     assert audit_calls[0]["dag_id"] == "okx_swap_repair_v1"
+
+
+# ---------------------------------------------------------------------------
+# Controller trigger preset tests
+# ---------------------------------------------------------------------------
+
+
+def test_controller_gap_repair_preset_requires_explicit_symbols(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """controller-gap-repair without symbols must be rejected."""
+    monkeypatch.setattr(
+        repair_dag_module,
+        "_load_curated_swap_symbols",
+        lambda: ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+    )
+    with pytest.raises(ValueError, match="requires explicit 'symbols'"):
+        repair_dag_module._build_validated_conf_from_trigger(
+            "controller-gap-repair", raw_conf={"trigger": "controller-gap-repair"}
+        )
+
+
+def test_controller_gap_repair_preset_rejects_symbols_outside_curated(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """controller-gap-repair with symbols not in curated list must be rejected."""
+    monkeypatch.setattr(
+        repair_dag_module,
+        "_load_curated_swap_symbols",
+        lambda: ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+    )
+    with pytest.raises(ValueError, match="not in curated universe"):
+        repair_dag_module._build_validated_conf_from_trigger(
+            "controller-gap-repair",
+            raw_conf={
+                "trigger": "controller-gap-repair",
+                "symbols": ["FAKE-USDT-SWAP"],
+            },
+        )
+
+
+def test_controller_gap_repair_preset_accepts_valid_bounded_symbols(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """controller-gap-repair with valid bounded symbols must be accepted."""
+    monkeypatch.setattr(
+        repair_dag_module,
+        "_load_curated_swap_symbols",
+        lambda: ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+    )
+    result = repair_dag_module._build_validated_conf_from_trigger(
+        "controller-gap-repair",
+        raw_conf={
+            "trigger": "controller-gap-repair",
+            "symbols": ["BTC-USDT-SWAP"],
+            "timeframes": ["1H"],
+            "controller_decision_id": 42,
+        },
+    )
+    assert result["symbols"] == ["BTC-USDT-SWAP"]
+    assert result["timeframes"] == ["1H"]
+    assert result["controller_decision_id"] == 42
+    assert result["trigger"] == "controller-gap-repair"
+    assert result["repair_strategy"] == "gap-repair"
+
+
+def test_controller_gap_repair_preset_rejects_disallowed_timeframes(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """controller-gap-repair with 1D timeframe (not in allowed set) must be rejected."""
+    monkeypatch.setattr(
+        repair_dag_module,
+        "_load_curated_swap_symbols",
+        lambda: ["BTC-USDT-SWAP"],
+    )
+    with pytest.raises(ValueError, match="timeframes not allowed for preset"):
+        repair_dag_module._build_validated_conf_from_trigger(
+            "controller-gap-repair",
+            raw_conf={
+                "trigger": "controller-gap-repair",
+                "symbols": ["BTC-USDT-SWAP"],
+                "timeframes": ["1D"],
+            },
+        )
+
+
+def test_controller_last_closed_bars_preset_requires_explicit_symbols(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """controller-last-closed-bars without symbols must be rejected."""
+    monkeypatch.setattr(
+        repair_dag_module,
+        "_load_curated_swap_symbols",
+        lambda: ["BTC-USDT-SWAP"],
+    )
+    with pytest.raises(ValueError, match="requires explicit 'symbols'"):
+        repair_dag_module._build_validated_conf_from_trigger(
+            "controller-last-closed-bars",
+            raw_conf={"trigger": "controller-last-closed-bars"},
+        )
+
+
+def test_controller_last_closed_bars_allows_1d_timeframe(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """controller-last-closed-bars with 1D timeframe (allowed) must succeed."""
+    monkeypatch.setattr(
+        repair_dag_module,
+        "_load_curated_swap_symbols",
+        lambda: ["BTC-USDT-SWAP"],
+    )
+    result = repair_dag_module._build_validated_conf_from_trigger(
+        "controller-last-closed-bars",
+        raw_conf={
+            "trigger": "controller-last-closed-bars",
+            "symbols": ["BTC-USDT-SWAP"],
+            "timeframes": ["1D"],
+        },
+    )
+    assert result["symbols"] == ["BTC-USDT-SWAP"]
+    assert result["timeframes"] == ["1D"]
+    assert result["repair_strategy"] == "last_n_closed_bars"
+
+
+def test_manual_repair_all_swaps_expands_to_full_curated_universe(
+    repair_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """repair-all-swaps without explicit symbols uses the full curated universe."""
+    monkeypatch.setattr(
+        repair_dag_module,
+        "_load_curated_swap_symbols",
+        lambda: ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+    )
+    result = repair_dag_module._build_validated_conf_from_trigger(
+        "repair-all-swaps", raw_conf={"trigger": "repair-all-swaps"}
+    )
+    assert result["symbols"] == ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
+    assert result["trigger"] == "repair-all-swaps"

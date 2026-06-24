@@ -26,10 +26,13 @@ from src.candles.observability.prometheus import (
     push_dependency_health_metrics,
     push_pipeline_monitoring_metrics,
 )
+from src.logging import get_logger, set_span_attributes
 from src.utils.session_utils import get_db_session
 
 if TYPE_CHECKING:
     import asyncio
+
+LOGGER = get_logger(__name__)
 
 
 def _get_loop() -> asyncio.AbstractEventLoop:
@@ -165,11 +168,27 @@ def collect_pipeline_monitoring_task(**context: Any) -> dict[str, Any]:
         env = get_dag_env()
         setup_env(env)
         snapshot = _get_loop().run_until_complete(_collect_pipeline_monitoring_snapshot())
+        processed_count = len(snapshot.get("eligibility_state", []))
+        set_span_attributes({"processed_count": processed_count})
+        LOGGER.info(
+            "pipeline_monitoring_snapshot_collected",
+            extra={
+                "event": "pipeline_monitoring_snapshot_collected",
+                "processed_count": processed_count,
+            },
+        )
         metrics_pushed = push_pipeline_monitoring_metrics(snapshot)
         dep_health = _get_loop().run_until_complete(_probe_dependency_health())
         dep_metrics_pushed = push_dependency_health_metrics(
             postgres_up=dep_health["postgres_up"],
             okx_up=dep_health["okx_up"],
+        )
+        LOGGER.info(
+            "pipeline_monitoring_metrics_pushed",
+            extra={
+                "event": "pipeline_monitoring_metrics_pushed",
+                "processed_count": int(metrics_pushed) + int(dep_metrics_pushed),
+            },
         )
         return {
             **snapshot,

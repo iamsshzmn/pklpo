@@ -64,6 +64,9 @@ DEFAULT_CHUNK_BARS = 500
 DEFAULT_CIRCUIT_BREAK_AFTER = 3
 FEATURE_RECALC_EXCLUDED_TIMEFRAMES = {"1M"}
 
+# Identifier used by the recovery controller when it triggers this DAG.
+CONTROLLER_TRIGGERED_BY = "pipeline_recovery_controller"
+
 
 def _normalize_string_list(raw: object, field: str) -> list[str] | None:
     """Coerce a comma-separated string or list to a stripped list of strings.
@@ -145,6 +148,21 @@ def task_validate_conf(**context: Any) -> dict[str, Any]:
         setup_env(env)
 
         conf = _get_run_conf(context)
+
+        # --- Controller pass-through audit fields (do not affect execution) ---
+        triggered_by: str | None = conf.get("triggered_by") or None
+        controller_decision_id = conf.get("controller_decision_id")
+        controller_reason: str | None = conf.get("reason") or None
+
+        is_controller_run = triggered_by == CONTROLLER_TRIGGERED_BY
+
+        if is_controller_run:
+            logger.info(
+                "bootstrap triggered by controller: controller_decision_id=%s reason=%s",
+                controller_decision_id,
+                controller_reason,
+            )
+
         lookback_days = _coerce_int(
             conf.get("lookback_days", DEFAULT_LOOKBACK_DAYS),
             field_name="lookback_days",
@@ -154,15 +172,32 @@ def task_validate_conf(**context: Any) -> dict[str, Any]:
 
         symbols_raw = conf.get("symbols")
         symbols = _normalize_string_list(symbols_raw, "symbols")
+
+        # Controller runs MUST provide explicit bounded symbols — reject null/empty.
+        if is_controller_run and not symbols:
+            raise AirflowFailException(
+                "bootstrap triggered by pipeline_recovery_controller requires explicit "
+                "'symbols' list; null or missing symbols are not allowed for controller runs"
+            )
+
         if not symbols:
+            # Manual run: fall back to curated universe
             symbols = _load_curated_swap_symbols()
         if not symbols:
             raise AirflowFailException("symbol list is empty")
 
         timeframes_raw = conf.get("timeframes")
-        timeframes = _normalize_string_list(timeframes_raw, "timeframes") or list(
-            SUPPORTED_TIMEFRAMES
-        )
+        timeframes = _normalize_string_list(timeframes_raw, "timeframes")
+
+        # Controller runs MUST provide explicit bounded timeframes.
+        if is_controller_run and not timeframes:
+            raise AirflowFailException(
+                "bootstrap triggered by pipeline_recovery_controller requires explicit "
+                "'timeframes' list; null or missing timeframes are not allowed for controller runs"
+            )
+
+        if not timeframes:
+            timeframes = list(SUPPORTED_TIMEFRAMES)
 
         unknown = [tf for tf in timeframes if tf not in _TF_TO_MS]
         if unknown:
@@ -181,7 +216,7 @@ def task_validate_conf(**context: Any) -> dict[str, Any]:
         dry_run = bool(conf.get("dry_run", False))
         skip_recalc = bool(conf.get("skip_recalc", False))
 
-        validated = {
+        validated: dict[str, Any] = {
             "lookback_days": lookback_days,
             "symbols": symbols,
             "timeframes": timeframes,
@@ -190,11 +225,20 @@ def task_validate_conf(**context: Any) -> dict[str, Any]:
             "dry_run": dry_run,
             "skip_recalc": skip_recalc,
         }
+        # Propagate controller audit fields into validated conf for downstream tasks
+        if triggered_by is not None:
+            validated["triggered_by"] = triggered_by
+        if controller_decision_id is not None:
+            validated["controller_decision_id"] = controller_decision_id
+        if controller_reason is not None:
+            validated["controller_reason"] = controller_reason
+
         logger.info(
-            "bootstrap conf validated: %d symbols, %s TFs, lookback=%d days",
+            "bootstrap conf validated: %d symbols, %s TFs, lookback=%d days triggered_by=%s",
             len(symbols),
             timeframes,
             lookback_days,
+            triggered_by,
         )
         return validated
 
@@ -333,7 +377,9 @@ def task_enqueue_indicator_recalc(**context: Any) -> None:
         env = get_dag_env()
         setup_env(env)
         ti = context["ti"]
-        results = ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
+        results = (
+            ti.xcom_pull(task_ids="validate_bootstrap_xcom", key="return_value") or []
+        )
         validated = _get_validated_conf(context)
 
         if validated.get("skip_recalc", False):
@@ -361,7 +407,8 @@ def task_enqueue_indicator_recalc(**context: Any) -> None:
             seen.add((symbol, timeframe))
             try:
                 lookback_days = _lookback_days_for_timeframe(
-                    timeframe, int(validated.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
+                    timeframe,
+                    int(validated.get("lookback_days", DEFAULT_LOOKBACK_DAYS)),
                 )
                 _get_loop().run_until_complete(
                     repair_interface.enqueue_indicator_recalc(
@@ -374,7 +421,10 @@ def task_enqueue_indicator_recalc(**context: Any) -> None:
                 logger.info("enqueued indicator recalc for %s/%s", symbol, timeframe)
             except Exception as exc:
                 logger.warning(
-                    "enqueue_indicator_recalc failed for %s/%s: %s", symbol, timeframe, exc
+                    "enqueue_indicator_recalc failed for %s/%s: %s",
+                    symbol,
+                    timeframe,
+                    exc,
                 )
 
 

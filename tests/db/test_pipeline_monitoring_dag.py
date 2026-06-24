@@ -60,11 +60,19 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
     prometheus_module = types.ModuleType("src.candles.observability.prometheus")
     prometheus_module.push_pipeline_monitoring_metrics = lambda snapshot: True  # type: ignore[attr-defined]
+    prometheus_module.push_dependency_health_metrics = lambda **kwargs: True  # type: ignore[attr-defined]
     monkeypatch.setitem(
         sys.modules,
         "src.candles.observability.prometheus",
         prometheus_module,
     )
+
+    src_logging_module = types.ModuleType("src.logging")
+    src_logging_module.get_logger = lambda name=None: types.SimpleNamespace(  # type: ignore[attr-defined]
+        info=lambda *args, **kwargs: None
+    )
+    src_logging_module.set_span_attributes = lambda attributes: None  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src.logging", src_logging_module)
 
     utils_module = types.ModuleType("src.utils")
     utils_module.__path__ = []  # type: ignore[attr-defined]
@@ -130,6 +138,8 @@ def test_collect_pipeline_monitoring_task_pushes_snapshot(
 ) -> None:
     module = _load_dag(monkeypatch)
     pushed: list[dict[str, Any]] = []
+    log_records: list[dict[str, Any]] = []
+    span_attributes: dict[str, Any] = {}
     snapshot = {
         "candle_lag_seconds": {"1H": 120.0},
         "recalc_queue": {"queued": 1},
@@ -141,15 +151,60 @@ def test_collect_pipeline_monitoring_task_pushes_snapshot(
     async def _collect_snapshot() -> dict[str, Any]:
         return snapshot
 
+    async def _probe_dependency_health() -> dict[str, bool]:
+        return {"postgres_up": True, "okx_up": False}
+
     monkeypatch.setattr(module, "_collect_pipeline_monitoring_snapshot", _collect_snapshot)
+    monkeypatch.setattr(module, "_probe_dependency_health", _probe_dependency_health)
     monkeypatch.setattr(
         module,
         "push_pipeline_monitoring_metrics",
         lambda payload: pushed.append(payload) or True,
     )
+    monkeypatch.setattr(
+        module,
+        "push_dependency_health_metrics",
+        lambda **kwargs: kwargs["postgres_up"] and not kwargs["okx_up"],
+    )
+    monkeypatch.setattr(
+        module,
+        "LOGGER",
+        types.SimpleNamespace(
+            info=lambda message, **kwargs: log_records.append(
+                {"message": message, **kwargs}
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "set_span_attributes",
+        lambda attributes: span_attributes.update(attributes),
+    )
 
     result = module.collect_pipeline_monitoring_task()
 
-    assert result == {**snapshot, "metrics_pushed": True}
+    assert result == {
+        **snapshot,
+        "metrics_pushed": True,
+        "dep_health": {"postgres_up": True, "okx_up": False},
+        "dep_metrics_pushed": True,
+    }
     json.dumps(result)
     assert pushed == [snapshot]
+    assert span_attributes == {"processed_count": 1}
+    assert log_records == [
+        {
+            "message": "pipeline_monitoring_snapshot_collected",
+            "extra": {
+                "event": "pipeline_monitoring_snapshot_collected",
+                "processed_count": 1,
+            },
+        },
+        {
+            "message": "pipeline_monitoring_metrics_pushed",
+            "extra": {
+                "event": "pipeline_monitoring_metrics_pushed",
+                "processed_count": 2,
+            },
+        },
+    ]

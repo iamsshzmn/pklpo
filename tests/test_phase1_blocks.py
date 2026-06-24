@@ -2,6 +2,7 @@
 
 import json
 import time
+import tomllib
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -168,6 +169,10 @@ class TestObservabilitySettings:
         monkeypatch.delenv("OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", raising=False)
         monkeypatch.delenv("OBSERVABILITY_METRICS_PREFIX", raising=False)
         monkeypatch.delenv("OBSERVABILITY_JOB_NAME", raising=False)
+        monkeypatch.delenv("OBSERVABILITY_OTEL_ENABLED", raising=False)
+        monkeypatch.delenv("OBSERVABILITY_OTEL_SERVICE_NAME", raising=False)
+        monkeypatch.delenv("OBSERVABILITY_OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("OBSERVABILITY_OTEL_SAMPLE_RATIO", raising=False)
         from src.config.settings import ObservabilitySettings
 
         s = ObservabilitySettings()
@@ -175,11 +180,22 @@ class TestObservabilitySettings:
         assert s.prometheus_pushgateway_url == ""
         assert s.metrics_prefix == "pklpo"
         assert s.job_name == "features_pipeline"
+        assert s.otel_enabled is False
+        assert s.otel_service_name == "pklpo"
+        assert s.otel_exporter_otlp_endpoint == "http://localhost:4317"
+        assert s.otel_sample_ratio == 1.0
 
     def test_env_override(self, monkeypatch):
         monkeypatch.setenv("OBSERVABILITY_PROMETHEUS_ENABLED", "true")
         monkeypatch.setenv("OBSERVABILITY_PROMETHEUS_PUSHGATEWAY_URL", "http://gw:9091")
         monkeypatch.setenv("OBSERVABILITY_METRICS_PREFIX", "test")
+        monkeypatch.setenv("OBSERVABILITY_OTEL_ENABLED", "true")
+        monkeypatch.setenv("OBSERVABILITY_OTEL_SERVICE_NAME", "pklpo-airflow")
+        monkeypatch.setenv(
+            "OBSERVABILITY_OTEL_EXPORTER_OTLP_ENDPOINT",
+            "http://tempo:4317",
+        )
+        monkeypatch.setenv("OBSERVABILITY_OTEL_SAMPLE_RATIO", "0.25")
 
         from src.config.settings import ObservabilitySettings
 
@@ -187,6 +203,10 @@ class TestObservabilitySettings:
         assert s.prometheus_enabled is True
         assert s.prometheus_pushgateway_url == "http://gw:9091"
         assert s.metrics_prefix == "test"
+        assert s.otel_enabled is True
+        assert s.otel_service_name == "pklpo-airflow"
+        assert s.otel_exporter_otlp_endpoint == "http://tempo:4317"
+        assert s.otel_sample_ratio == 0.25
 
     def test_integrated_in_main_settings(self):
         from src.config import get_settings, reload_settings
@@ -197,12 +217,45 @@ class TestObservabilitySettings:
         assert s.observability.metrics_prefix == "pklpo"
 
 
+class TestOpenTelemetryDependencies:
+    REQUIRED_PACKAGES = {
+        "opentelemetry-api": "1.25.0",
+        "opentelemetry-sdk": "1.25.0",
+        "opentelemetry-exporter-otlp-proto-grpc": "1.25.0",
+        "opentelemetry-instrumentation-aiohttp-client": "0.46b0",
+        "opentelemetry-instrumentation-asyncpg": "0.46b0",
+    }
+
+    def test_pyproject_runtime_dependencies_are_pinned(self):
+        path = PROJECT_ROOT / "pyproject.toml"
+        pyproject = tomllib.loads(path.read_text(encoding="utf-8"))
+        dependencies = {
+            dependency.split("==", maxsplit=1)[0]: dependency
+            for dependency in pyproject["project"]["dependencies"]
+        }
+
+        for package, version in self.REQUIRED_PACKAGES.items():
+            assert dependencies[package] == f"{package}=={version}"
+
+    def test_airflow_requirements_include_matching_otel_pins(self):
+        path = PROJECT_ROOT / "ops" / "airflow" / "requirements-airflow.txt"
+        requirements = {
+            line.split("==", maxsplit=1)[0]: line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        }
+
+        for package, version in self.REQUIRED_PACKAGES.items():
+            assert requirements[package] == f"{package}=={version}"
+
+
 # ============================================================================
 # Block B: Grafana / Docker-compose file validation
 # ============================================================================
 
 
 MONITORING_DIR = PROJECT_ROOT / "ops" / "monitoring"
+AIRFLOW_COMPOSE = PROJECT_ROOT / "ops" / "airflow" / "docker-compose.airflow.yml"
 
 
 class TestGrafanaDashboard:
@@ -271,7 +324,31 @@ class TestDockerCompose:
         path = MONITORING_DIR / "docker-compose.monitoring.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         services = set(data["services"].keys())
-        assert {"prometheus", "pushgateway", "grafana"} <= services
+        assert {"prometheus", "pushgateway", "grafana", "loki", "promtail", "tempo"} <= services
+
+    def test_tempo_service_is_pinned_and_exposes_otlp(self):
+        path = MONITORING_DIR / "docker-compose.monitoring.yml"
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        tempo = data["services"]["tempo"]
+
+        assert tempo["image"] == "grafana/tempo:2.4.1"
+        assert "latest" not in tempo["image"]
+        assert "3200:3200" in tempo["ports"]
+        assert "4317:4317" in tempo["ports"]
+        assert "4318:4318" in tempo["ports"]
+        assert "tempo_data:/var/tempo" in tempo["volumes"]
+        assert "healthcheck" in tempo
+        assert "tempo_data" in data["volumes"]
+
+    def test_tempo_config_enables_otlp_receivers(self):
+        path = MONITORING_DIR / "tempo" / "tempo-config.yml"
+        assert path.exists()
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+        protocols = data["distributor"]["receivers"]["otlp"]["protocols"]
+        assert protocols["grpc"]["endpoint"] == "0.0.0.0:4317"
+        assert protocols["http"]["endpoint"] == "0.0.0.0:4318"
+        assert data["storage"]["trace"]["backend"] == "local"
 
     def test_prometheus_config_valid(self):
         path = MONITORING_DIR / "prometheus" / "prometheus.yml"
@@ -286,6 +363,71 @@ class TestDockerCompose:
         assert path.exists()
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert data["datasources"][0]["type"] == "prometheus"
+
+    def test_tempo_datasource_provisioning(self):
+        path = MONITORING_DIR / "grafana" / "provisioning" / "datasources" / "tempo.yml"
+        assert path.exists()
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        datasource = data["datasources"][0]
+        assert datasource["type"] == "tempo"
+        assert datasource["uid"] == "Tempo"
+        assert datasource["url"] == "http://tempo:3200"
+
+    def test_airflow_compose_propagates_opt_in_otel_env(self):
+        assert AIRFLOW_COMPOSE.exists()
+        data = yaml.safe_load(AIRFLOW_COMPOSE.read_text(encoding="utf-8"))
+        env = data["x-environment"]
+
+        assert env["OBSERVABILITY_OTEL_ENABLED"] == "${OBSERVABILITY_OTEL_ENABLED:-false}"
+        assert env["OBSERVABILITY_OTEL_SERVICE_NAME"] == (
+            "${OBSERVABILITY_OTEL_SERVICE_NAME:-pklpo-airflow}"
+        )
+        assert env["OBSERVABILITY_OTEL_EXPORTER_OTLP_ENDPOINT"] == (
+            "${OBSERVABILITY_OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4317}"
+        )
+        assert env["OBSERVABILITY_OTEL_SAMPLE_RATIO"] == (
+            "${OBSERVABILITY_OTEL_SAMPLE_RATIO:-1.0}"
+        )
+
+    def test_lgtm_acceptance_script_delegates_v1_and_checks_tempo(self):
+        path = PROJECT_ROOT / "scripts" / "validate_lgtm_acceptance.sh"
+        assert path.exists()
+        content = path.read_text(encoding="utf-8")
+        assert "validate_v1_acceptance.sh" in content
+        assert "TEMPO_URL" in content
+        assert "/ready" in content
+        assert "api/datasources/uid/Tempo" in content
+        assert "run_id|trace_id|span_id" in content
+
+    def test_windows_v1_acceptance_script_covers_live_checks(self):
+        path = PROJECT_ROOT / "scripts" / "validate_v1_acceptance.ps1"
+        assert path.exists()
+        content = path.read_text(encoding="utf-8")
+        assert "Invoke-WebRequest" in content
+        assert "pipeline_monitoring" in content
+        assert "pklpo-pipeline-obs-v1" in content
+        assert "pklpo_pipeline_candle_lag_seconds" in content
+        assert "pklpo_pipeline_recalc_queue_rows" in content
+        assert "pklpo_pipeline_alerts" in content
+        assert "pklpo_dependency_postgres_up" in content
+        assert "pklpo_dependency_okx_up" in content
+        assert "pklpo_network" in content
+        assert "name=airflow-scheduler" in content
+        assert "Find-StructuredAirflowRunId" in content
+        assert "fallback structured Airflow run_id" in content
+        assert "pklpo-airflow-logs" in content
+
+    def test_windows_lgtm_acceptance_script_delegates_v1_and_checks_tempo(self):
+        path = PROJECT_ROOT / "scripts" / "validate_lgtm_acceptance.ps1"
+        assert path.exists()
+        content = path.read_text(encoding="utf-8")
+        assert "validate_v1_acceptance.ps1" in content
+        assert "SkipStatic = $true" in content
+        assert "http://localhost:3200" in content
+        assert "/ready" in content
+        assert "api/datasources/uid/Tempo" in content
+        assert "promtail-config.yml" in content
+        assert "run_id|trace_id|span_id" in content
 
 
 # ============================================================================

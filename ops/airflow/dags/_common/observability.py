@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import time
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
-from src.logging import set_log_context
+from src.logging import configure_tracing, set_log_context, start_span
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Mapping
+
+_TRACING_CONFIGURED = False
 
 
 def _context_value(context: Mapping[str, Any], key: str) -> Any:
@@ -39,6 +42,14 @@ def airflow_task_id(context: Mapping[str, Any], fallback: str) -> str:
     return fallback
 
 
+def _ensure_tracing_configured() -> None:
+    global _TRACING_CONFIGURED
+    if _TRACING_CONFIGURED:
+        return
+    configure_tracing()
+    _TRACING_CONFIGURED = True
+
+
 @contextmanager
 def airflow_log_context(
     context: Mapping[str, Any],
@@ -52,12 +63,41 @@ def airflow_log_context(
     run_id = airflow_run_id(context, fallback=component)
     symbol = _context_value(context, "symbol")
     timeframe = _context_value(context, "timeframe")
-    with set_log_context(
+    symbol_value = str(symbol) if symbol is not None else None
+    timeframe_value = str(timeframe) if timeframe is not None else None
+    span_attributes = {
+        "run_id": run_id,
+        "component": component,
+        "task_id": resolved_task_id,
+    }
+    if symbol_value is not None:
+        span_attributes["symbol"] = symbol_value
+    if timeframe_value is not None:
+        span_attributes["timeframe"] = timeframe_value
+
+    _ensure_tracing_configured()
+    started_at = time.perf_counter()
+    with start_span(
+        f"airflow.{component}.{resolved_task_id}",
         run_id=run_id,
-        symbol=str(symbol) if symbol is not None else None,
-        timeframe=str(timeframe) if timeframe is not None else None,
-        component=component,
-        task_id=resolved_task_id,
-        **extra,
-    ) as bound_run_id:
-        yield bound_run_id
+        attributes=span_attributes,
+    ) as span:
+        try:
+            with set_log_context(
+                run_id=run_id,
+                symbol=symbol_value,
+                timeframe=timeframe_value,
+                component=component,
+                task_id=resolved_task_id,
+                **extra,
+            ) as bound_run_id:
+                yield bound_run_id
+        except Exception as exc:
+            span.set_attribute("status", "error")
+            span.set_attribute("error_type", type(exc).__name__)
+            span.set_attribute("error.reason", str(exc)[:500])
+            raise
+        else:
+            span.set_attribute("status", "ok")
+        finally:
+            span.set_attribute("duration_seconds", time.perf_counter() - started_at)
