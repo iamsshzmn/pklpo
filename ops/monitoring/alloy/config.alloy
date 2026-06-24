@@ -1,0 +1,105 @@
+// Grafana Alloy configuration — replaces Promtail (EOL March 2026).
+//
+// Parity target: identical Loki labels, structured metadata, and timestamp
+// parsing as the previous promtail-config.yml.
+//
+// Labels (low-cardinality):    level, component, symbol, timeframe, error_type
+// Structured metadata (hi-cardinality):  run_id, category
+// Never labels:                run_id, trace_id, span_id, category
+//
+// Log sources:
+//   /var/log/pklpo/pklpo_debug.log*       — CLI / cron (job=pklpo_app)
+//   /var/log/airflow/pklpo/pklpo_debug.log* — Airflow tasks (job=pklpo_airflow)
+
+// ---------------------------------------------------------------------------
+// pklpo application logs (CLI / cron)
+// ---------------------------------------------------------------------------
+
+local.file_match "pklpo_app" {
+  path_targets = [{
+    __path__ = "/var/log/pklpo/pklpo_debug.log*",
+    job       = "pklpo_app",
+    env       = "prod",
+  }]
+}
+
+loki.source.file "pklpo_app" {
+  targets    = local.file_match.pklpo_app.targets
+  forward_to = [loki.process.pklpo_pipeline.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Airflow task logs
+// ---------------------------------------------------------------------------
+
+local.file_match "pklpo_airflow" {
+  path_targets = [{
+    __path__ = "/var/log/airflow/pklpo/pklpo_debug.log*",
+    job       = "pklpo_airflow",
+    env       = "prod",
+  }]
+}
+
+loki.source.file "pklpo_airflow" {
+  targets    = local.file_match.pklpo_airflow.targets
+  forward_to = [loki.process.pklpo_pipeline.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Shared pipeline: JSON parse → labels → structured metadata → timestamp
+// ---------------------------------------------------------------------------
+
+loki.process "pklpo_pipeline" {
+  forward_to = [loki.write.loki_push.receiver]
+
+  // Extract fields from JSON log line into the extracted map.
+  stage.json {
+    expressions = {
+      timestamp  = "timestamp",
+      level      = "level",
+      component  = "component",
+      run_id     = "run_id",
+      symbol     = "symbol",
+      timeframe  = "timeframe",
+      error_type = "error_type",
+      category   = "category",
+    }
+  }
+
+  // Promote low-cardinality fields to Loki labels.
+  // run_id, trace_id, span_id must NEVER appear here (R4 constraint).
+  stage.labels {
+    values = {
+      level      = "",
+      component  = "",
+      symbol     = "",
+      timeframe  = "",
+      error_type = "",
+    }
+  }
+
+  // High-cardinality fields go to structured metadata, not labels.
+  stage.structured_metadata {
+    values = {
+      run_id   = "",
+      category = "",
+    }
+  }
+
+  // Parse and override the log timestamp from the JSON field.
+  // Format matches logger.py output: ISO 8601 with milliseconds, UTC.
+  stage.timestamp {
+    source = "timestamp"
+    format = "2006-01-02T15:04:05.000Z"
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Loki write target
+// ---------------------------------------------------------------------------
+
+loki.write "loki_push" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

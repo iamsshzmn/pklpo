@@ -1,0 +1,86 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # -----------------------------------------------------------------------
+  # pklpo application logs (CLI / cron) — JSON lines from rotating files
+  #
+  # T8.2: Use the explicit debug log rotation path instead of *.log.
+  # logger.py writes to two files: pklpo_debug.log (all levels, DEBUG+) and
+  # pklpo_errors.log (ERROR only).  Scraping *.log would ingest every ERROR
+  # line twice.  pklpo_debug.log* already contains all levels including ERROR
+  # across rotated files, so scraping only debug logs is sufficient for Loki.
+  # -----------------------------------------------------------------------
+  - job_name: pklpo_app
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pklpo_app
+          env: prod
+          __path__: /var/log/pklpo/pklpo_debug.log*
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            component: component
+            run_id: run_id
+            symbol: symbol
+            timeframe: timeframe
+            error_type: error_type
+            category: category
+      - labels:
+          level:
+          component:
+          symbol:
+          timeframe:
+          error_type:
+      - structured_metadata:
+          run_id:
+          category:
+      - timestamp:
+          source: timestamp
+          format: "2006-01-02T15:04:05.000Z"
+
+  # -----------------------------------------------------------------------
+  # Airflow task logs — JSON lines written by pklpo logger inside tasks
+  # -----------------------------------------------------------------------
+  - job_name: pklpo_airflow
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: pklpo_airflow
+          env: prod
+          __path__: /var/log/airflow/pklpo/pklpo_debug.log*
+    pipeline_stages:
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            component: component
+            run_id: run_id
+            symbol: symbol
+            timeframe: timeframe
+            error_type: error_type
+            category: category
+      - labels:
+          level:
+          component:
+          symbol:
+          timeframe:
+          error_type:
+      - structured_metadata:
+          run_id:
+          category:
+      - timestamp:
+          source: timestamp
+          format: "2006-01-02T15:04:05.000Z"

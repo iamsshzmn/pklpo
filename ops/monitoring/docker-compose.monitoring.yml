@@ -6,6 +6,41 @@ networks:
     name: pklpo_network
 
 services:
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: pklpo-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - pklpo_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  alloy:
+    image: grafana/alloy:v1.8.3
+    container_name: pklpo-alloy
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - pklpo_logs:/var/log/pklpo:ro
+      - airflow_logs:/var/log/airflow/pklpo:ro
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
+    ports:
+      - "12345:12345"
+    networks:
+      - pklpo_network
+    depends_on:
+      loki:
+        condition: service_healthy
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:v2.51.0
     container_name: pklpo-prometheus
@@ -21,6 +56,44 @@ services:
     networks:
       - pklpo_network
     restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.4.1
+    container_name: pklpo-tempo
+    command: -config.file=/etc/tempo/tempo-config.yml
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./tempo/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
+      - tempo_data:/var/tempo
+    networks:
+      - pklpo_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3200/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mimir:
+    image: grafana/mimir:3.1.1
+    container_name: pklpo-mimir
+    command: ["-config.file=/etc/mimir/mimir-config.yml"]
+    ports:
+      - "9009:9009"
+    volumes:
+      - ./mimir/mimir-config.yml:/etc/mimir/mimir-config.yml:ro
+      - mimir_data:/data/mimir
+    networks:
+      - pklpo_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9009/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
 
   pushgateway:
     image: prom/pushgateway:v1.7.0
@@ -40,6 +113,7 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_UNIFIED_ALERTING_ENABLED: "true"
       GF_ALERTING_ENABLED: "false"
+      GF_FEATURE_TOGGLES_ENABLE: "lokiExploreLogsEnabled"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -50,10 +124,29 @@ services:
       - pklpo_network
     depends_on:
       - prometheus
+      - loki
+      - tempo
+      - mimir
     restart: unless-stopped
 
 volumes:
+  mimir_data:
+    name: pklpo-mimir-data
   prometheus_data:
     name: pklpo-prometheus-data
   grafana_data:
     name: pklpo-grafana-data
+  loki_data:
+    name: pklpo-loki-data
+  tempo_data:
+    name: pklpo-tempo-data
+  # Shared log volumes — app and Airflow write here; Alloy reads read-only.
+  # pklpo_logs is owned by the app/dev stack (scripts/docker-compose.yml).
+  # airflow_logs is owned by the Airflow stack (ops/airflow/docker-compose.airflow.yml).
+  # Both are declared external here so Alloy attaches to pre-existing volumes.
+  pklpo_logs:
+    external: true
+    name: pklpo-app-logs
+  airflow_logs:
+    external: true
+    name: pklpo-airflow-logs

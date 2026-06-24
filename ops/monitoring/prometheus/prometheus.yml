@@ -11,3 +11,14 @@ scrape_configs:
     honor_labels: true
     static_configs:
       - targets: ["pushgateway:9091"]
+
+# Forward all scraped metrics to Mimir for long-term retention (R2: ≥ 365 days).
+# Prometheus remains the short-term scraper (30d local TSDB).
+# Mimir is the authoritative backend for year-over-year queries.
+remote_write:
+  - url: http://mimir:9009/api/v1/push
+    name: mimir
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 5
+      capacity: 10000
