@@ -6,7 +6,10 @@ from typing import Any
 import pytest
 
 from src.candles.application.bootstrap.dto import BootstrapCommand, BootstrapProgress
-from src.candles.application.bootstrap.use_cases import RunBootstrapUseCase
+from src.candles.application.bootstrap.use_cases import (
+    RunBootstrapUseCase,
+    _chunk_telemetry_payload,
+)
 from src.candles.domain.okx_calendar import StorageCalendar
 from src.candles.domain.repair import CoverageReconciliation, RepairWindow
 from src.candles.domain.repair_timeframes import list_expected_timestamps
@@ -14,6 +17,31 @@ from src.candles.domain.timeframes import TF_TO_MS
 
 _1H_MS = TF_TO_MS["1H"]
 _CAL = StorageCalendar()
+
+
+def test_chunk_telemetry_progress_pct_tracks_backward_checkpoint() -> None:
+    payload = _chunk_telemetry_payload(
+        symbol="BTC-USDT-SWAP",
+        timeframe="1H",
+        chunk_start_ts=0,
+        chunk_end_ts=5 * _1H_MS,
+        checkpoint_before_ts=10 * _1H_MS,
+        checkpoint_after_ts=5 * _1H_MS,
+        candles_returned=5,
+        rows_written=5,
+        invalid_rows=0,
+        empty=False,
+        fetch_latency_ms=1,
+        db_write_latency_ms=2,
+        state_write_latency_ms=3,
+        target_start_ts=0,
+        target_end_ts=10 * _1H_MS,
+        oldest_ts=0,
+        newest_ts=4 * _1H_MS,
+        status="ok",
+    )
+
+    assert payload["progress_pct"] == 50.0
 
 
 @dataclass
