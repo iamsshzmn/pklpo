@@ -14,21 +14,22 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from src.market_selection.cli import commands
+try:
+    from src.market_selection.cli import commands
+except ImportError:  # pragma: no cover - module removed; see pytestmark skip above
+    commands = None  # type: ignore[assignment]
 
 
 @pytest.fixture
 def mock_engine():
     """Фикстура мок-движка БД."""
-    engine = Mock()
-    return engine
+    return Mock()
 
 
 @pytest.fixture
 def mock_session():
     """Фикстура мок-сессии БД."""
-    session = AsyncMock()
-    return session
+    return AsyncMock()
 
 
 @pytest.mark.asyncio
