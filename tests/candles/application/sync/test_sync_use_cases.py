@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import Any
 import sys
 import types
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -28,9 +28,7 @@ _SHIMMED_PACKAGES = (
     "src.candles.domain",
     "src.candles.observability",
 )
-_ORIGINAL_SYS_MODULES = {
-    name: sys.modules.get(name) for name in _SHIMMED_PACKAGES
-}
+_ORIGINAL_SYS_MODULES = {name: sys.modules.get(name) for name in _SHIMMED_PACKAGES}
 
 
 def _install_namespace_package(name: str, path: Path) -> None:
@@ -314,7 +312,14 @@ async def test_sync_bar_drops_open_candle_only(
     use_case = _use_case(
         market_data=_MarketDataStub(
             candles=[
-                {"ts": 180_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
+                {
+                    "ts": 180_000,
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 1,
+                },
             ]
         ),
         candle_store=store,
@@ -350,8 +355,22 @@ async def test_sync_bar_drops_open_candle_saves_closed(
     use_case = _use_case(
         market_data=_MarketDataStub(
             candles=[
-                {"ts": 120_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
-                {"ts": 180_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
+                {
+                    "ts": 120_000,
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 1,
+                },
+                {
+                    "ts": 180_000,
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 1,
+                },
             ]
         ),
         candle_store=store,
@@ -391,7 +410,14 @@ async def _run_sync_bar_upsert_failed_emits_error_type_and_exc_info(
     use_case = _use_case(
         market_data=_MarketDataStub(
             candles=[
-                {"ts": 120_000, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1},
+                {
+                    "ts": 120_000,
+                    "open": 1,
+                    "high": 1,
+                    "low": 1,
+                    "close": 1,
+                    "volume": 1,
+                },
             ]
         ),
         candle_store=_FailingCandleStore(),
