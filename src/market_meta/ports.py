@@ -1,9 +1,17 @@
+"""Market metadata ports."""
+
 from __future__ import annotations
 
 from typing import Protocol
 
 
-class InstrumentRepositoryPort(Protocol):
-    async def instrument_exists(self, symbol: str) -> bool: ...
+class InstrumentLookupPort(Protocol):
+    async def instrument_exists(self, symbol: str) -> bool:
+        """Return whether ``symbol`` exists in the instrument catalog."""
+        ...
 
-    async def find_missing_symbols(self, symbols: list[str]) -> list[str]: ...
+
+class InstrumentRepositoryPort(InstrumentLookupPort, Protocol):
+    async def find_missing_symbols(self, symbols: list[str]) -> list[str]:
+        """Return symbols absent from the instrument catalog."""
+        ...

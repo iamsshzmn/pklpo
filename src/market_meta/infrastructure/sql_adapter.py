@@ -1,29 +1,35 @@
+"""SQL repository for instrument metadata."""
+
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from src.utils.session_utils import get_db_session
 
 
 class InstrumentSqlRepository:
-    """Queries the instruments table to check symbol existence."""
-
-    async def instrument_exists(self, symbol: str) -> bool:
-        async with get_db_session() as session:
-            result = await session.execute(
-                text("SELECT 1 FROM instruments WHERE symbol = :symbol LIMIT 1"),
-                {"symbol": symbol},
-            )
-            return result.fetchone() is not None
+    """Instrument catalog queries backed by the ``instruments`` table."""
 
     async def find_missing_symbols(self, symbols: list[str]) -> list[str]:
-        """Return symbols from the given list that are absent from the instruments table."""
-        if not symbols:
+        unique_symbols = [symbol for symbol in dict.fromkeys(symbols) if symbol]
+        if not unique_symbols:
             return []
+
+        stmt = text(
+            """
+            SELECT inst_id
+            FROM instruments
+            WHERE inst_id IN :symbols
+            """
+        ).bindparams(bindparam("symbols", expanding=True))
         async with get_db_session() as session:
-            result = await session.execute(
-                text("SELECT symbol FROM instruments WHERE symbol = ANY(:symbols)"),
-                {"symbols": symbols},
-            )
-            found = {row[0] for row in result.fetchall()}
-        return [s for s in symbols if s not in found]
+            result = await session.execute(stmt, {"symbols": unique_symbols})
+
+        existing = {str(row[0]) for row in result.fetchall()}
+        return [symbol for symbol in unique_symbols if symbol not in existing]
+
+    async def instrument_exists(self, symbol: str) -> bool:
+        if not symbol:
+            return False
+        missing = await self.find_missing_symbols([symbol])
+        return not missing
