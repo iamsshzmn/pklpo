@@ -14,8 +14,8 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from src.candles.infrastructure.recovery_decision_repository import (
-    RecoveryDecisionRepository,
     _INSERT_SQL,
+    RecoveryDecisionRepository,
 )
 
 

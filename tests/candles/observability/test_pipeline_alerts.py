@@ -53,5 +53,7 @@ def test_onboarding_stall_alerts_are_provisioned() -> None:
     assert (
         'pklpo_feature_warmup_bars_remaining{symbol!="",timeframe!=""}' in warmup_expr
     )
-    assert _rule("pklpo-instrument-bootstrap-stalled")["labels"]["severity"] == "warning"
+    assert (
+        _rule("pklpo-instrument-bootstrap-stalled")["labels"]["severity"] == "warning"
+    )
     assert _rule("pklpo-instrument-warmup-stalled")["labels"]["severity"] == "warning"

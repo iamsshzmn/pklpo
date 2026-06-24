@@ -59,9 +59,7 @@ def configure_tracing(
         service_name = service_name or settings.otel_service_name
         otlp_endpoint = otlp_endpoint or settings.otel_exporter_otlp_endpoint
         sample_ratio = (
-            float(settings.otel_sample_ratio)
-            if sample_ratio is None
-            else sample_ratio
+            float(settings.otel_sample_ratio) if sample_ratio is None else sample_ratio
         )
 
     if enabled is not True:

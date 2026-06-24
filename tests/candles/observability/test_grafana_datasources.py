@@ -104,9 +104,7 @@ def test_pipeline_dashboard_log_panel_mentions_trace_links() -> None:
     dashboard = json.loads(
         (DASHBOARD_DIR / "pipeline_observability.json").read_text(encoding="utf-8")
     )
-    log_panels = [
-        panel for panel in dashboard["panels"] if panel.get("type") == "logs"
-    ]
+    log_panels = [panel for panel in dashboard["panels"] if panel.get("type") == "logs"]
 
     assert any(
         "trace_id" in panel.get("description", "")
