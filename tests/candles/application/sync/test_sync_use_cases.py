@@ -2,90 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import sys
-import types
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
-
-# These namespace shims let us import the sync use-cases in isolation (with a
-# stubbed sqlalchemy) without executing the heavy package __init__ chain. They
-# replace real entries in the global sys.modules, so we snapshot just these
-# package names and restore them right after the imports below — otherwise the
-# fake namespace packages leak into the collection of every later test module and
-# shadow the real packages (breaking unrelated `from ...sync import ...` imports).
-# Only the package shims are restored; the real leaf modules imported through them
-# are left cached so the module object used here stays identical to the one the
-# tests monkeypatch.
-_SHIMMED_PACKAGES = (
-    "src.candles.application",
-    "src.candles.application.sync",
-    "src.candles.domain",
-    "src.candles.observability",
-)
-_ORIGINAL_SYS_MODULES = {name: sys.modules.get(name) for name in _SHIMMED_PACKAGES}
-
-
-def _install_namespace_package(name: str, path: Path) -> None:
-    module = types.ModuleType(name)
-    module.__path__ = [str(path)]  # type: ignore[attr-defined]
-    sys.modules[name] = module
-
-
-_install_namespace_package(
-    "src.candles.application",
-    _PROJECT_ROOT / "src" / "candles" / "application",
-)
-_install_namespace_package(
-    "src.candles.application.sync",
-    _PROJECT_ROOT / "src" / "candles" / "application" / "sync",
-)
-_install_namespace_package(
-    "src.candles.domain",
-    _PROJECT_ROOT / "src" / "candles" / "domain",
-)
-_install_namespace_package(
-    "src.candles.observability",
-    _PROJECT_ROOT / "src" / "candles" / "observability",
-)
-
-try:
-    import sqlalchemy  # noqa: F401
-except ImportError:
-    sqlalchemy_stub = types.ModuleType("sqlalchemy")
-
-    class _DBAPIError(Exception):
-        connection_invalidated = False
-
-    class _InterfaceError(Exception):
-        pass
-
-    class _OperationalError(Exception):
-        pass
-
-    sqlalchemy_stub.exc = types.SimpleNamespace(
-        DBAPIError=_DBAPIError,
-        InterfaceError=_InterfaceError,
-        OperationalError=_OperationalError,
-    )
-    sys.modules["sqlalchemy"] = sqlalchemy_stub
-
 from src.candles.application.sync.policy import RetryPolicy
 from src.candles.application.sync.use_cases import RunCandleSyncUseCase, _SyncStats
 from src.candles.domain.repair import RepairWindow
-
-# Restore the real package table so later test modules import the genuine
-# packages instead of these namespace shims.
-for _pkg_name, _pkg in _ORIGINAL_SYS_MODULES.items():
-    if _pkg is None:
-        sys.modules.pop(_pkg_name, None)
-    else:
-        sys.modules[_pkg_name] = _pkg
 
 
 @dataclass
