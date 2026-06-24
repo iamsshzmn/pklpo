@@ -249,24 +249,24 @@ async def _load_cooldown_rows(
     """Bulk-load cooldown rows for all candidate (action, symbol, timeframe) keys."""
     rows: list[dict[str, Any]] = []
 
-    for candidate in candidates_bootstrap:
+    for bootstrap_candidate in candidates_bootstrap:
         rows.extend(
             await repository.get_cooldown_rows(
                 action_kind="bootstrap",
                 target_dag_id=BOOTSTRAP_DAG_ID,
-                symbol=candidate.symbol,
-                timeframe=candidate.timeframe,
+                symbol=bootstrap_candidate.symbol,
+                timeframe=bootstrap_candidate.timeframe,
                 cooldown_minutes=config.cooldown_minutes,
             )
         )
 
-    for candidate in candidates_repair:
+    for repair_candidate in candidates_repair:
         rows.extend(
             await repository.get_cooldown_rows(
                 action_kind="repair",
                 target_dag_id=REPAIR_DAG_ID,
-                symbol=candidate.symbol,
-                timeframe=candidate.timeframe,
+                symbol=repair_candidate.symbol,
+                timeframe=repair_candidate.timeframe,
                 cooldown_minutes=config.cooldown_minutes,
             )
         )

@@ -311,7 +311,8 @@ async def test_collect_repair_skipped_when_okx_unhealthy() -> None:
 @pytest.mark.asyncio
 async def test_persist_decisions_called_on_healthy_postgres() -> None:
     """_persist_decisions must be called when postgres is healthy."""
-    persist_mock = AsyncMock(return_value=[_persisted_row()])
+    persisted_row = _persisted_row()
+    persist_mock = AsyncMock(return_value=[persisted_row])
 
     with (
         patch(
@@ -352,7 +353,7 @@ async def test_persist_decisions_called_on_healthy_postgres() -> None:
         result = await rc_facade.collect_and_decide(symbols=["BTC-USDT-SWAP"])
 
     persist_mock.assert_called_once()
-    assert result["persisted"] == [_persisted_row()]
+    assert result["persisted"] == [persisted_row]
 
 
 @pytest.mark.asyncio
@@ -494,7 +495,7 @@ async def test_triggered_decisions_visible_in_result() -> None:
             return_value=["BTC-USDT-SWAP"],
         ),
         patch(
-            "src.candles.application.recovery_controller.choose_recovery_actions",
+            "src.candles.interfaces.recovery_controller.choose_recovery_actions",
             return_value=[triggered],
         ),
     ):

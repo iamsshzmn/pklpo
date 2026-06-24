@@ -419,9 +419,9 @@ def choose_recovery_actions(
         )
 
     # ── Gate 4 + 2 + 5 + 6: repair candidates ───────────────────────────────
-    for candidate in actionable_repair:
-        symbol = candidate.symbol
-        timeframe = candidate.timeframe
+    for repair_candidate in actionable_repair:
+        symbol = repair_candidate.symbol
+        timeframe = repair_candidate.timeframe
 
         # Gate 2: conflict — don't repair while bootstrap is active
         if _is_dag_active(snapshot, BOOTSTRAP_DAG_ID):
@@ -452,7 +452,7 @@ def choose_recovery_actions(
             continue
 
         # Guardrail risk
-        if candidate.guardrail_risk not in {"ok"}:
+        if repair_candidate.guardrail_risk not in {"ok"}:
             decisions.append(
                 RecoveryDecision(
                     decision_status="precheck_failed",
@@ -461,9 +461,9 @@ def choose_recovery_actions(
                     symbol=symbol,
                     timeframe=timeframe,
                     precheck_payload={
-                        "guardrail_risk": candidate.guardrail_risk,
-                        "gap_tasks": candidate.gap_tasks,
-                        "requested_bars": candidate.requested_bars,
+                        "guardrail_risk": repair_candidate.guardrail_risk,
+                        "gap_tasks": repair_candidate.gap_tasks,
+                        "requested_bars": repair_candidate.requested_bars,
                     },
                 )
             )
@@ -472,7 +472,7 @@ def choose_recovery_actions(
         # Gate 5: cooldown
         repair_preset = (
             "controller-last-closed-bars"
-            if candidate.corrupted_bars > 0 and candidate.gap_tasks == 0
+            if repair_candidate.corrupted_bars > 0 and repair_candidate.gap_tasks == 0
             else "controller-gap-repair"
         )
         repair_dag_id = REPAIR_DAG_ID
@@ -510,7 +510,7 @@ def choose_recovery_actions(
 
         reason = (
             REASON_REPAIR_CORRUPTED_RECENT_CLOSED_BARS
-            if candidate.corrupted_bars > 0
+            if repair_candidate.corrupted_bars > 0
             else REASON_REPAIR_GAP_DETECTED
         )
 
@@ -521,9 +521,9 @@ def choose_recovery_actions(
             "reason": reason,
             "precheck": {
                 "source": CONTROLLER_DAG_ID,
-                "gap_tasks": candidate.gap_tasks,
-                "requested_bars": candidate.requested_bars,
-                "max_guardrail_risk": candidate.guardrail_risk,
+                "gap_tasks": repair_candidate.gap_tasks,
+                "requested_bars": repair_candidate.requested_bars,
+                "max_guardrail_risk": repair_candidate.guardrail_risk,
             },
         }
 
@@ -537,10 +537,10 @@ def choose_recovery_actions(
                 target_dag_id=repair_dag_id,
                 trigger_conf=trigger_conf,
                 precheck_payload={
-                    "gap_tasks": candidate.gap_tasks,
-                    "requested_bars": candidate.requested_bars,
-                    "corrupted_bars": candidate.corrupted_bars,
-                    "guardrail_risk": candidate.guardrail_risk,
+                    "gap_tasks": repair_candidate.gap_tasks,
+                    "requested_bars": repair_candidate.requested_bars,
+                    "corrupted_bars": repair_candidate.corrupted_bars,
+                    "guardrail_risk": repair_candidate.guardrail_risk,
                 },
                 cooldown_until=_cooldown_until_ts(config),
                 priority=5,
