@@ -13,7 +13,7 @@ from src.logging import get_logger as _get_logger, setup_logging
 
 # Emit deprecation warning
 warnings.warn(
-    "src.market_meta.infrastructure.logging_config is deprecated. "
+    "src.candles.infrastructure.logging_config is deprecated. "
     "Use src.logging instead.",
     DeprecationWarning,
     stacklevel=2,

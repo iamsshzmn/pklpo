@@ -29,8 +29,13 @@ from airflow.exceptions import AirflowFailException
 from airflow.models.param import Param
 from airflow.operators.python import PythonOperator
 
+from src.candles.application.metadata.instrument_validation import (
+    validate_instrument_exists,
+)
 from src.candles.bootstrap import create_candles_airflow_callbacks
+from src.candles.domain.exceptions import InstrumentNotFoundError
 from src.candles.domain.repair import RepairExecutionMode, RepairStrategy
+from src.candles.infrastructure.instrument_repository import InstrumentSqlRepository
 from src.candles.instruments_service import (
     ensure_symbols_registered,
     load_symbols_from_file,
@@ -45,9 +50,6 @@ from src.candles.interfaces.repair_audit import (
     write_swap_repair_audit,
 )
 from src.candles.observability.prometheus import push_swap_repair_metrics
-from src.market_meta.application.validate_instrument import validate_instrument_exists
-from src.market_meta.domain.exceptions import InstrumentNotFoundError
-from src.market_meta.infrastructure.sql_adapter import InstrumentSqlRepository
 
 logger = logging.getLogger(__name__)
 
