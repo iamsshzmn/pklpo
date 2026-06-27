@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from src.market_meta.application.validate_instrument import validate_instrument_exists
-from src.market_meta.domain.exceptions import InstrumentNotFoundError
+from src.candles.application.metadata.instrument_validation import (
+    validate_instrument_exists,
+)
+from src.candles.domain.exceptions import InstrumentNotFoundError
 
 
 class _FakeRepo:

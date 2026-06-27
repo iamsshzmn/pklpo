@@ -51,6 +51,18 @@ class InstrumentCatalogQueryPort(Protocol):
     async def get_instrument_counts(self) -> dict[str, int]: ...
 
 
+class InstrumentLookupPort(Protocol):
+    async def instrument_exists(self, symbol: str) -> bool:
+        """Return whether ``symbol`` exists in the instrument catalog."""
+        ...
+
+
+class InstrumentRepositoryPort(InstrumentLookupPort, Protocol):
+    async def find_missing_symbols(self, symbols: list[str]) -> list[str]:
+        """Return symbols absent from the instrument catalog."""
+        ...
+
+
 class CandleStorePort(Protocol):
     async def upsert_candles(
         self,
@@ -93,6 +105,8 @@ __all__ = [
     "CandleStorePort",
     "InstrumentCatalogPort",
     "InstrumentCatalogQueryPort",
+    "InstrumentLookupPort",
+    "InstrumentRepositoryPort",
     "MarketDataPort",
     "SyncStatePort",
     "TelemetryPort",

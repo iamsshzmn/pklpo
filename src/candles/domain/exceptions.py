@@ -372,3 +372,11 @@ def format_error_message(error: MarketMetaError) -> str:
                 context_parts.append(f"{key}={value}")
         return f"{error.message} [{', '.join(context_parts)}]"
     return error.message
+
+
+class InstrumentNotFoundError(ValueError):
+    """Raised when an instrument is absent from the registered catalog."""
+
+    def __init__(self, symbol: str) -> None:
+        self.symbol = symbol
+        super().__init__(f"Instrument not found: {symbol}")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.market_meta.infrastructure.sql_adapter import InstrumentSqlRepository
+from src.candles.infrastructure.instrument_repository import InstrumentSqlRepository
 
 
 async def test_find_missing_symbols_returns_symbols_not_in_db() -> None:
@@ -17,7 +17,7 @@ async def test_find_missing_symbols_returns_symbols_not_in_db() -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with patch(
-        "src.market_meta.infrastructure.sql_adapter.get_db_session",
+        "src.candles.infrastructure.instrument_repository.get_db_session",
         return_value=mock_ctx,
     ):
         repo = InstrumentSqlRepository()
@@ -40,7 +40,7 @@ async def test_find_missing_symbols_returns_empty_when_all_present() -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with patch(
-        "src.market_meta.infrastructure.sql_adapter.get_db_session",
+        "src.candles.infrastructure.instrument_repository.get_db_session",
         return_value=mock_ctx,
     ):
         repo = InstrumentSqlRepository()
@@ -61,7 +61,7 @@ async def test_find_missing_symbols_returns_all_when_db_empty() -> None:
     mock_ctx.__aexit__ = AsyncMock(return_value=False)
 
     with patch(
-        "src.market_meta.infrastructure.sql_adapter.get_db_session",
+        "src.candles.infrastructure.instrument_repository.get_db_session",
         return_value=mock_ctx,
     ):
         repo = InstrumentSqlRepository()

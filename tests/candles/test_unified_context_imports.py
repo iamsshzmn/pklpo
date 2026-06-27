@@ -39,7 +39,7 @@ def test_canonical_candles_modules_import(module_name: str) -> None:
 @pytest.mark.parametrize(
     "module_name",
     [
-        "src.market_meta.api",  # no .api sub-module in new market_meta
+        "src.market_meta.api",  # src.market_meta package removed entirely
         "src.candles.sync_swap_candles",
         "src.candles.swap_cli",
         "src.candles.parity_check",

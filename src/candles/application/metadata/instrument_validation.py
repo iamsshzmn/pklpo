@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from src.market_meta.domain.exceptions import InstrumentNotFoundError
+from src.candles.domain.exceptions import InstrumentNotFoundError
 
 if TYPE_CHECKING:
-    from src.market_meta.ports import InstrumentLookupPort
+    from src.candles.ports import InstrumentLookupPort
 
 
 async def validate_instrument_exists(
