@@ -10,8 +10,7 @@ from src.candles.infrastructure.adapters import build_market_data_adapter
 from src.candles.load_instruments import save_instruments_to_db
 
 if TYPE_CHECKING:
-    from src.candles.ports import InstrumentCatalogQueryPort
-    from src.candles.ports import InstrumentRepositoryPort
+    from src.candles.ports import InstrumentCatalogQueryPort, InstrumentRepositoryPort
 
 PRIORITY_SYMBOLS = ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
 
