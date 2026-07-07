@@ -1,0 +1,248 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "description": "Expected vs actual closed candles for the selected symbols. bars_back is shared across all timeframes.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 95 },
+              { "color": "green", "value": 99.5 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "fill_pct" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              {
+                "id": "custom.cellOptions",
+                "value": { "mode": "basic", "type": "color-background" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byRegexp", "options": "/.*_rows|symbols/" },
+            "properties": [{ "id": "unit", "value": "short" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [{ "desc": false, "displayName": "fill_pct" }]
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH params AS (\n    SELECT greatest('${bars_back}'::bigint, 1) AS bars_back\n),\nselected_symbols AS (\n    SELECT DISTINCT symbol\n    FROM swap_ohlcv_p\n    WHERE '$__all' IN (${symbol:singlequote})\n       OR symbol IN (${symbol:singlequote})\n),\nstep_tf AS (\n    SELECT * FROM (VALUES\n        ('1H', 3600000::bigint),\n        ('4H', 14400000::bigint)\n    ) AS t(timeframe, step_ms)\n),\nstep_expected AS (\n    SELECT s.symbol, st.timeframe, gs AS expected_ts_ms\n    FROM selected_symbols s\n    CROSS JOIN step_tf st\n    CROSS JOIN params p\n    CROSS JOIN LATERAL generate_series(\n        (floor(extract(epoch FROM now()) * 1000 / st.step_ms) * st.step_ms - p.bars_back * st.step_ms)::bigint,\n        (floor(extract(epoch FROM now()) * 1000 / st.step_ms) * st.step_ms - st.step_ms)::bigint,\n        st.step_ms\n    ) AS gs\n),\ncal_expected AS (\n    SELECT s.symbol, '1D' AS timeframe,\n        (extract(epoch FROM (date_trunc('day', now() AT TIME ZONE 'UTC') - (gs.n || ' day')::interval)) * 1000)::bigint AS expected_ts_ms\n    FROM selected_symbols s CROSS JOIN params p CROSS JOIN generate_series(1, p.bars_back) AS gs(n)\n    UNION ALL\n    SELECT s.symbol, '1W' AS timeframe,\n        (extract(epoch FROM (date_trunc('week', now() AT TIME ZONE 'UTC') - (gs.n || ' week')::interval)) * 1000)::bigint AS expected_ts_ms\n    FROM selected_symbols s CROSS JOIN params p CROSS JOIN generate_series(1, p.bars_back) AS gs(n)\n    UNION ALL\n    SELECT s.symbol, '1M' AS timeframe,\n        (extract(epoch FROM (date_trunc('month', now() AT TIME ZONE 'UTC') - (gs.n || ' month')::interval)) * 1000)::bigint AS expected_ts_ms\n    FROM selected_symbols s CROSS JOIN params p CROSS JOIN generate_series(1, p.bars_back) AS gs(n)\n),\nexpected AS (\n    SELECT symbol, timeframe, expected_ts_ms FROM step_expected\n    UNION ALL\n    SELECT symbol, timeframe, expected_ts_ms FROM cal_expected\n),\nactual AS (\n    SELECT e.symbol, e.timeframe,\n        count(e.expected_ts_ms) AS expected_rows,\n        count(o.timestamp) AS actual_rows,\n        max(o.timestamp) AS last_ts_ms\n    FROM expected e\n    LEFT JOIN swap_ohlcv_p o\n        ON o.symbol = e.symbol\n       AND o.timeframe = e.timeframe\n       AND o.timestamp = e.expected_ts_ms\n    GROUP BY e.symbol, e.timeframe\n)\nSELECT\n    symbol,\n    timeframe,\n    expected_rows,\n    actual_rows,\n    expected_rows - actual_rows AS missing_rows,\n    round(100.0 * actual_rows / nullif(expected_rows, 0), 2) AS fill_pct,\n    to_timestamp(last_ts_ms / 1000.0) AT TIME ZONE 'UTC' AS last_candle_utc,\n    to_timestamp(last_ts_ms / 1000.0) AT TIME ZONE 'Asia/Shanghai' AS last_candle_cst\nFROM actual\nORDER BY fill_pct ASC, symbol, timeframe;",
+          "refId": "A"
+        }
+      ],
+      "title": "Candle Coverage by Symbol",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "description": "Aggregated closed-candle coverage by timeframe for the selected symbols.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 95 },
+              { "color": "green", "value": 99.5 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "fill_pct" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              {
+                "id": "custom.cellOptions",
+                "value": { "mode": "basic", "type": "color-background" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byRegexp", "options": "/.*_rows|symbols/" },
+            "properties": [{ "id": "unit", "value": "short" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 14 },
+      "id": 2,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [{ "desc": false, "displayName": "fill_pct" }]
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH params AS (\n    SELECT greatest('${bars_back}'::bigint, 1) AS bars_back\n),\nselected_symbols AS (\n    SELECT DISTINCT symbol\n    FROM swap_ohlcv_p\n    WHERE '$__all' IN (${symbol:singlequote})\n       OR symbol IN (${symbol:singlequote})\n),\nstep_tf AS (\n    SELECT * FROM (VALUES\n        ('1H', 3600000::bigint),\n        ('4H', 14400000::bigint)\n    ) AS t(timeframe, step_ms)\n),\nstep_expected AS (\n    SELECT s.symbol, st.timeframe, gs AS expected_ts_ms\n    FROM selected_symbols s\n    CROSS JOIN step_tf st\n    CROSS JOIN params p\n    CROSS JOIN LATERAL generate_series(\n        (floor(extract(epoch FROM now()) * 1000 / st.step_ms) * st.step_ms - p.bars_back * st.step_ms)::bigint,\n        (floor(extract(epoch FROM now()) * 1000 / st.step_ms) * st.step_ms - st.step_ms)::bigint,\n        st.step_ms\n    ) AS gs\n),\ncal_expected AS (\n    SELECT s.symbol, '1D' AS timeframe,\n        (extract(epoch FROM (date_trunc('day', now() AT TIME ZONE 'UTC') - (gs.n || ' day')::interval)) * 1000)::bigint AS expected_ts_ms\n    FROM selected_symbols s CROSS JOIN params p CROSS JOIN generate_series(1, p.bars_back) AS gs(n)\n    UNION ALL\n    SELECT s.symbol, '1W' AS timeframe,\n        (extract(epoch FROM (date_trunc('week', now() AT TIME ZONE 'UTC') - (gs.n || ' week')::interval)) * 1000)::bigint AS expected_ts_ms\n    FROM selected_symbols s CROSS JOIN params p CROSS JOIN generate_series(1, p.bars_back) AS gs(n)\n    UNION ALL\n    SELECT s.symbol, '1M' AS timeframe,\n        (extract(epoch FROM (date_trunc('month', now() AT TIME ZONE 'UTC') - (gs.n || ' month')::interval)) * 1000)::bigint AS expected_ts_ms\n    FROM selected_symbols s CROSS JOIN params p CROSS JOIN generate_series(1, p.bars_back) AS gs(n)\n),\nexpected AS (\n    SELECT symbol, timeframe, expected_ts_ms FROM step_expected\n    UNION ALL\n    SELECT symbol, timeframe, expected_ts_ms FROM cal_expected\n),\nactual AS (\n    SELECT e.symbol, e.timeframe,\n        count(e.expected_ts_ms) AS expected_rows,\n        count(o.timestamp) AS actual_rows,\n        max(o.timestamp) AS last_ts_ms\n    FROM expected e\n    LEFT JOIN swap_ohlcv_p o\n        ON o.symbol = e.symbol\n       AND o.timeframe = e.timeframe\n       AND o.timestamp = e.expected_ts_ms\n    GROUP BY e.symbol, e.timeframe\n)\nSELECT\n    timeframe,\n    count(*) AS symbols,\n    sum(expected_rows) AS expected_rows,\n    sum(actual_rows) AS actual_rows,\n    sum(expected_rows - actual_rows) AS missing_rows,\n    round(100.0 * sum(actual_rows) / nullif(sum(expected_rows), 0), 2) AS fill_pct,\n    to_timestamp(min(last_ts_ms) / 1000.0) AT TIME ZONE 'UTC' AS min_last_candle_utc,\n    to_timestamp(max(last_ts_ms) / 1000.0) AT TIME ZONE 'UTC' AS max_last_candle_utc,\n    to_timestamp(min(last_ts_ms) / 1000.0) AT TIME ZONE 'Asia/Shanghai' AS min_last_candle_cst,\n    to_timestamp(max(last_ts_ms) / 1000.0) AT TIME ZONE 'Asia/Shanghai' AS max_last_candle_cst\nFROM actual\nGROUP BY timeframe\nORDER BY fill_pct ASC, timeframe;",
+          "refId": "A"
+        }
+      ],
+      "title": "Candle Coverage by Timeframe",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+      "description": "Pipeline recovery decisions grouped into lifecycle buckets so terminal symbols do not look like sync failures.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "decisions" },
+            "properties": [{ "id": "unit", "value": "short" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "id": 3,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "decisions" }]
+      },
+      "pluginVersion": "10.4.1",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH recent AS (\n    SELECT\n        reason,\n        symbol,\n        timeframe,\n        decision_status,\n        created_at,\n        safety_payload,\n        CASE\n            WHEN reason = 'instrument_state_unknown' THEN 'instrument_state_unknown'\n            WHEN reason = 'instrument_not_live'\n                 AND safety_payload->>'instrument_state' = 'expired' THEN 'expired_terminal'\n            WHEN reason = 'bootstrap_state_missing' THEN 'new_live_no_bootstrap'\n            ELSE reason\n        END AS lifecycle_bucket\n    FROM ops.pipeline_recovery_decisions\n    WHERE controller_dag_id = 'pipeline_recovery_controller'\n      AND created_at >= now() - interval '24 hours'\n      AND reason IN ('instrument_not_live','instrument_state_unknown','bootstrap_state_missing')\n)\nSELECT\n    lifecycle_bucket,\n    count(*) AS decisions,\n    count(DISTINCT symbol) AS symbols,\n    max(created_at) AS last_seen_utc\nFROM recent\nGROUP BY lifecycle_bucket\nORDER BY decisions DESC, lifecycle_bucket;",
+          "refId": "A"
+        }
+      ],
+      "title": "Recovery Lifecycle Buckets",
+      "type": "table"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["pklpo", "data-quality", "test"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "PostgresPKLPO", "value": "PostgresPKLPO" },
+        "hide": 0,
+        "includeAll": false,
+        "name": "DS_POSTGRES",
+        "query": "postgres",
+        "type": "datasource"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "postgres", "uid": "${DS_POSTGRES}" },
+        "definition": "SELECT DISTINCT symbol FROM swap_ohlcv_p ORDER BY 1",
+        "hide": 0,
+        "includeAll": true,
+        "label": "symbol",
+        "multi": true,
+        "name": "symbol",
+        "options": [],
+        "query": "SELECT DISTINCT symbol FROM swap_ohlcv_p ORDER BY 1",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": false, "text": "200", "value": "200" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "bars_back",
+        "multi": false,
+        "name": "bars_back",
+        "options": [],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-30d", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "PKLPO Candle Coverage (test)",
+  "uid": "pklpo-candle-coverage",
+  "version": 1
+}

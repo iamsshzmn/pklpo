@@ -114,6 +114,11 @@ services:
       GF_UNIFIED_ALERTING_ENABLED: "true"
       GF_ALERTING_ENABLED: "false"
       GF_FEATURE_TOGGLES_ENABLE: "lokiExploreLogsEnabled"
+      GRAFANA_PG_USER: ${GRAFANA_PG_USER:-grafana_ro}
+      GRAFANA_PG_PASSWORD: ${GRAFANA_PG_PASSWORD:-CHANGE_ME}
+      GRAFANA_PG_HOST: ${GRAFANA_PG_HOST:-pklpo_db}
+      GRAFANA_PG_PORT: ${GRAFANA_PG_PORT:-5432}
+      GRAFANA_PG_DB: ${GRAFANA_PG_DB:-pklpo}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
