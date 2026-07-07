@@ -215,6 +215,24 @@ class SwapCandlesRepository:
             symbols = [row[0] for row in result.fetchall()]
         return sorted(symbols)
 
+    async def get_instrument_states(self, symbols: list[str]) -> dict[str, str]:
+        if not symbols:
+            return {}
+
+        async with get_db_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    SELECT symbol, state
+                    FROM instruments
+                    WHERE symbol = ANY(:symbols)
+                    """
+                ),
+                {"symbols": symbols},
+            )
+            rows = result.fetchall()
+        return {str(symbol): str(state) for symbol, state in rows}
+
     async def get_latest_timestamp(
         self,
         *,

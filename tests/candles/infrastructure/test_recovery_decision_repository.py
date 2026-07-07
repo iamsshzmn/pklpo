@@ -14,7 +14,9 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from src.candles.infrastructure.recovery_decision_repository import (
+    _COOLDOWN_SQL,
     _INSERT_SQL,
+    _UPDATE_TRIGGER_RESULT_SQL,
     RecoveryDecisionRepository,
 )
 
@@ -131,6 +133,20 @@ def test_insert_decision_sql_compiles_json_payload_binds_for_asyncpg() -> None:
     assert ":safety_payload::jsonb" not in compiled
 
 
+def test_update_trigger_result_sql_updates_status_and_target_run_id() -> None:
+    compiled = str(_UPDATE_TRIGGER_RESULT_SQL.compile(dialect=postgresql.dialect()))
+
+    assert "decision_status" in compiled
+    assert "target_run_id" in compiled
+    assert "WHERE id" in compiled
+
+
+def test_cooldown_sql_only_reads_triggered_decisions() -> None:
+    compiled = str(_COOLDOWN_SQL.compile(dialect=postgresql.dialect()))
+
+    assert "decision_status = 'triggered'" in compiled
+
+
 @pytest.mark.asyncio
 async def test_get_cooldown_rows_returns_empty_when_no_rows() -> None:
     ctx, _session = _make_session_context(fetchall_return=[])
@@ -149,6 +165,30 @@ async def test_get_cooldown_rows_returns_empty_when_no_rows() -> None:
         )
 
     assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_mark_trigger_result_commits_update() -> None:
+    ctx, session = _make_session_context()
+
+    with patch(
+        "src.candles.infrastructure.recovery_decision_repository.get_db_session",
+        return_value=ctx,
+    ):
+        repo = RecoveryDecisionRepository()
+        await repo.mark_trigger_result(
+            decision_id=42,
+            decision_status="triggered",
+            target_run_id="manual__2026-06-25T01:02:03+00:00",
+            error=None,
+        )
+
+    session.execute.assert_called_once()
+    params = session.execute.call_args[0][1]
+    assert params["id"] == 42
+    assert params["decision_status"] == "triggered"
+    assert params["target_run_id"] == "manual__2026-06-25T01:02:03+00:00"
+    session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
