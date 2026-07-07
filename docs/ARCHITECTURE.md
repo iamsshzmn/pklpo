@@ -495,11 +495,13 @@ src/market_meta/
 |----------------|-------------------|------------|
 | OHLCV данные | `swap_ohlcv_p` | Партиционирована по месяцам. **Source of truth для coverage.** |
 | Bootstrap state | `ops.swap_ohlcv_bootstrap_state` | Checkpoint + кэш покрытия. Всегда верифицируется через `swap_ohlcv_p`. |
-| Индикаторы | `indicators` | НЕ партиционирована |
+| Индикаторы (live) | `indicators_p` | Партиционирована по месяцам (`indicators_partition_maintenance` DAG). **Source of truth для features/scoring** — `IndicatorStorageContract.table_name = "indicators_p"`. |
 | Legacy OHLCV | `ohlcv` | Пустая (не используется) |
-| Legacy Indicators | `indicators_p` | Пустая (не используется) |
+| Legacy Indicators | `indicators` | НЕ партиционирована, не используется живым кодом |
 
 **Известная проблема:** Модель `OHLCV` ссылается на таблицу `ohlcv` (пустая). Фактические данные в `swap_ohlcv_p`. Функция `fetch_ohlcv_df` имеет fallback на `swap_ohlcv_p`.
+
+**Исправлено (2026-07-06, data layers identity plan Task 6.3):** эта таблица ранее указывала `indicators_p` как пустую legacy-таблицу, а непартиционированную `indicators` — как живую. Это было перепутано местами: `indicators_p` — живая, партиционированная, source of truth (см. `src/features/storage_contract.py`); `indicators` — непартиционированный legacy, не используется. См. `docs/MENTAL_MODEL.md` §5 (там расхождение уже помечено как transitional inconsistency).
 
 ### Bootstrap state schema (ops.swap_ohlcv_bootstrap_state)
 

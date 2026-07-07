@@ -17,10 +17,10 @@ FEATURE_ELIGIBILITY_STATES = (
     "disabled",
 )
 
-FEATURE_ELIGIBILITY_TABLE_SQL = """
-CREATE SCHEMA IF NOT EXISTS ops;
-
-CREATE TABLE IF NOT EXISTS ops.feature_eligibility (
+FEATURE_ELIGIBILITY_TABLE_STATEMENTS = (
+    "CREATE SCHEMA IF NOT EXISTS ops",
+    """
+    CREATE TABLE IF NOT EXISTS ops.feature_eligibility (
     symbol               TEXT        NOT NULL,
     timeframe            TEXT        NOT NULL,
     state                TEXT        NOT NULL,
@@ -44,14 +44,19 @@ CREATE TABLE IF NOT EXISTS ops.feature_eligibility (
         'eligible','insufficient_history','incomplete_history',
         'invalid_history','informational_only','disabled'
     ))
-);
+)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS ix_fe_state
+    ON ops.feature_eligibility (timeframe, state)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS ix_fe_evaluated
+    ON ops.feature_eligibility (evaluated_at DESC)
+    """,
+)
 
-CREATE INDEX IF NOT EXISTS ix_fe_state
-    ON ops.feature_eligibility (timeframe, state);
-
-CREATE INDEX IF NOT EXISTS ix_fe_evaluated
-    ON ops.feature_eligibility (evaluated_at DESC);
-"""
+FEATURE_ELIGIBILITY_TABLE_SQL = ";\n\n".join(FEATURE_ELIGIBILITY_TABLE_STATEMENTS) + ";"
 
 
 async def migrate_create_ops_feature_eligibility() -> None:
@@ -62,7 +67,8 @@ async def migrate_create_ops_feature_eligibility() -> None:
     """
     async with get_db_session() as session:
         try:
-            await session.execute(text(FEATURE_ELIGIBILITY_TABLE_SQL))
+            for statement in FEATURE_ELIGIBILITY_TABLE_STATEMENTS:
+                await session.execute(text(statement))
             await session.commit()
             logger.info("ops.feature_eligibility table ensured")
         except Exception:

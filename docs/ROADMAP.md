@@ -224,6 +224,16 @@ Over-engineering сам не уйдёт — нужен явный заплани
 | DE4 | MinIO/Iceberg lakehouse layer: перенести стабильный Parquet export в object storage и оформить Iceberg tables только после стабилизации DE3. | P2 |
 | DE5 | Redpanda/Kafka event bus: публиковать события после успешных pipeline actions (`ohlcv.synced`, `features.calculated`, `quality.checked`, `market_universe.refreshed`) как audit/notification/event-consumer слой, не как замену PostgreSQL ingest. | P1 |
 
+> **Zone separation note (2026-07-06, data layers identity plan §16.3):** DE1's
+> `swap_ohlcv_p` source description predates the identity/continuous-series
+> facade (`core.v_ohlcv_facade`, live since Task 4.3). When DE1 is implemented,
+> analytical dbt sources/staging should read `core.v_ohlcv_facade` (PIT-adjusted,
+> gap/segment-aware, keyed by `series_id`) rather than `public.swap_ohlcv_p`
+> directly — the facade *is* the physical read contract for analytics; dbt marts
+> (DE1) and the DuckDB export (DE3) build on top of it, they don't bypass it.
+> `swap_ohlcv_p` stays a legitimate direct source only for operational/ingest-health
+> tooling (see `OPERATIONAL_ALLOWLIST` in `src/identity/application/raw_read_guard.py`).
+
 ### Learning Track (явно отделён от critical path)
 
 Делается ради обучения, не ради продукта — не путать learning value с business
