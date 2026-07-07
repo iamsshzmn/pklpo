@@ -89,10 +89,10 @@ async def test_fetch_feature_bars_via_facade_propagates_disabled_error() -> None
     """Kill-switch fail-closed (§12.11): the facade's
     ContinuousReadDisabledError must propagate unmodified, never be
     swallowed into an empty/partial result."""
-    from src.identity.application.ohlcv_facade import ContinuousReadDisabledError
     from src.identity.application.feature_cutover import (
         fetch_feature_bars_via_facade,
     )
+    from src.identity.application.ohlcv_facade import ContinuousReadDisabledError
 
     facade = _StubFacade(raises=ContinuousReadDisabledError("disabled"))
 
@@ -227,7 +227,7 @@ def test_compute_affected_recalc_range_extends_to_last_built_ts() -> None:
 
 
 @pytest.mark.parametrize(
-    "lower,upper",
+    ("lower", "upper"),
     [([], [700]), ([300], [])],
 )
 def test_compute_affected_recalc_range_fails_closed_on_empty_bounds(

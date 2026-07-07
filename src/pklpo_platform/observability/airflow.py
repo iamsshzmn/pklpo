@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 _COMMON_OBSERVABILITY_PATH = (
     Path(__file__).resolve().parents[3]

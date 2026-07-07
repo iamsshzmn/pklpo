@@ -23,7 +23,7 @@ filter ``error_type != "-"``):
 from __future__ import annotations
 
 import socket
-from enum import Enum
+from enum import StrEnum
 
 try:
     import asyncpg as _asyncpg  # type: ignore[import]
@@ -36,7 +36,7 @@ except ImportError:  # pragma: no cover
     _sa_exc = None
 
 
-class ErrorType(str, Enum):
+class ErrorType(StrEnum):
     """Low-cardinality error-type values for structured telemetry fields.
 
     Inherits from ``str`` so values compare equal to their string literals and

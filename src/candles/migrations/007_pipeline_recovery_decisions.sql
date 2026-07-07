@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS ops.pipeline_recovery_decisions (
     logical_date            TIMESTAMPTZ,
 
     -- Решение
-    decision_status         TEXT            NOT NULL,  -- skip | precheck_failed | candidate | triggered | trigger_failed
+    decision_status         TEXT            NOT NULL,  -- skip | precheck_failed | triggered | trigger_failed
     action_kind             TEXT            NOT NULL,  -- none | repair | bootstrap
     target_dag_id           TEXT,
     target_run_id           TEXT,
@@ -51,7 +51,7 @@ COMMENT ON TABLE ops.pipeline_recovery_decisions IS
     'Каждая запись — одно решение контроллера по (symbol, timeframe).';
 
 COMMENT ON COLUMN ops.pipeline_recovery_decisions.decision_status IS
-    'skip | precheck_failed | candidate | triggered | trigger_failed';
+    'skip | precheck_failed | triggered | trigger_failed';
 COMMENT ON COLUMN ops.pipeline_recovery_decisions.action_kind IS
     'none | repair | bootstrap';
 COMMENT ON COLUMN ops.pipeline_recovery_decisions.cooldown_until IS

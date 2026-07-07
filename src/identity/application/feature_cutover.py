@@ -33,7 +33,6 @@ for the SQL adapter) — a narrower, range-bounded alternative to the blanket
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol
 
 from src.identity.application.feature_reset_policy import SegmentedBar
@@ -41,6 +40,7 @@ from src.identity.application.feature_reset_policy import SegmentedBar
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
+    from decimal import Decimal
 
     from src.identity.application.ohlcv_facade import OhlcvFacade
 
@@ -90,26 +90,26 @@ async def fetch_feature_bars_via_facade(
 
 
 def _to_feature_bar(row: object) -> FeatureBar:
-    open_ = getattr(row, "open")
-    high = getattr(row, "high")
-    low = getattr(row, "low")
-    close = getattr(row, "close")
-    volume = getattr(row, "volume")
+    open_ = row.open
+    high = row.high
+    low = row.low
+    close = row.close
+    volume = row.volume
     if None in (open_, high, low, close, volume):
         raise ValueError(
             f"facade returned an incomplete non-gap bar at timestamp "
-            f"{getattr(row, 'timestamp')} for series {getattr(row, 'series_id')} "
+            f"{row.timestamp} for series {row.series_id} "
             f"(is_gap=False but a price/volume field is None)"
         )
-    segment_id = getattr(row, "segment_id")
+    segment_id = row.segment_id
     if segment_id is None:
         raise ValueError(
             f"facade returned a non-gap bar with no segment_id at timestamp "
-            f"{getattr(row, 'timestamp')} for series {getattr(row, 'series_id')} — "
+            f"{row.timestamp} for series {row.series_id} — "
             "segment-aware reset primitives require every bar to carry one"
         )
     return FeatureBar(
-        timestamp=getattr(row, "timestamp"),
+        timestamp=row.timestamp,
         segment_id=segment_id,
         open=open_,
         high=high,

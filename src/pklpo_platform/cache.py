@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
-from enum import Enum
+from enum import StrEnum
 from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ def get_cache_stats() -> dict[str, int]:
     return {"hits": _cache_hits, "misses": _cache_misses}
 
 
-class CacheGroup(str, Enum):
+class CacheGroup(StrEnum):
     EXCHANGE_METADATA = "exchange_metadata"
     INSTRUMENT_LIST = "instrument_list"
     LAST_TIMESTAMP = "last_timestamp"
