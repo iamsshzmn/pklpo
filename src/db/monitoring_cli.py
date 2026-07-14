@@ -129,9 +129,9 @@ async def show_metrics(hours: int = 24) -> None:
             # Форматируем значение
             if isinstance(value, int | float):
                 if value > 1000000:
-                    formatted_value = f"{value/1000000:.2f}M"
+                    formatted_value = f"{value / 1000000:.2f}M"
                 elif value > 1000:
-                    formatted_value = f"{value/1000:.2f}K"
+                    formatted_value = f"{value / 1000:.2f}K"
                 else:
                     formatted_value = f"{value:.2f}"
             else:

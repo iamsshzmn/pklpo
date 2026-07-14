@@ -374,7 +374,7 @@ class ScoringProcessor:
                 for i in range(0, len(records), self.batch_size):
                     batch = records[i : i + self.batch_size]
                     logger.info(
-                        f"📦 Обрабатываем пакет {i//self.batch_size + 1}/{(len(records)-1)//self.batch_size + 1} "
+                        f"📦 Обрабатываем пакет {i // self.batch_size + 1}/{(len(records) - 1) // self.batch_size + 1} "
                         f"({len(batch)} записей)"
                     )
 

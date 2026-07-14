@@ -97,7 +97,9 @@ def memory_monitor(name: str = "operation"):
 
 
 def log_dataframe_info(
-    df: pd.DataFrame, name: str = "DataFrame", log_level: int = 20  # 20 = logging.INFO
+    df: pd.DataFrame,
+    name: str = "DataFrame",
+    log_level: int = 20,  # 20 = logging.INFO
 ):
     """Log detailed DataFrame information."""
     if df is not None and not df.empty:

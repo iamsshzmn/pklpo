@@ -334,7 +334,7 @@ async def process_score_recommendations(
             # Небольшая пауза между обработкой
             if i % 10 == 0:
                 logger.info(
-                    f"Прогресс: {i}/{len(score_ids)} ({i/len(score_ids)*100:.1f}%)"
+                    f"Прогресс: {i}/{len(score_ids)} ({i / len(score_ids) * 100:.1f}%)"
                 )
                 await asyncio.sleep(0.1)  # Небольшая пауза каждые 10 записей
 

@@ -46,11 +46,11 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_create_combination_features import (
         migrate_create_combination_features,
     )
-    from src.db.migrations.migrate_create_core_identity import (
-        migrate_create_core_identity,
-    )
     from src.db.migrations.migrate_create_continuous_ohlcv_build_audit import (
         migrate_create_continuous_ohlcv_build_audit,
+    )
+    from src.db.migrations.migrate_create_core_identity import (
+        migrate_create_core_identity,
     )
     from src.db.migrations.migrate_create_core_ohlcv_facade import (
         migrate_create_core_ohlcv_facade,

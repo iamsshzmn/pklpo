@@ -2,10 +2,12 @@
 
 import pandas as pd
 
-from src.features.core import *  # noqa: F403
-from src.features.core import compute_features as _compute_features
-from src.features.core import get_feature_info as _get_feature_info
-from src.features.core import validate_feature_compatibility as _validate_feature_compatibility
+from src.features.core import *
+from src.features.core import (
+    compute_features as _compute_features,
+    get_feature_info as _get_feature_info,
+    validate_feature_compatibility as _validate_feature_compatibility,
+)
 from src.features.domain.models import FeatureSpec
 from src.features.validation.feature_validator import (
     validate_feature_compatibility as _legacy_validate_feature_compatibility,

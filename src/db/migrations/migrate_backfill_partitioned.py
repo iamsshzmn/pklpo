@@ -168,7 +168,7 @@ async def backfill_ohlcv_data(batch_size: int = 10000) -> None:
             offset += batch_size
 
             logger.info(
-                f"📦 Перенесено {transferred}/{total_records} записей ({(transferred/total_records)*100:.1f}%)"
+                f"📦 Перенесено {transferred}/{total_records} записей ({(transferred / total_records) * 100:.1f}%)"
             )
 
         logger.info(f"✅ Перенос ohlcv завершен: {transferred} записей")
@@ -277,7 +277,7 @@ async def backfill_indicators_data(batch_size: int = 10000) -> None:
             offset += batch_size
 
             logger.info(
-                f"📦 Перенесено {transferred}/{total_records} записей ({(transferred/total_records)*100:.1f}%)"
+                f"📦 Перенесено {transferred}/{total_records} записей ({(transferred / total_records) * 100:.1f}%)"
             )
 
         logger.info(f"✅ Перенос indicators завершен: {transferred} записей")

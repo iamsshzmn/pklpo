@@ -738,7 +738,7 @@ if __name__ == "__main__":
         recent = collector.get_recent_metrics(args.show_recent)
         print(f"\nRecent Metrics ({len(recent)} calculations):")
         for i, metrics in enumerate(recent):
-            print(f"  {i+1}. {metrics.symbol} {metrics.timeframe}")
+            print(f"  {i + 1}. {metrics.symbol} {metrics.timeframe}")
             print(f"     rows_written: {metrics.rows_written}")
             print(f"     calculation_time_ms: {metrics.calculation_time_ms:.1f}")
             print(f"     data_quality_score: {metrics.data_quality_score:.2f}")

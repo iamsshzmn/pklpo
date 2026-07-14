@@ -82,9 +82,7 @@ async def handle(args) -> None:
                 )
                 summaries.append(summary)
         except LockConflict as exc:
-            raise SystemExit(
-                f"[lock_conflict] swap-repair skipped: {exc}"
-            ) from exc
+            raise SystemExit(f"[lock_conflict] swap-repair skipped: {exc}") from exc
         except RedisLockError as exc:
             raise SystemExit(
                 f"[lock_error] Redis unavailable, aborting repair (fail-closed): {exc}"

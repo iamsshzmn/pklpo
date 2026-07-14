@@ -204,7 +204,7 @@ async def handle_get_stats(db_client: "MTFDatabaseClient", verbose: bool) -> Non
             logger.info(f"  - Successful: {total_successful}")
             logger.info(f"  - Failed: {total_failed}")
             logger.info(
-                f"  - Success rate: {(total_successful/total_processed*100):.1f}%"
+                f"  - Success rate: {(total_successful / total_processed * 100):.1f}%"
                 if total_processed > 0
                 else "  - Success rate: N/A"
             )

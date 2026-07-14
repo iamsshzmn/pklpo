@@ -86,7 +86,7 @@ def print_recommendation(result: dict):
         print(f"📏 ATR множитель: {result.get('atr_multiplier', 0):.1f}")
         print(f"📈 R:R ratio: {result.get('rr_ratio', 0):.1f}")
         print(f"💼 Баланс: ${result.get('balance', 0):.2f}")
-        print(f"⚠️  Риск %: {result.get('risk_pct', 0)*100:.1f}%")
+        print(f"⚠️  Риск %: {result.get('risk_pct', 0) * 100:.1f}%")
         print(f"🔍 Dry run: {result.get('dry_run', True)}")
 
     elif status == "rejected":

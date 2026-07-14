@@ -166,7 +166,9 @@ class EligibilitySqlRepository:
                     if row.get("coverage_pct") is not None
                     else None
                 ),
-                first_ts=int(row["first_ts"]) if row.get("first_ts") is not None else None,
+                first_ts=int(row["first_ts"])
+                if row.get("first_ts") is not None
+                else None,
                 last_ts=int(row["last_ts"]) if row.get("last_ts") is not None else None,
                 has_interior_gap=int(row.get("missing_count") or 0) > 0,
                 integrity_ok=(

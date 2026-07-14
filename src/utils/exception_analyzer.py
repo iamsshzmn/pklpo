@@ -114,7 +114,7 @@ class ExceptionAnalyzer:
         context_lines = []
         for i in range(start, end):
             prefix = ">>> " if i == line_number - 1 else "    "
-            context_lines.append(f"{prefix}{i+1:4d}: {lines[i]}")
+            context_lines.append(f"{prefix}{i + 1:4d}: {lines[i]}")
 
         return "\n".join(context_lines)
 

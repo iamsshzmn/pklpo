@@ -529,13 +529,15 @@ async def build_and_execute_upsert(
             for i, rec in enumerate(filtered_records):
                 try:
                     if should_log(LogCategory.DIAG, Verbosity.DEBUG):
-                        logger.debug(f"Processing record {i+1}/{len(filtered_records)}")
+                        logger.debug(
+                            f"Processing record {i + 1}/{len(filtered_records)}"
+                        )
                     validate_numeric_types([rec], numeric_columns, row_offset=i)
                     stmt = build_upsert_statement(model_class, [rec], pk, db_cols)
                     batch_saved = await execute_upsert(session, stmt, [rec])
                     total_saved += batch_saved
                 except Exception:
-                    logger.error(f"UPSERT FAILED on record {i+1}")
+                    logger.error(f"UPSERT FAILED on record {i + 1}")
                     logger.error(f"Record sample: {dict(list(rec.items())[:10])}")
                     raise
 

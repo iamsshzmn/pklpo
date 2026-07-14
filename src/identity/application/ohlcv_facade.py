@@ -176,7 +176,8 @@ def _coerce_row(row: Mapping[str, object] | OhlcvFacadeRow) -> OhlcvFacadeRow:
         bar_kind=str(row.get("bar_kind", "native")),
         data_status=str(row.get("data_status", "complete")),
         succession_id=_str_or_none(row.get("succession_id")),
-        adjustment_factor=_decimal_or_none(row.get("adjustment_factor")) or Decimal("1"),
+        adjustment_factor=_decimal_or_none(row.get("adjustment_factor"))
+        or Decimal("1"),
         is_gap=bool(row.get("is_gap", False)),
         gap_type=_str_or_none(row.get("gap_type")),
     )

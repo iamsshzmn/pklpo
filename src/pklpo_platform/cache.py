@@ -144,7 +144,9 @@ async def invalidate(group: CacheGroup, *key_parts: str) -> None:
         if key_parts:
             cache_key = _key("cache", group.value, *key_parts)
             await redis.delete(cache_key)
-            logger.debug("Cache invalidated key=%s", cache_key, extra={"component": "cache"})
+            logger.debug(
+                "Cache invalidated key=%s", cache_key, extra={"component": "cache"}
+            )
         else:
             pattern = _key("cache", group.value, "*")
             cursor = 0

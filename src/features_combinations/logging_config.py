@@ -10,8 +10,7 @@ from src.logging import get_logger as _get_logger, setup_logging
 
 # Emit deprecation warning
 warnings.warn(
-    "src.features_combinations.logging_config is deprecated. "
-    "Use src.logging instead.",
+    "src.features_combinations.logging_config is deprecated. Use src.logging instead.",
     DeprecationWarning,
     stacklevel=2,
 )

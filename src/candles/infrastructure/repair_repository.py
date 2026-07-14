@@ -261,6 +261,7 @@ class RepairCandlesRepository(SwapCandlesRepository):
         end_ts_ms: int,
     ) -> int:
         """Deprecated raw row count; use count_valid_candles for coverage."""
+
         async def _operation() -> int:
             async with get_db_session() as session:
                 result = await session.execute(

@@ -16,12 +16,12 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from redis.asyncio import Redis
 
-_redis_client: "Redis | None" = None
+_redis_client: Redis | None = None
 
 logger = logging.getLogger(__name__)
 
 
-async def get_redis() -> "Redis":
+async def get_redis() -> Redis:
     """Return the shared async Redis client, creating it on first call.
 
     Raises:

@@ -269,7 +269,9 @@ class MarketSelectionPipeline:
         for result in quality_results:
             if not result.eligible:
                 continue
-            eligibility = await eligibility_interface.get_state(result.symbol, timeframe)
+            eligibility = await eligibility_interface.get_state(
+                result.symbol, timeframe
+            )
             if eligibility is not None and eligibility.can_score:
                 continue
             result.eligible = False

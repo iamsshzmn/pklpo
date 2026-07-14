@@ -197,28 +197,34 @@ async def handle(args):
 
         if parallel_workers > 1:
             # Parallel processing with a semaphore limit.
-            stats, total_processed, total_features, total_saved = (
-                await _process_parallel(
-                    symbols=symbols,
-                    timeframes=args.timeframes,
-                    feature_specs=feature_specs,
-                    args=args,
-                    parallel_workers=parallel_workers,
-                    total_tasks=total_tasks,
-                    start_time_ts=start_time_ts,
-                )
+            (
+                stats,
+                total_processed,
+                total_features,
+                total_saved,
+            ) = await _process_parallel(
+                symbols=symbols,
+                timeframes=args.timeframes,
+                feature_specs=feature_specs,
+                args=args,
+                parallel_workers=parallel_workers,
+                total_tasks=total_tasks,
+                start_time_ts=start_time_ts,
             )
         else:
             # Sequential processing path.
-            stats, total_processed, total_features, total_saved = (
-                await _process_sequential(
-                    symbols=symbols,
-                    timeframes=args.timeframes,
-                    feature_specs=feature_specs,
-                    args=args,
-                    total_tasks=total_tasks,
-                    start_time_ts=start_time_ts,
-                )
+            (
+                stats,
+                total_processed,
+                total_features,
+                total_saved,
+            ) = await _process_sequential(
+                symbols=symbols,
+                timeframes=args.timeframes,
+                feature_specs=feature_specs,
+                args=args,
+                total_tasks=total_tasks,
+                start_time_ts=start_time_ts,
             )
 
         end_time = datetime.now()
@@ -230,11 +236,11 @@ async def handle(args):
         logger.info(f"Bars processed: {total_processed:,}")
         logger.info(f"Indicators calculated: {total_features:,}")
         logger.info(f"Rows saved: {total_saved:,}")
-        logger.info(f"Throughput: {total_processed/duration:.1f} bars/s")
+        logger.info(f"Throughput: {total_processed / duration:.1f} bars/s")
 
         if total_processed > 0:
             logger.info(
-                f"Average indicators per bar: {total_features/total_processed:.1f}"
+                f"Average indicators per bar: {total_features / total_processed:.1f}"
             )
 
         if stats:
@@ -380,7 +386,7 @@ async def _process_sequential(
                         f"features={total_features:,} | "
                         f"saved={total_saved:,} | "
                         f"rate={rate:.2f} tasks/s | "
-                        f"eta=~{eta_seconds/60:.1f} min"
+                        f"eta=~{eta_seconds / 60:.1f} min"
                     )
                     last_heartbeat_time = current_time
 
@@ -837,11 +843,11 @@ async def _process_symbol_timeframe(
             best = non_null_pct.tail(min(10, len(non_null_pct)))
             logger.info(
                 "DEBUG FEATURES worst fill: "
-                + ", ".join([f"{k}:{v*100:.0f}%" for k, v in worst.items()])
+                + ", ".join([f"{k}:{v * 100:.0f}%" for k, v in worst.items()])
             )
             logger.info(
                 "DEBUG FEATURES best fill: "
-                + ", ".join([f"{k}:{v*100:.0f}%" for k, v in best.items()])
+                + ", ".join([f"{k}:{v * 100:.0f}%" for k, v in best.items()])
             )
 
         # Probe key indicators.
@@ -1523,13 +1529,13 @@ async def _save_features_to_db(
                     insert_query = text(
                         f"""
                         INSERT INTO {INDICATORS_TABLE_NAME} (
-                            {', '.join(columns)}
+                            {", ".join(columns)}
                         ) VALUES (
-                            {', '.join(values)}
+                            {", ".join(values)}
                         )
                         ON CONFLICT (symbol, timeframe, timestamp)
                         DO UPDATE SET
-                            {', '.join(update_columns)},
+                            {", ".join(update_columns)},
                             updated_at = NOW()
                     """
                     )

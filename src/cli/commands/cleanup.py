@@ -63,9 +63,7 @@ async def show_stats() -> None:
 
     print("swap_ohlcv_p stats")
     for timeframe, count, oldest, newest in rows:
-        print(
-            f"  {timeframe}: rows={count:,}, oldest={oldest}, newest={newest}"
-        )
+        print(f"  {timeframe}: rows={count:,}, oldest={oldest}, newest={newest}")
 
 
 async def dry_run_cleanup() -> None:

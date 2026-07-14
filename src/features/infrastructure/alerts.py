@@ -408,9 +408,9 @@ def format_failure_email(alert_ctx: AlertContext) -> str:
                 </tr>
             </table>
 
-            {f'<div class="error-box"><strong>Error Message:</strong><br/><pre>{alert_ctx.error_message}</pre></div>' if alert_ctx.error_message else ''}
+            {f'<div class="error-box"><strong>Error Message:</strong><br/><pre>{alert_ctx.error_message}</pre></div>' if alert_ctx.error_message else ""}
 
-            {f'<p><a href="{alert_ctx.log_url}">View Logs</a></p>' if alert_ctx.log_url else ''}
+            {f'<p><a href="{alert_ctx.log_url}">View Logs</a></p>' if alert_ctx.log_url else ""}
 
             <p>This is an automated alert from Airflow.</p>
         </div>
@@ -815,4 +815,3 @@ def success_callback(context: dict[str, Any]) -> None:
     # Only send Slack notification for success (not email)
     if os.getenv("SLACK_SUCCESS_NOTIFICATIONS", "false").lower() == "true":
         send_slack_alert(alert_ctx)
-

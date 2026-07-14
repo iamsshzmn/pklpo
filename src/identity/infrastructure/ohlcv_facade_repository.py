@@ -119,7 +119,8 @@ class SqlOhlcvFacadeRepository:
     async def resolve_alias(self, series_id: str, as_of: datetime | None) -> str:
         async with get_db_session() as session:
             result = await session.execute(
-                text(RESOLVE_ALIAS_SQL), {"series_id": series_id, "as_of": _as_of(as_of)}
+                text(RESOLVE_ALIAS_SQL),
+                {"series_id": series_id, "as_of": _as_of(as_of)},
             )
             resolved = result.scalar_one_or_none()
         return str(resolved) if resolved is not None else series_id

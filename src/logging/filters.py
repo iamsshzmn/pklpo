@@ -33,7 +33,7 @@ class SensitiveDataFilter(logging.Filter):
         # URL-embedded credentials: postgresql://user:pass@host, redis://:pass@host, etc.
         # Lookbehind/lookahead preserve the scheme and host; only user:pass is masked.
         # Username is optional ([^:@\s]*) to handle forms like redis://:pass@host.
-        r'(?<=://)[^:@\s]*:[^@\s]+(?=@)',
+        r"(?<=://)[^:@\s]*:[^@\s]+(?=@)",
     ]
 
     # Default sensitive dict keys

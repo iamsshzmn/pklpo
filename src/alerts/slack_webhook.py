@@ -158,7 +158,7 @@ class SlackNotifier:
                 {
                     "title": "Buy/Sell Ratio",
                     "value": (
-                        f"{buy_signals/sell_signals:.2f}" if sell_signals > 0 else "∞"
+                        f"{buy_signals / sell_signals:.2f}" if sell_signals > 0 else "∞"
                     ),
                     "short": True,
                 },

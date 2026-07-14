@@ -18,7 +18,11 @@ logger = logging.getLogger(__name__)
 
 def _can_push() -> tuple[bool, str]:
     try:
-        from prometheus_client import CollectorRegistry, Gauge, push_to_gateway  # noqa: F401
+        from prometheus_client import (  # noqa: F401
+            CollectorRegistry,
+            Gauge,
+            push_to_gateway,
+        )
     except ImportError:
         return False, ""
 
@@ -48,7 +52,9 @@ def push_recommender_metrics(
     """
     can_push, pushgateway_url = _can_push()
     if not can_push:
-        logger.debug("Recommender metrics push skipped (Prometheus disabled or unconfigured)")
+        logger.debug(
+            "Recommender metrics push skipped (Prometheus disabled or unconfigured)"
+        )
         return False
 
     try:
@@ -77,5 +83,7 @@ def push_recommender_metrics(
         )
         return True
     except Exception:
-        logger.warning("Failed to push recommender metrics to Pushgateway", exc_info=True)
+        logger.warning(
+            "Failed to push recommender metrics to Pushgateway", exc_info=True
+        )
         return False

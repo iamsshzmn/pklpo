@@ -183,8 +183,7 @@ def _apply_volatility_normalization(
         # Use injected normalizer if provided (DIP compliance)
         if normalizer is not None:
             logger.debug(
-                f"[{ctx.run_id}] Using injected normalizer "
-                f"window={normalize_window}"
+                f"[{ctx.run_id}] Using injected normalizer window={normalize_window}"
             )
             return normalizer.normalize(result_df, window=normalize_window)
 

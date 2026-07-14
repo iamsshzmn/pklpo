@@ -100,7 +100,9 @@ def max_lookback(strategy: str) -> int:
         Maximum lookback period in bars
     """
     contract = build_warmup_contract()
-    return contract.feature_requirements.get(strategy, STRATEGY_LOOKBACKS.get(strategy, 1))
+    return contract.feature_requirements.get(
+        strategy, STRATEGY_LOOKBACKS.get(strategy, 1)
+    )
 
 
 def get_strategy_lookbacks(strategies: list[str]) -> dict[str, int]:

@@ -100,9 +100,7 @@ def merge_adjacent_timestamps(
 
     if not missing:
         return []
-    sorted_missing = sorted(
-        {calendar.floor_open(ts, timeframe) for ts in missing}
-    )
+    sorted_missing = sorted({calendar.floor_open(ts, timeframe) for ts in missing})
     ranges: list[GapRange] = []
     start_ts_ms = sorted_missing[0]
     prev_ts_ms = sorted_missing[0]

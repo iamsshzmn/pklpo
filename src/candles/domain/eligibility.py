@@ -153,11 +153,13 @@ def _resolve_state(
             reason_flags.add(ReasonFlag.BELOW_RECOMMENDED)
         return EligibilityState.INSUFFICIENT_HISTORY
     if (
-        facts.coverage_pct is not None
-        and facts.coverage_pct < policy.coverage_min_pct
+        facts.coverage_pct is not None and facts.coverage_pct < policy.coverage_min_pct
     ) or facts.has_interior_gap:
         reason_flags.add(ReasonFlag.HIGH_GAPS)
-        if facts.coverage_pct is not None and facts.coverage_pct < policy.coverage_min_pct:
+        if (
+            facts.coverage_pct is not None
+            and facts.coverage_pct < policy.coverage_min_pct
+        ):
             reason_flags.add(ReasonFlag.LOW_FILL)
         return EligibilityState.INCOMPLETE_HISTORY
     return EligibilityState.ELIGIBLE

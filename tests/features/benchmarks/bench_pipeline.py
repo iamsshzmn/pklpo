@@ -57,7 +57,9 @@ def test_bench_compute_features_ma_group(benchmark, ohlcv_df):
     calculator = GroupFeatureCalculator()
     df = ohlcv_df.copy()
 
-    result = benchmark(calculator.calculate_group, df, "ma", available={"ema_21", "sma_20"})
+    result = benchmark(
+        calculator.calculate_group, df, "ma", available={"ema_21", "sma_20"}
+    )
     assert result is not None
 
 

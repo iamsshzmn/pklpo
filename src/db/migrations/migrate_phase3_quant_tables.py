@@ -28,7 +28,6 @@ async def migrate_phase3_quant_tables() -> None:
     engine = get_async_engine()
 
     async with AsyncSession(engine) as session:
-
         # ------------------------------------------------------------------ #
         # 1. Расширение таблицы ohlcv_p для dollar bars                       #
         # ------------------------------------------------------------------ #

@@ -69,7 +69,7 @@ def timeframe_to_ms(timeframe: str) -> int:
         return TIMEFRAME_MS[timeframe]
 
     raise ValueError(
-        f"Unknown timeframe: {timeframe}. " f"Supported: {list(TIMEFRAME_MS.keys())}"
+        f"Unknown timeframe: {timeframe}. Supported: {list(TIMEFRAME_MS.keys())}"
     )
 
 

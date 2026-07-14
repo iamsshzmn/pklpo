@@ -1,4 +1,4 @@
-﻿"""
+"""
 Calculation module for features - separates calculation from saving.
 
 This module implements the strategy of calculating indicators and saving to parquet files

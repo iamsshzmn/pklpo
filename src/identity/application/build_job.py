@@ -85,11 +85,7 @@ def _visible_gaps(
     gaps: list[ApprovedGapClassification], as_of: datetime
 ) -> list[ApprovedGapClassification]:
     return sorted(
-        (
-            gap
-            for gap in gaps
-            if _is_visible(gap.known_from, gap.approved_at, as_of)
-        ),
+        (gap for gap in gaps if _is_visible(gap.known_from, gap.approved_at, as_of)),
         key=lambda item: (item.series_id, item.timeframe, item.range_start_ts),
     )
 
@@ -147,7 +143,9 @@ def derive_identity_snapshot(
         registry.append(
             SeriesRegistryRow(
                 series_id=succession.old_symbol,
-                series_label=_series_label(succession.old_symbol, succession.new_symbol),
+                series_label=_series_label(
+                    succession.old_symbol, succession.new_symbol
+                ),
                 asset_id=None,
                 series_kind="composite",
                 status="active",
@@ -290,9 +288,7 @@ class IdentityBuildJob:
             )
             return result
         except Exception as exc:
-            error_hash = self._observer.failure(
-                run_id=run_id, started=started, exc=exc
-            )
+            error_hash = self._observer.failure(run_id=run_id, started=started, exc=exc)
             record_failure = getattr(self._repository, "record_failure", None)
             if record_failure is not None:
                 await record_failure(context, type(exc).__name__, error_hash)

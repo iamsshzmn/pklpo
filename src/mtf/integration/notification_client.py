@@ -181,9 +181,9 @@ class NotificationClient:
 • Символ: {symbol}
 • Статус: {status}
 • Время обработки: {processing_time:.2f}s
-• Таймфреймы: {', '.join(result.get('timeframes', []))}
+• Таймфреймы: {", ".join(result.get("timeframes", []))}
 
-🕐 Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🕐 Время: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 """.strip()
 
                 # Отправка в Slack
@@ -215,7 +215,7 @@ class NotificationClient:
 
 📊 Контекст:
 • Символ: {symbol}
-• Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+• Время: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 • Дополнительно: {json.dumps(context, ensure_ascii=False, indent=2)}
                 """.strip()
 
@@ -242,17 +242,17 @@ class NotificationClient:
 📈 MTF Метрики
 
 📊 Производительность:
-• Всего запросов: {metrics.get('total_requests', 0)}
-• Успешных: {metrics.get('successful_requests', 0)}
-• Неудачных: {metrics.get('failed_requests', 0)}
-• Процент успеха: {metrics.get('success_rate', 0):.1%}
+• Всего запросов: {metrics.get("total_requests", 0)}
+• Успешных: {metrics.get("successful_requests", 0)}
+• Неудачных: {metrics.get("failed_requests", 0)}
+• Процент успеха: {metrics.get("success_rate", 0):.1%}
 
 ⏱️ Время:
-• Среднее время обработки: {metrics.get('avg_processing_time', 0):.2f}s
-• Минимальное время: {metrics.get('min_processing_time', 0):.2f}s
-• Максимальное время: {metrics.get('max_processing_time', 0):.2f}s
+• Среднее время обработки: {metrics.get("avg_processing_time", 0):.2f}s
+• Минимальное время: {metrics.get("min_processing_time", 0):.2f}s
+• Максимальное время: {metrics.get("max_processing_time", 0):.2f}s
 
-🕐 Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+🕐 Время: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 """.strip()
 
                 # Отправка в Slack

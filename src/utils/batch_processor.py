@@ -71,12 +71,12 @@ class BatchProcessor:
                     )
 
                 logger.debug(
-                    f"Обработан батч {i//self.batch_size + 1}: {len(batch)} элементов"
+                    f"Обработан батч {i // self.batch_size + 1}: {len(batch)} элементов"
                 )
 
             except Exception as e:
                 logger.error(
-                    f"Ошибка при обработке батча {i//self.batch_size + 1}: {e}"
+                    f"Ошибка при обработке батча {i // self.batch_size + 1}: {e}"
                 )
                 continue
 
@@ -188,7 +188,9 @@ class DatabaseBatchProcessor:
                 logger.debug(f"Вставлен батч: {len(batch)} записей")
 
             except Exception as e:
-                logger.error(f"Ошибка при вставке батча {i//self.batch_size + 1}: {e}")
+                logger.error(
+                    f"Ошибка при вставке батча {i // self.batch_size + 1}: {e}"
+                )
                 await session.rollback()
                 continue
 
@@ -246,7 +248,7 @@ class DatabaseBatchProcessor:
 
             except Exception as e:
                 logger.error(
-                    f"Ошибка при обновлении батча {i//self.batch_size + 1}: {e}"
+                    f"Ошибка при обновлении батча {i // self.batch_size + 1}: {e}"
                 )
                 await session.rollback()
                 continue

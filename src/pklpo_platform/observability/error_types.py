@@ -163,7 +163,9 @@ def classify_error_type(error: BaseException) -> str:
             return ErrorType.DB_ERROR
 
         # ── OKX / exchange rate-limit ────────────────────────────────────────
-        if name in _RATE_LIMIT_CLASS_NAMES or any(m in msg for m in _RATE_LIMIT_MARKERS):
+        if name in _RATE_LIMIT_CLASS_NAMES or any(
+            m in msg for m in _RATE_LIMIT_MARKERS
+        ):
             return ErrorType.RATE_LIMIT_ERROR
 
         # ── Timeout ──────────────────────────────────────────────────────────

@@ -83,7 +83,9 @@ class RunBootstrapUseCase:
         )
 
         # Load existing state and determine checkpoint
-        existing = await self._state.get_bootstrap_state(symbol=symbol, timeframe=timeframe)
+        existing = await self._state.get_bootstrap_state(
+            symbol=symbol, timeframe=timeframe
+        )
         should_reinitialize = _should_reinitialize_bootstrap(
             existing=existing,
             lookback_days=command.lookback_days,
@@ -243,7 +245,9 @@ class RunBootstrapUseCase:
                         expected_bars=live_rec.expected_bars,
                         actual_bars=live_rec.valid_bars,
                         missing_bars=live_rec.missing_bars,
-                        coverage_pct=(live_rec.valid_bars / live_rec.expected_bars * 100.0)
+                        coverage_pct=(
+                            live_rec.valid_bars / live_rec.expected_bars * 100.0
+                        )
                         if live_rec.expected_bars > 0
                         else 0.0,
                         elapsed_seconds=time.monotonic() - started,
@@ -376,7 +380,9 @@ class RunBootstrapUseCase:
         live_expected = live_rec.expected_bars
         live_actual = live_rec.valid_bars
         live_missing = live_rec.missing_bars
-        coverage_pct = (live_actual / live_expected * 100.0) if live_expected > 0 else 100.0
+        coverage_pct = (
+            (live_actual / live_expected * 100.0) if live_expected > 0 else 100.0
+        )
 
         final_status = (
             "completed"
@@ -400,7 +406,9 @@ class RunBootstrapUseCase:
             coverage_pct=coverage_pct,
             status=final_status,
             bootstrap_completed=(final_status == "completed"),
-            completed_at_ms=int(time.time() * 1000) if final_status == "completed" else None,
+            completed_at_ms=int(time.time() * 1000)
+            if final_status == "completed"
+            else None,
             checkpoint_ts=checkpoint_ts,
         )
 

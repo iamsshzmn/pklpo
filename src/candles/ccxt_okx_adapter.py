@@ -47,8 +47,7 @@ def _to_ccxt_symbol(inst_id: str) -> str:
     parts = inst_id.split("-")
     if len(parts) != 3 or parts[2] != "SWAP" or not parts[0] or not parts[1]:
         raise ValueError(
-            "Unsupported instrument format. Expected BASE-QUOTE-SWAP, "
-            f"got: {inst_id!r}"
+            f"Unsupported instrument format. Expected BASE-QUOTE-SWAP, got: {inst_id!r}"
         )
     base, quote, _kind = parts
     return f"{base}/{quote}:{quote}"

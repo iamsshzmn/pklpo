@@ -25,7 +25,9 @@ async def ohlcv_symbol_write_lock(
         {"lock_key": OHLCV_GLOBAL_WRITE_LOCK_KEY},
     )
     await session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:lock_scope), hashtext(:lock_key))"),
+        text(
+            "SELECT pg_advisory_xact_lock(hashtext(:lock_scope), hashtext(:lock_key))"
+        ),
         {"lock_scope": OHLCV_LOCK_SCOPE, "lock_key": f"{symbol}:{timeframe}"},
     )
     yield

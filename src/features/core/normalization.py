@@ -245,11 +245,11 @@ def _log_feature_summary(
             best = non_null_percents.tail(10)
             logger.debug(
                 "FEATURE SUMMARY (worst 10): "
-                + ", ".join([f"{k}:{v*100:.0f}%" for k, v in worst.items()])
+                + ", ".join([f"{k}:{v * 100:.0f}%" for k, v in worst.items()])
             )
             logger.debug(
                 "FEATURE SUMMARY (best 10):  "
-                + ", ".join([f"{k}:{v*100:.0f}%" for k, v in best.items()])
+                + ", ".join([f"{k}:{v * 100:.0f}%" for k, v in best.items()])
             )
         except Exception as e:
             logger.debug(f"Failed to log feature summary: {e}")

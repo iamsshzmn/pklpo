@@ -142,7 +142,7 @@ class UserSettingsManager:
                     if update_fields:
                         query = f"""
                             UPDATE user_settings
-                            SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP
+                            SET {", ".join(update_fields)}, updated_at = CURRENT_TIMESTAMP
                             WHERE user_id = :user_id
                         """
 

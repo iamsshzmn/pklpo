@@ -1,4 +1,4 @@
-﻿"""Domain-layer exports for the unified ``src.candles`` module."""
+"""Domain-layer exports for the unified ``src.candles`` module."""
 
 from .batch_policy import DynamicBatchPolicy
 from .contract import (

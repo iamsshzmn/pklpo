@@ -393,7 +393,7 @@ async def handle_results(args) -> None:
                 logger.info(f"   - Неудачно: {total_failed}")
                 if total_processed > 0:
                     logger.info(
-                        f"   - Процент успеха: {(total_successful/total_processed*100):.1f}%"
+                        f"   - Процент успеха: {(total_successful / total_processed * 100):.1f}%"
                     )
 
     except Exception as e:

@@ -238,9 +238,7 @@ def _instrument_state_skip_decision(
 
     state_found = state != UNKNOWN_INSTRUMENT_STATE
     reason = (
-        REASON_INSTRUMENT_NOT_LIVE
-        if state_found
-        else REASON_INSTRUMENT_STATE_UNKNOWN
+        REASON_INSTRUMENT_NOT_LIVE if state_found else REASON_INSTRUMENT_STATE_UNKNOWN
     )
     return RecoveryDecision(
         decision_status="skip",
