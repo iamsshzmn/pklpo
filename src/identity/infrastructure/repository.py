@@ -110,12 +110,15 @@ ON CONFLICT (run_id) DO UPDATE SET
     segment_count = EXCLUDED.segment_count
 """.strip()
 
-# Full-series recalc after an identity build is enqueued per concrete FULL-role
-# timeframe (matching src.candles.domain.eligibility TimeframeRole.FULL): the
-# consumer DAG (ops/airflow/dags/indicators_recalc.py) passes `timeframe`
-# verbatim into the feature pipeline, so a blanket '*' row would never compute
-# (it would be claimed and end up 'blocked' — no candles exist for tf='*').
-FULL_RECALC_TIMEFRAMES = ("1H", "4H", "1D")
+# Full-series recalc after an identity build is enqueued per concrete
+# feature-computable timeframe: FULL-role (1H/4H/1D) plus CONTEXT-role 1W,
+# which gets feature computation but no scoring (see
+# src.candles.domain.eligibility roles). 1M is INFORMATIONAL — no computation
+# at all — so it is deliberately excluded. The consumer DAG
+# (ops/airflow/dags/indicators_recalc.py) passes `timeframe` verbatim into
+# the feature pipeline, so a blanket '*' row would never compute (it would be
+# claimed and end up 'blocked' — no candles exist for tf='*').
+FEATURE_RECALC_TIMEFRAMES = ("1H", "4H", "1D", "1W")
 
 INSERT_RECALC_QUEUE_SQL = """
 INSERT INTO ops.indicator_recalc_queue (
@@ -303,7 +306,7 @@ class SqlIdentityBuildRepository:
         async with get_db_session() as session:
             try:
                 for series_id in series_ids:
-                    for timeframe in FULL_RECALC_TIMEFRAMES:
+                    for timeframe in FEATURE_RECALC_TIMEFRAMES:
                         await session.execute(
                             text(INSERT_RECALC_QUEUE_SQL),
                             {

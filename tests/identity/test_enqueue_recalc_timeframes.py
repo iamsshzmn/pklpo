@@ -5,7 +5,7 @@ feature pipeline, so a '*' row would be claimed and end up 'blocked' forever.
 """
 
 from src.identity.infrastructure.repository import (
-    FULL_RECALC_TIMEFRAMES,
+    FEATURE_RECALC_TIMEFRAMES,
     INSERT_RECALC_QUEUE_SQL,
 )
 
@@ -15,5 +15,6 @@ def test_recalc_enqueue_uses_parameterized_timeframe() -> None:
     assert ":timeframe" in INSERT_RECALC_QUEUE_SQL
 
 
-def test_full_recalc_timeframes_are_full_role_db_notation() -> None:
-    assert FULL_RECALC_TIMEFRAMES == ("1H", "4H", "1D")
+def test_feature_recalc_timeframes_cover_feature_computable_roles() -> None:
+    # FULL (1H/4H/1D) + CONTEXT (1W); INFORMATIONAL 1M excluded — no computation.
+    assert FEATURE_RECALC_TIMEFRAMES == ("1H", "4H", "1D", "1W")
