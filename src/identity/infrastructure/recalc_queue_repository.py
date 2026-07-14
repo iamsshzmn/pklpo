@@ -4,7 +4,7 @@ Reuses the existing `ops.indicator_recalc_queue` table (see
 `src.db.migrations.migrate_create_ops_indicator_recalc_queue`) — the same
 table the identity build job already writes to via
 `src.identity.infrastructure.repository.INSERT_RECALC_QUEUE_SQL`. That job
-enqueues a blanket `0..MAX_BIGINT` range per series (a full-series recalc,
+enqueues a `0..MAX_BIGINT` range per series and FULL-role timeframe (a full-series recalc,
 appropriate right after a build). This adapter instead enqueues the narrow,
 `compute_affected_recalc_range`-bounded range for a single series/timeframe,
 for the feature-cutover path (Task 5.3).

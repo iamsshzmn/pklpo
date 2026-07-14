@@ -110,11 +110,18 @@ ON CONFLICT (run_id) DO UPDATE SET
     segment_count = EXCLUDED.segment_count
 """.strip()
 
+# Full-series recalc after an identity build is enqueued per concrete FULL-role
+# timeframe (matching src.candles.domain.eligibility TimeframeRole.FULL): the
+# consumer DAG (ops/airflow/dags/indicators_recalc.py) passes `timeframe`
+# verbatim into the feature pipeline, so a blanket '*' row would never compute
+# (it would be claimed and end up 'blocked' — no candles exist for tf='*').
+FULL_RECALC_TIMEFRAMES = ("1H", "4H", "1D")
+
 INSERT_RECALC_QUEUE_SQL = """
 INSERT INTO ops.indicator_recalc_queue (
     symbol, timeframe, range_start_ts, range_end_ts, source_dag, detail
 ) VALUES (
-    :series_id, '*', 0, 9223372036854775807, 'identity_build',
+    :series_id, :timeframe, 0, 9223372036854775807, 'identity_build',
     CAST(:detail AS jsonb)
 )
 ON CONFLICT (symbol, timeframe, range_start_ts, range_end_ts) DO NOTHING
@@ -296,19 +303,21 @@ class SqlIdentityBuildRepository:
         async with get_db_session() as session:
             try:
                 for series_id in series_ids:
-                    await session.execute(
-                        text(INSERT_RECALC_QUEUE_SQL),
-                        {
-                            "series_id": series_id,
-                            "detail": json.dumps(
-                                {
-                                    "run_id": context.run_id,
-                                    "reason": "identity_build",
-                                },
-                                sort_keys=True,
-                            ),
-                        },
-                    )
+                    for timeframe in FULL_RECALC_TIMEFRAMES:
+                        await session.execute(
+                            text(INSERT_RECALC_QUEUE_SQL),
+                            {
+                                "series_id": series_id,
+                                "timeframe": timeframe,
+                                "detail": json.dumps(
+                                    {
+                                        "run_id": context.run_id,
+                                        "reason": "identity_build",
+                                    },
+                                    sort_keys=True,
+                                ),
+                            },
+                        )
                 await session.commit()
             except Exception:
                 await session.rollback()

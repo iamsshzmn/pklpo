@@ -39,7 +39,17 @@ jobs:
           CHANGED="$(git diff --name-status "${BASE_SHA}" "${{ github.sha }}" \
             -- src/market_selection/migrations/*.sql \
                src/candles/migrations/*.sql \
-               src/*/migrations/*.sql 2>/dev/null || true)"
+               src/*/migrations/*.sql \
+               src/db/migrations/*.py 2>/dev/null || true)"
+          # One-time allowlist: mechanically split into per-statement execution
+          # (asyncpg single-statement constraint) before the .py guard existed.
+          # Do NOT extend this list — add a new migration file instead.
+          ALLOWLIST='src/db/migrations/migrate_create_ops_feature_eligibility.py
+          src/db/migrations/migrate_create_ops_feature_eligibility_transitions.py
+          src/db/migrations/migrate_drop_redundant_swap_ohlcv_indexes.py'
+          for f in ${ALLOWLIST}; do
+            CHANGED="$(echo "${CHANGED}" | grep -v "	${f}$" || true)"
+          done
           if [ -z "${CHANGED}" ]; then
             echo "No migration changes."
             exit 0
