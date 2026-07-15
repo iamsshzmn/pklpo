@@ -13,12 +13,15 @@ from src.candles.application.repair.use_cases import (
     RunGapRepairUseCase,
     RunHistoricalBackfillUseCase,
 )
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     BackfillPlan,
     RepairExecutionMode,
     RepairGuardrails,
     RepairStrategy,
 )
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 @dataclass
@@ -29,6 +32,7 @@ class _CoverageQueryStub:
     def __post_init__(self) -> None:
         self.list_calls = 0
         self.count_calls = 0
+        self.missing_calls = 0
 
     async def list_timestamps(
         self,
@@ -39,7 +43,24 @@ class _CoverageQueryStub:
         end_ts_ms: int,
     ) -> list[int]:
         self.list_calls += 1
+        if self.verified_count is not None and self.missing_calls > 1:
+            return list(range(start_ts_ms, end_ts_ms, 60_000))[: self.verified_count]
         return list(self.timestamps)
+
+    async def count_missing_timestamps(
+        self,
+        *,
+        symbol: str,
+        timeframe: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> int:
+        del symbol, timeframe
+        self.missing_calls += 1
+        expected = len(range(start_ts_ms, end_ts_ms, 60_000))
+        if self.verified_count is not None and self.missing_calls > 1:
+            return max(expected - self.verified_count, 0)
+        return max(expected - len(self.timestamps), 0)
 
     async def count_candles(
         self,
@@ -93,7 +114,9 @@ class _RepairStoreSpy:
         symbol: str,
         timeframe: str,
         candles: list[dict[str, Any]],
+        **kwargs: Any,
     ) -> int:
+        del kwargs
         self.calls.append(
             {"symbol": symbol, "timeframe": timeframe, "candles": list(candles)}
         )
@@ -118,8 +141,8 @@ def _command(*, mode: RepairExecutionMode, strategy: RepairStrategy) -> RepairCo
     return RepairCommand(
         symbol="BTC-USDT-SWAP",
         timeframe="1m",
-        start_ts_ms=1_000,
-        end_ts_ms=1_180_000,
+        start_ts_ms=0,
+        end_ts_ms=1_140_000,
         mode=mode,
         strategy=strategy,
         guardrails=RepairGuardrails(
@@ -128,18 +151,21 @@ def _command(*, mode: RepairExecutionMode, strategy: RepairStrategy) -> RepairCo
             max_range_days=7,
             max_fail_ratio=0.5,
         ),
-        now_ts_ms=1_240_000,
+        now_ts_ms=1_200_000,
     )
 
 
 @pytest.mark.asyncio
 async def test_gap_repair_detect_only_does_not_fetch_or_write() -> None:
-    query = _CoverageQueryStub(timestamps=[1_000, 61_000])
+    query = _CoverageQueryStub(timestamps=[0, 60_000])
     source = _HistoricalSourceStub(candles=[])
     store = _RepairStoreSpy()
 
     result = await RunGapRepairUseCase(
-        coverage_query=query, historical_source=source, repair_store=store
+        coverage_query=query,
+        historical_source=source,
+        repair_store=store,
+        calendar=UTC_CAL,
     ).run(
         _command(
             mode=RepairExecutionMode.DETECT_ONLY, strategy=RepairStrategy.GAP_REPAIR
@@ -160,7 +186,10 @@ async def test_backfill_dry_run_builds_plan_without_write() -> None:
     store = _RepairStoreSpy()
 
     result = await RunHistoricalBackfillUseCase(
-        coverage_query=query, historical_source=source, repair_store=store
+        coverage_query=query,
+        historical_source=source,
+        repair_store=store,
+        calendar=UTC_CAL,
     ).run(_command(mode=RepairExecutionMode.DRY_RUN, strategy=RepairStrategy.BACKFILL))
 
     assert result.mode is RepairExecutionMode.DRY_RUN
@@ -177,7 +206,7 @@ async def test_apply_fetches_upserts_and_verifies() -> None:
     source = _HistoricalSourceStub(
         candles=[
             {
-                "ts": -59_000,
+                "ts": -60_000,
                 "open": 0.0,
                 "high": 0.0,
                 "low": 0.0,
@@ -187,7 +216,7 @@ async def test_apply_fetches_upserts_and_verifies() -> None:
                 "volUsd": None,
             },
             {
-                "ts": 1_000,
+                "ts": 0,
                 "open": 1.0,
                 "high": 2.0,
                 "low": 0.5,
@@ -197,7 +226,7 @@ async def test_apply_fetches_upserts_and_verifies() -> None:
                 "volUsd": None,
             },
             {
-                "ts": 61_000,
+                "ts": 60_000,
                 "open": 1.5,
                 "high": 2.5,
                 "low": 1.0,
@@ -207,7 +236,7 @@ async def test_apply_fetches_upserts_and_verifies() -> None:
                 "volUsd": None,
             },
             {
-                "ts": 121_000,
+                "ts": 120_000,
                 "open": 3.0,
                 "high": 3.0,
                 "low": 3.0,
@@ -226,12 +255,13 @@ async def test_apply_fetches_upserts_and_verifies() -> None:
         historical_source=source,
         repair_store=store,
         telemetry=telemetry,
+        calendar=UTC_CAL,
     ).run(
         RepairCommand(
             symbol="BTC-USDT-SWAP",
             timeframe="1m",
-            start_ts_ms=1_000,
-            end_ts_ms=121_000,
+            start_ts_ms=0,
+            end_ts_ms=120_000,
             mode=RepairExecutionMode.APPLY,
             strategy=RepairStrategy.BACKFILL,
             guardrails=RepairGuardrails(
@@ -240,7 +270,7 @@ async def test_apply_fetches_upserts_and_verifies() -> None:
                 max_range_days=7,
                 max_fail_ratio=0.5,
             ),
-            now_ts_ms=240_000,
+            now_ts_ms=180_000,
             padding_bars=1,
         )
     )
@@ -251,7 +281,7 @@ async def test_apply_fetches_upserts_and_verifies() -> None:
     assert result.verified is True
     assert result.watermark_updated is False
     assert len(store.calls) == 1
-    assert [row["timestamp"] for row in store.calls[0]["candles"]] == [1_000, 61_000]
+    assert [row["timestamp"] for row in store.calls[0]["candles"]] == [0, 60_000]
     assert telemetry.events[-1][0] == "candles.repair.completed"
 
 
@@ -275,4 +305,5 @@ async def test_apply_fails_fast_when_guardrails_are_exceeded() -> None:
             coverage_query=_CoverageQueryStub(timestamps=[]),
             historical_source=_HistoricalSourceStub(candles=[]),
             repair_store=_RepairStoreSpy(),
+            calendar=UTC_CAL,
         ).run(command)

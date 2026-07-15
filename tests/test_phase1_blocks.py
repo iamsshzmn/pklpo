@@ -541,21 +541,31 @@ class TestQualityStore:
 
 class TestMigration:
     def test_migration_file_exists(self):
-        path = PROJECT_ROOT / "src" / "db" / "migrate_create_data_quality_metrics.py"
+        path = (
+            PROJECT_ROOT
+            / "src"
+            / "db"
+            / "migrations"
+            / "migrate_create_data_quality_metrics.py"
+        )
         assert path.exists()
 
     def test_migration_syntax(self):
         import py_compile
 
         path = str(
-            PROJECT_ROOT / "src" / "db" / "migrate_create_data_quality_metrics.py"
+            PROJECT_ROOT
+            / "src"
+            / "db"
+            / "migrations"
+            / "migrate_create_data_quality_metrics.py"
         )
         py_compile.compile(path, doraise=True)
 
     def test_migration_function_importable(self):
         import asyncio
 
-        from src.db.migrate_create_data_quality_metrics import (
+        from src.db.migrations.migrate_create_data_quality_metrics import (
             migrate_create_data_quality_metrics,
         )
 

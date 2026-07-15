@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -76,6 +76,7 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         "OBSERVABILITY_JOB_NAME": job_name_default or "market_selection"
     }
     common.setup_env = lambda env: None  # type: ignore[attr-defined]
+    common.airflow_log_context = lambda context, **kwargs: nullcontext("run-id")  # type: ignore[attr-defined]
 
     class _Loop:
         @staticmethod

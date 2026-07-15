@@ -194,7 +194,7 @@ def test_dsr_invalid_n_trials() -> None:
         deflated_sharpe_ratio(1.0, n_trials=0, var_sr=1.0, T=252)
 
 
-def test_dsr_invalid_T() -> None:
+def test_dsr_invalid_t() -> None:
     """T < 2 вызывает ValueError."""
     with pytest.raises(ValueError, match="T must"):
         deflated_sharpe_ratio(1.0, n_trials=1, var_sr=1.0, T=1)

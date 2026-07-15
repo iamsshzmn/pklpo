@@ -268,7 +268,7 @@ def test_init_bootstrap_state_raises_on_unknown_tf() -> None:
         return_value=_FailIfCalled(),
     ):
         with pytest.raises(ValueError, match="1H, 4H"):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 init_bootstrap_state(
                     symbols=["BTC-USDT-SWAP"],
                     timeframes=["1H, 4H"],

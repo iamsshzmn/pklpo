@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     BackfillPlan,
     GuardrailViolation,
@@ -23,6 +24,8 @@ from src.candles.domain.repair_timeframes import (
     is_fixed_step_timeframe,
     window_padding,
 )
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 def _ts(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> int:
@@ -79,6 +82,7 @@ def test_clamp_window_to_closed_bars_excludes_current_open_bar() -> None:
         window=window,
         timeframe="1m",
         now_ts_ms=_ts(2026, 4, 11, 10, 5),
+        calendar=UTC_CAL,
     )
 
     assert clamped == RepairWindow(
@@ -102,6 +106,7 @@ def test_detect_gap_tasks_groups_consecutive_missing_bars() -> None:
         ],
         timeframe="1m",
         window=window,
+        calendar=UTC_CAL,
     )
 
     assert [
@@ -125,6 +130,7 @@ def test_repair_guardrails_block_apply_before_write() -> None:
             ],
             timeframe="1m",
             window=RepairWindow(_ts(2026, 4, 11, 10, 0), _ts(2026, 4, 11, 10, 5)),
+            calendar=UTC_CAL,
         ),
     )
     guardrails = RepairGuardrails(
@@ -177,6 +183,7 @@ def test_backfill_plan_uses_explicit_domain_type() -> None:
             timestamps=[],
             timeframe="1m",
             window=RepairWindow(_ts(2026, 4, 11, 10, 0), _ts(2026, 4, 11, 10, 3)),
+            calendar=UTC_CAL,
         ),
     )
 
@@ -192,8 +199,12 @@ def test_gap_planning_is_idempotent() -> None:
         _ts(2026, 4, 11, 10, 5),
     ]
 
-    first = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window)
-    second = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window)
+    first = detect_gap_tasks(
+        timestamps=timestamps, timeframe="1m", window=window, calendar=UTC_CAL
+    )
+    second = detect_gap_tasks(
+        timestamps=timestamps, timeframe="1m", window=window, calendar=UTC_CAL
+    )
 
     assert first == second
 

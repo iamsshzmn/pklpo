@@ -19,7 +19,6 @@ import pytest
 
 from src.candles.application.recovery_controller import (
     BootstrapCandidateInfo,
-    RecoveryConfig,
     RecoveryDecision,
 )
 

@@ -166,11 +166,12 @@ class FeaturesVersionManager:
             )
 
             self.logger.info(
-                "Version info generated",
-                schema_version=self._version_cache.schema_version,
-                algo_version=self._version_cache.algo_version,
-                features_count=features_count,
-                phase2_compliant=phase2_compliant,
+                "Version info generated: schema_version=%s algo_version=%s "
+                "features_count=%s phase2_compliant=%s",
+                self._version_cache.schema_version,
+                self._version_cache.algo_version,
+                features_count,
+                phase2_compliant,
             )
 
         return self._version_cache
@@ -209,9 +210,9 @@ class FeaturesVersionManager:
 
         if expected_version and current_version != expected_version:
             self.logger.warning(
-                "Version mismatch detected",
-                expected=expected_version,
-                current=current_version,
+                "Version mismatch detected expected=%s current=%s",
+                expected_version,
+                current_version,
             )
             return False
 
@@ -276,10 +277,10 @@ class VersionTracker:
         self.version_history.append(change_record)
 
         self.logger.info(
-            "Version change tracked",
-            change_type=change_type,
-            old_version=old_version,
-            new_version=new_version,
+            "Version change tracked change_type=%s old_version=%s new_version=%s",
+            change_type,
+            old_version,
+            new_version,
         )
 
     def get_migration_plan(self, from_version: str, to_version: str) -> dict[str, Any]:
@@ -313,10 +314,10 @@ class VersionTracker:
             migration_plan["steps"].append("Recalculate affected features")
 
         self.logger.info(
-            "Migration plan generated",
-            from_version=from_version,
-            to_version=to_version,
-            steps_count=len(migration_plan["steps"]),
+            "Migration plan generated from_version=%s to_version=%s steps_count=%s",
+            from_version,
+            to_version,
+            len(migration_plan["steps"]),
         )
 
         return migration_plan

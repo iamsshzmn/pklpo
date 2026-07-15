@@ -52,6 +52,7 @@ def test_memory_optimization_summary():
 
     try:
         from strategy import get_max_lookback_for_strategies
+
         from utils.memlog import force_cleanup, memory_monitor
 
         # Create test data

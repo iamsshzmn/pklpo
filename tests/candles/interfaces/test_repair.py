@@ -428,8 +428,10 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
             symbol: str,
             timeframe: str,
             candles: list[dict[str, Any]],
+            window: Any = None,
+            calendar: Any = None,
         ) -> int:
-            del symbol, timeframe
+            del symbol, timeframe, window, calendar
             written = 0
             for candle in candles:
                 ts = int(candle["timestamp"])

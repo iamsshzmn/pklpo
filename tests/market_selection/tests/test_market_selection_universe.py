@@ -7,11 +7,15 @@ whitelist/blacklist, should_fallback (min_universe_hard/soft), check_systemic_ou
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from src.market_selection.domain.regime import GlobalRegime, RegimeType
 from src.market_selection.domain.scoring import FinalScore
-from src.market_selection.domain.universe import UniverseManager
+
+if TYPE_CHECKING:
+    from src.market_selection.domain.universe import UniverseManager
 
 
 def make_final_scores(symbols: list[str], base_score: float = 0.7) -> list[FinalScore]:
@@ -60,7 +64,7 @@ class TestSelectUniverse:
         scores = make_final_scores(symbols)
         score_history = {s: [0.7] * 10 for s in symbols}
         regime = make_regime()
-        entries, flags = universe_manager.select_universe(
+        entries, _flags = universe_manager.select_universe(
             final_scores=scores,
             score_history=score_history,
             previous_universe=set(),
@@ -110,7 +114,8 @@ class TestSelectUniverse:
         regime = make_regime()
         whitelist = {"WHITE"}
         # WHITE с высоким score попадает в top-N (после сортировки по score desc)
-        scores_plus = scores + [
+        scores_plus = [
+            *scores,
             FinalScore(
                 symbol="WHITE",
                 final_score=0.82,
@@ -123,7 +128,7 @@ class TestSelectUniverse:
                 worst_tf="5m",
                 penalty_applied=0.0,
                 reason_flags=[],
-            )
+            ),
         ]
         scores_plus.sort(key=lambda s: s.final_score, reverse=True)
         entries, _ = universe_manager.select_universe(

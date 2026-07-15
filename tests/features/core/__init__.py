@@ -38,6 +38,7 @@ def _build_cache_key(df: pd.DataFrame, kwargs: dict) -> tuple:
         available_key,
         kwargs.get("volatility_normalize", True),
         kwargs.get("normalize_window", 20),
+        tuple(kwargs.get("critical_indicators") or ()),
     )
 
 

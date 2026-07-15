@@ -33,9 +33,7 @@ PIPELINE_RECOVERY_DECISIONS_STATEMENTS = (
         safety_payload       JSONB        NOT NULL DEFAULT '{}'::jsonb,
         error                TEXT         NULL,
         CONSTRAINT chk_pipeline_recovery_decision_status CHECK (
-            decision_status IN (
-                'skip', 'precheck_failed', 'candidate', 'triggered', 'trigger_failed'
-            )
+            decision_status IN ('skip', 'precheck_failed', 'triggered', 'trigger_failed')
         ),
         CONSTRAINT chk_pipeline_recovery_action_kind CHECK (
             action_kind IN ('none', 'repair', 'bootstrap')

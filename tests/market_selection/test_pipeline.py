@@ -43,14 +43,13 @@ def pipeline(mock_session, config):
     monitoring = Mock()
     monitoring.record_pipeline_metrics = Mock()
     monitoring.record_error = Mock()
-    pl = MarketSelectionPipeline(
+    return MarketSelectionPipeline(
         mock_session,
         config,
         db=db,
         persistence=persistence,
         monitoring=monitoring,
     )
-    return pl
 
 
 def _regime(regime_type: RegimeType = RegimeType.TREND_UP, stale: bool = False):
@@ -89,6 +88,7 @@ async def test_pipeline_success(pipeline, mock_session):
             [],
         ]
     )
+    pipeline._apply_feature_eligibility_filter = AsyncMock()
     pipeline.steps.compute_pair_metrics = AsyncMock(
         return_value=__import__("pandas").DataFrame(
             {

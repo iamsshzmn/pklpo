@@ -8,7 +8,10 @@ from __future__ import annotations
 import importlib.util
 import logging
 from pathlib import Path
-from types import ModuleType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 

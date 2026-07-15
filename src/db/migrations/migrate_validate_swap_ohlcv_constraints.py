@@ -128,9 +128,7 @@ CONSTRAINT_PREFLIGHTS: tuple[ConstraintPreflight, ...] = (
 
 
 def _quote_relation_name(relation_name: str) -> str:
-    return ".".join(
-        f'"{part.replace(chr(34), chr(34) * 2)}"' for part in relation_name.split(".")
-    )
+    return ".".join(f'"{part.replace(chr(34), chr(34) * 2)}"' for part in relation_name.split("."))
 
 
 def _rows_to_dicts(rows: Any) -> list[dict[str, Any]]:
@@ -187,8 +185,8 @@ async def migrate_validate_swap_ohlcv_constraints() -> None:
                     result = await session.execute(
                         text(preflight.query_template.format(partition=partition_sql))
                     )
-                    violations_by_constraint[preflight.constraint_name] = (
-                        _rows_to_dicts(result.mappings().all())
+                    violations_by_constraint[preflight.constraint_name] = _rows_to_dicts(
+                        result.mappings().all()
                     )
 
                 for preflight in CONSTRAINT_PREFLIGHTS:

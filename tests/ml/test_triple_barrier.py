@@ -192,7 +192,7 @@ def test_triple_barrier_edge_bars() -> None:
     assert result["barrier_type"].isin(["pt", "sl", "vert"]).all()
 
     # t1 >= entry для каждого бара
-    for i, (entry, t1) in enumerate(zip(result.index, result["t1"])):
+    for i, (entry, t1) in enumerate(zip(result.index, result["t1"], strict=True)):
         assert t1 >= entry, f"Бар {i}: t1={t1} < entry={entry}"
 
     # t1 <= последний timestamp в данных
@@ -289,7 +289,7 @@ def test_triple_barrier_nonmonotonic_raises() -> None:
     df = df.iloc[::-1].copy()  # reverse
 
     config = BarrierConfig(profit_take=0.02, stop_loss=0.01, max_horizon=3)
-    with pytest.raises(ValueError, match="монотонно"):
+    with pytest.raises(ValueError, match="monotonically increasing"):
         triple_barrier_labels(df, config)
 
 

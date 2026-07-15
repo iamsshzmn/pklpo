@@ -1,59 +1,58 @@
-"""Application-layer exports for the unified ``src.candles`` module."""
+"""Lazy application-layer exports for the unified ``src.candles`` module."""
 
-from .api import (
-    MarketMetaAPI,
-    calculate_notional_value,
-    get_funding_rate,
-    get_instrument_info,
-    get_liquidity_info,
-    get_mark_price,
-    get_open_interest,
-    refresh_okx_meta,
-    refresh_okx_meta_extended,
-    validate_order,
-)
-from .metadata import (
-    MetadataCachePort,
-    MetadataRefreshRequest,
-    MetadataRefreshResult,
-    MetadataSourcePort,
-    OrderValidationRequest,
-    OrderValidationResult,
-    ValidationQueryPort,
-    get_market_instrument_info,
-    refresh_market_metadata,
-    run_metadata_refresh_job,
-    validate_instrument_order,
-)
-from .quality_alerts import dispatch_quality_alerts
-from .quality_pipeline import run_quality_pipeline
-from .sync import (
-    CandleStorePort,
-    ExecutionMode,
-    InstrumentCatalogPort,
-    MarketDataPort,
-    RefreshInstrumentCatalogUseCase,
-    RetryPolicy,
-    RunCandleSyncUseCase,
-    SyncJobRequest,
-    SyncJobResult,
-    SyncPolicyConfig,
-    SyncRun,
-    SyncRunStatus,
-    SyncStatePort,
-    TelemetryPort,
-    refresh_instrument_catalog,
-    run_candle_sync,
-)
-from .sync_use_cases import (
-    MODE_CONFIGS,
-    build_sync_config,
-    check_data_freshness,
-    format_stats_for_xcom,
-    resolve_sync_mode,
-    run_smoke_validation,
-    should_refresh_instruments,
-)
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+_EXPORTS = {
+    "MarketMetaAPI": ".api",
+    "calculate_notional_value": ".api",
+    "get_funding_rate": ".api",
+    "get_instrument_info": ".api",
+    "get_liquidity_info": ".api",
+    "get_mark_price": ".api",
+    "get_open_interest": ".api",
+    "refresh_okx_meta": ".api",
+    "refresh_okx_meta_extended": ".api",
+    "validate_order": ".api",
+    "MetadataCachePort": ".metadata",
+    "MetadataRefreshRequest": ".metadata",
+    "MetadataRefreshResult": ".metadata",
+    "MetadataSourcePort": ".metadata",
+    "OrderValidationRequest": ".metadata",
+    "OrderValidationResult": ".metadata",
+    "ValidationQueryPort": ".metadata",
+    "get_market_instrument_info": ".metadata",
+    "refresh_market_metadata": ".metadata",
+    "run_metadata_refresh_job": ".metadata",
+    "validate_instrument_order": ".metadata",
+    "dispatch_quality_alerts": ".quality_alerts",
+    "run_quality_pipeline": ".quality_pipeline",
+    "CandleStorePort": ".sync",
+    "ExecutionMode": ".sync",
+    "InstrumentCatalogPort": ".sync",
+    "MarketDataPort": ".sync",
+    "RefreshInstrumentCatalogUseCase": ".sync",
+    "RetryPolicy": ".sync",
+    "RunCandleSyncUseCase": ".sync",
+    "SyncJobRequest": ".sync",
+    "SyncJobResult": ".sync",
+    "SyncPolicyConfig": ".sync",
+    "SyncRun": ".sync",
+    "SyncRunStatus": ".sync",
+    "SyncStatePort": ".sync",
+    "TelemetryPort": ".sync",
+    "refresh_instrument_catalog": ".sync",
+    "run_candle_sync": ".sync",
+    "MODE_CONFIGS": ".sync_use_cases",
+    "build_sync_config": ".sync_use_cases",
+    "check_data_freshness": ".sync_use_cases",
+    "format_stats_for_xcom": ".sync_use_cases",
+    "resolve_sync_mode": ".sync_use_cases",
+    "run_smoke_validation": ".sync_use_cases",
+    "should_refresh_instruments": ".sync_use_cases",
+}
 
 __all__ = [
     "MODE_CONFIGS",
@@ -103,3 +102,12 @@ __all__ = [
     "validate_instrument_order",
     "validate_order",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = import_module(_EXPORTS[name], __name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

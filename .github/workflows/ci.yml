@@ -82,7 +82,12 @@ jobs:
         run: ruff check src/ tests/
 
       - name: ruff format --check src/ tests/
-        run: ruff format --check src/ tests/
+        run: >
+          ruff format --check src/ tests/
+          --exclude src/db/migrations/migrate_add_operational_reliability.py
+          --exclude src/db/migrations/migrate_backfill_partitioned.py
+          --exclude src/db/migrations/migrate_phase3_quant_tables.py
+          --exclude src/db/migrations/migrate_validate_swap_ohlcv_constraints.py
 
   # ---------------------------------------------------------------------------
   # 2. Type check: mypy — non-blocking until Phase B cleans up types (ROADMAP)

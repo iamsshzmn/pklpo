@@ -78,7 +78,7 @@ class TestPerformance:
         )
 
         start_time = time.time()
-        open_clean, high_clean, low_clean, close_clean, has_sufficient = (
+        open_clean, high_clean, low_clean, close_clean, _has_sufficient = (
             clean_ohlcv_data(df, min_length=10)
         )
         end_time = time.time()

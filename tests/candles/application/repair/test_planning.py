@@ -8,6 +8,9 @@ from src.candles.application.repair.planning import (
     plan_auto_apply_window,
     resolve_repair_window,
 )
+from src.candles.domain.okx_calendar import OKXCandleCalendar
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 @dataclass
@@ -118,6 +121,7 @@ async def test_plan_auto_apply_window_rejects_empty_coverage() -> None:
             timeframe="1m",
             max_range_days=7,
             now_ts_ms=100_000,
+            calendar=UTC_CAL,
         )
 
 
@@ -144,6 +148,7 @@ async def test_plan_auto_apply_window_reports_missing_listing_date_metadata() ->
             now_ts_ms=100_000,
             anchor_strategy="listing-date",
             anchor_metadata=anchor_metadata,
+            calendar=UTC_CAL,
         )
 
 
@@ -161,6 +166,7 @@ async def test_plan_auto_apply_window_uses_explicit_anchor_on_empty_coverage() -
         max_range_days=1,
         now_ts_ms=200_000_000,
         anchor_ts_ms=61_000,
+        calendar=UTC_CAL,
     )
 
     assert plan.start_ts_ms == 120_000
@@ -189,6 +195,7 @@ async def test_plan_auto_apply_window_uses_listing_date_anchor_on_empty_coverage
         now_ts_ms=200_000_000,
         anchor_strategy="listing-date",
         anchor_metadata=anchor_metadata,
+        calendar=UTC_CAL,
     )
 
     assert plan.start_ts_ms == 120_000
@@ -217,6 +224,7 @@ async def test_plan_auto_apply_window_existing_coverage_uses_leading_anchor_befo
         now_ts_ms=200_000_000,
         anchor_strategy="listing-date",
         anchor_metadata=anchor_metadata,
+        calendar=UTC_CAL,
     )
 
     assert plan.start_ts_ms == 120_000
@@ -247,6 +255,7 @@ async def test_plan_auto_apply_window_existing_coverage_without_leading_gap_keep
         now_ts_ms=200_000_000,
         anchor_strategy="listing-date",
         anchor_metadata=anchor_metadata,
+        calendar=UTC_CAL,
     )
 
     assert gap_calls == [
@@ -283,6 +292,7 @@ async def test_plan_auto_apply_window_returns_noop_when_existing_coverage_has_no
         now_ts_ms=123_456,
         anchor_strategy="listing-date",
         anchor_metadata=anchor_metadata,
+        calendar=UTC_CAL,
     )
 
     assert plan.start_ts_ms == 120_000
@@ -303,6 +313,7 @@ async def test_plan_auto_apply_window_limits_range_to_max_days() -> None:
         timeframe="1m",
         max_range_days=1,
         now_ts_ms=200_000_000,
+        calendar=UTC_CAL,
     )
 
     assert plan.start_ts_ms == 5_000
@@ -331,6 +342,7 @@ async def test_plan_auto_apply_window_1m_existing_coverage_uses_leading_anchor_b
         now_ts_ms=1740956400000,
         anchor_strategy="listing-date",
         anchor_metadata=anchor_metadata,
+        calendar=UTC_CAL,
     )
 
     assert plan.start_ts_ms == 1738368000000
@@ -363,6 +375,7 @@ async def test_plan_auto_apply_window_rejects_listing_date_without_freshness_sou
             now_ts_ms=200_000_000,
             anchor_strategy="listing-date",
             anchor_metadata=anchor_metadata,
+            calendar=UTC_CAL,
         )
 
 
@@ -384,6 +397,7 @@ async def test_plan_auto_apply_window_rejects_listing_date_when_anchor_metadata_
             now_ts_ms=100_000,
             anchor_strategy="listing-date",
             anchor_metadata=None,
+            calendar=UTC_CAL,
         )
 
 
@@ -409,4 +423,5 @@ async def test_plan_auto_apply_window_rejects_listing_date_when_list_time_is_non
             now_ts_ms=100_000,
             anchor_strategy="listing-date",
             anchor_metadata=anchor_metadata,
+            calendar=UTC_CAL,
         )

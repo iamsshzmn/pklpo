@@ -5,7 +5,7 @@
 import pandas as pd
 import pytest
 
-from src.features.ta_safe import FeatureCalcError, safe_ta_with_fallback
+from src.features.ta_safe import FeatureCalcError, safe_ta, safe_ta_with_fallback
 
 
 @pytest.fixture
@@ -42,13 +42,13 @@ def test_input_validation():
     incomplete_df = pd.DataFrame({"close": [1, 2, 3]})
 
     with pytest.raises(FeatureCalcError, match="нет колонок"):
-        safe_ta_with_fallback(incomplete_df, "rsi", length=14)
+        safe_ta(incomplete_df, "rsi", length=14)
 
     # Пустой DataFrame
-    empty_df = pd.DataFrame()
+    empty_df = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
     with pytest.raises(FeatureCalcError, match="пустой DataFrame"):
-        safe_ta_with_fallback(empty_df, "rsi", length=14)
+        safe_ta(empty_df, "rsi", length=14)
 
 
 def test_column_naming_consistency(sample_ohlcv):
@@ -80,7 +80,7 @@ def test_index_preservation(sample_ohlcv):
 def test_forbidden_functions(sample_ohlcv):
     """Тест: запрещенные функции."""
     with pytest.raises(FeatureCalcError, match="запрещён"):
-        safe_ta_with_fallback(sample_ohlcv, "unknown_function")
+        safe_ta(sample_ohlcv, "unknown_function")
 
 
 def test_fallback_quality(sample_ohlcv):

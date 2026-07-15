@@ -60,8 +60,8 @@ async def test_upsert_candles_uses_bulk_execute(
 
     repo = SwapCandlesRepository()
     candles = [
-        {"ts": 1, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10},
-        {"ts": 2, "open": 2, "high": 3, "low": 1.5, "close": 2.5, "volume": 11},
+        {"ts": 60_000, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10},
+        {"ts": 120_000, "open": 2, "high": 3, "low": 1.5, "close": 2.5, "volume": 11},
     ]
     additional = {
         "funding_rate": {"fundingRate": 0.001},
@@ -78,8 +78,8 @@ async def test_upsert_candles_uses_bulk_execute(
     assert saved == 2
     assert session.committed is True
     assert session.rolled_back is False
-    assert len(session.execute_calls) == 1
-    _, params = session.execute_calls[0]
+    assert len(session.execute_calls) == 3
+    _, params = session.execute_calls[-1]
     assert isinstance(params, list)
     assert len(params) == 2
 
@@ -131,7 +131,7 @@ async def test_upsert_candles_retries_transient_db_errors(
 
     repo = SwapCandlesRepository()
     candles = [
-        {"ts": 1, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10},
+        {"ts": 60_000, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10},
     ]
 
     saved = await repo.upsert_candles(
@@ -142,7 +142,7 @@ async def test_upsert_candles_retries_transient_db_errors(
     )
 
     assert saved == 1
-    assert len(session.execute_calls) == 1
+    assert len(session.execute_calls) == 3
 
 
 class _InvalidatedDBAPIError(sa_exc.DBAPIError):
@@ -192,7 +192,14 @@ async def test_run_with_db_retry_resets_pool_on_invalidated_connection(
     with patch("src.database.reset_pool", new=AsyncMock(side_effect=_fake_reset_pool)):
         repo = SwapCandlesRepository()
         candles = [
-            {"ts": 1, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10},
+            {
+                "ts": 60_000,
+                "open": 1,
+                "high": 2,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 10,
+            },
         ]
         saved = await repo.upsert_candles(
             symbol="BTC-USDT-SWAP",

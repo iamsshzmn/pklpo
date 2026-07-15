@@ -101,7 +101,7 @@ async def test_fallback_copy_parallel_same_ts_version_is_serialized() -> None:
         await asyncio.sleep(0.1)
         second_task = asyncio.create_task(_worker(hold_lock=False))
         (
-            (first_metrics, first_duration),
+            (first_metrics, _first_duration),
             (second_metrics, second_duration),
         ) = await asyncio.gather(first_task, second_task)
 

@@ -472,7 +472,7 @@ class TestValidationChain:
             .add(TrackingValidator())  # Should run
         )
 
-        result = chain.validate(df)
+        chain.validate(df)
 
         assert "tracking" in validators_run
 

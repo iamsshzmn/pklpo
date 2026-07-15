@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -33,6 +34,13 @@ def _load_market_selection_module(monkeypatch: pytest.MonkeyPatch) -> types.Modu
 
         def __rrshift__(self, other: Any) -> _DummyOperator:
             return self
+
+    common_module = types.ModuleType("_common")
+    common_module.airflow_log_context = lambda *args, **kwargs: nullcontext()
+    common_module.get_dag_env = lambda: {}
+    common_module.get_or_create_event_loop = lambda: None
+    common_module.setup_env = lambda env: None
+    monkeypatch.setitem(sys.modules, "_common", common_module)
 
     airflow_module = types.ModuleType("airflow")
     airflow_module.DAG = _DummyDAG
@@ -95,9 +103,9 @@ def test_branch_cleanup_daily_selects_cleanup_and_logs(
 
     branch = market_selection_dag_module.branch_cleanup_daily(**context)
 
-    assert branch == "cleanup_old_data"
+    assert branch == "cleanup_old_market_selection_data"
     assert "branch_cleanup_daily decision" in caplog.text
-    assert "selected_branch=cleanup_old_data" in caplog.text
+    assert "selected_branch=cleanup_old_market_selection_data" in caplog.text
 
 
 def test_branch_skip_or_trigger_selects_trigger_and_logs(

@@ -72,7 +72,7 @@ class TestEnsureTsColumn:
     def test_existing_ts_column(self):
         """Test when ts column already exists."""
         df = pd.DataFrame(
-            {"ts": [1672574400, 1672574460, 1672574520], "value": [1, 2, 3]}
+            {"ts": [1672574400000, 1672574460000, 1672574520000], "value": [1, 2, 3]}
         )
         result = ensure_ts_column(df)
 
@@ -90,7 +90,7 @@ class TestEnsureTsColumn:
         result = ensure_ts_column(df, timestamp_col="timestamp")
 
         assert "ts" in result.columns
-        assert result["ts"].iloc[0] == 1672574400  # converted to seconds
+        assert result["ts"].iloc[0] == 1672574400000  # normalized to milliseconds
 
     def test_datetime_index_conversion(self):
         """Test using datetime index as timestamp source."""
@@ -110,8 +110,8 @@ class TestEnsureTsColumn:
 
         assert "ts" in result.columns
         assert result["ts"].iloc[0] == 0
-        assert result["ts"].iloc[1] == 1
-        assert result["ts"].iloc[2] == 2
+        assert result["ts"].iloc[1] == 1000
+        assert result["ts"].iloc[2] == 2000
 
 
 class TestValidateTimestampConsistency:
@@ -120,7 +120,7 @@ class TestValidateTimestampConsistency:
     def test_valid_monotonic_timestamps(self):
         """Test valid monotonic timestamps."""
         df = pd.DataFrame(
-            {"ts": [1672574400, 1672574460, 1672574520], "value": [1, 2, 3]}
+            {"ts": [1672574400000, 1672574460000, 1672574520000], "value": [1, 2, 3]}
         )
         assert validate_timestamp_consistency(df) is True
 
@@ -128,7 +128,7 @@ class TestValidateTimestampConsistency:
         """Test non-monotonic timestamps."""
         df = pd.DataFrame(
             {
-                "ts": [1672574400, 1672574520, 1672574460],  # not monotonic
+                "ts": [1672574400000, 1672574520000, 1672574460000],  # not monotonic
                 "value": [1, 2, 3],
             }
         )
@@ -136,19 +136,23 @@ class TestValidateTimestampConsistency:
 
     def test_nan_timestamps(self):
         """Test NaN timestamps."""
-        df = pd.DataFrame({"ts": [1672574400, np.nan, 1672574520], "value": [1, 2, 3]})
+        df = pd.DataFrame(
+            {"ts": [1672574400000, np.nan, 1672574520000], "value": [1, 2, 3]}
+        )
         assert validate_timestamp_consistency(df) is False
 
     def test_negative_timestamps(self):
         """Test negative timestamps."""
-        df = pd.DataFrame({"ts": [-1000, 1672574400, 1672574520], "value": [1, 2, 3]})
+        df = pd.DataFrame(
+            {"ts": [-1000, 1672574400000, 1672574520000], "value": [1, 2, 3]}
+        )
         assert validate_timestamp_consistency(df) is False
 
     def test_future_timestamps(self):
         """Test timestamps beyond year 2100."""
         df = pd.DataFrame(
             {
-                "ts": [1672574400, 1672574520, 5000000000],  # year 2128
+                "ts": [1672574400000, 1672574520000, 5000000000000],  # year 2128
                 "value": [1, 2, 3],
             }
         )
@@ -166,22 +170,24 @@ class TestGetTimestampInfo:
     def test_valid_timestamps_info(self):
         """Test getting info for valid timestamps."""
         df = pd.DataFrame(
-            {"ts": [1672574400, 1672574460, 1672574520], "value": [1, 2, 3]}
+            {"ts": [1672574400000, 1672574460000, 1672574520000], "value": [1, 2, 3]}
         )
         info = get_timestamp_info(df)
 
         assert info["count"] == 3
         assert info["non_null_count"] == 3
         assert info["null_count"] == 0
-        assert info["min"] == 1672574400
-        assert info["max"] == 1672574520
+        assert info["min"] == 1672574400000
+        assert info["max"] == 1672574520000
         assert info["is_monotonic"] is True
         assert "min_date" in info
         assert "max_date" in info
 
     def test_mixed_timestamps_info(self):
         """Test getting info for timestamps with NaN."""
-        df = pd.DataFrame({"ts": [1672574400, np.nan, 1672574520], "value": [1, 2, 3]})
+        df = pd.DataFrame(
+            {"ts": [1672574400000, np.nan, 1672574520000], "value": [1, 2, 3]}
+        )
         info = get_timestamp_info(df)
 
         assert info["count"] == 3

@@ -75,7 +75,7 @@ def test_symbol_succession_migration_registered_after_470() -> None:
     assert len(ids) == len(set(ids))
 
 
-def test_ton_gram_seed_sql_is_idempotent_needs_review() -> None:
+def test_ton_gram_seed_sql_is_idempotent_approved() -> None:
     sql = SEED_SQL.read_text(encoding="utf-8")
 
     assert "INSERT INTO ops.symbol_succession" in sql
@@ -84,10 +84,16 @@ def test_ton_gram_seed_sql_is_idempotent_needs_review() -> None:
     assert "'SWAP'" in sql
     assert "'OKX'" in sql
     assert "'token_migration'" in sql
-    assert "'needs_review'" in sql
+    assert "'approved'" in sql
     assert "'https://www.okx.com/help/okx-to-support-ton-crypto-migration'" in sql
-    assert "ON CONFLICT (venue, inst_type, old_symbol, new_symbol) DO NOTHING" in sql
-    assert "tick/lot checked against OKX announcement, not DB" in sql
+    assert "ON CONFLICT (venue, inst_type, old_symbol, new_symbol) DO UPDATE SET" in sql
+    assert (
+        "WHERE ops.symbol_succession.event_type IS DISTINCT FROM EXCLUDED.event_type"
+        in sql
+    )
+    assert "price_continuity_checked" in sql
+    assert "contract_specs_checked" in sql
+    assert "approved_at" in sql
 
 
 def test_ton_gram_checks_sql_reports_specs_and_continuity_without_approval() -> None:

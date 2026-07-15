@@ -21,7 +21,6 @@ from src.candles.application.sync.use_cases import (
 )
 from src.candles.repository import SwapCandlesRepository
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -123,13 +122,13 @@ async def test_upsert_candles_recovers_after_transient_error(
         symbol="BTC-USDT-SWAP",
         timeframe="1m",
         candles=[
-            {"ts": 1, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}
+            {"ts": 60_000, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}
         ],
         additional_data={},
     )
 
     assert saved == 1
-    assert len(session.execute_calls) == 1
+    assert len(session.execute_calls) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +147,9 @@ class _MarketDataStub:
         return None
 
     async def fetch_candles(self, **kwargs):
-        return [{"ts": 1, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}]
+        return [
+            {"ts": 60_000, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}
+        ]
 
     async def fetch_instruments(self, instrument_type: str = "SWAP"):
         return [{"instId": s} for s in self._symbols]

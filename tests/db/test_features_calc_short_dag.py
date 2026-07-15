@@ -71,48 +71,51 @@ def features_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     return _load_features_dag_module(monkeypatch)
 
 
-def test_prepare_storage_task_returns_loop_result(
+def test_run_task_returns_loop_result(
     features_dag_module: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
 
-    async def _fake_run_indicators_partition_maintenance(
-        **kwargs: Any,
-    ) -> dict[str, Any]:
+    async def _fake_run_features_calc_short(**kwargs: Any) -> dict[str, Any]:
         calls.append(kwargs)
-        return {"created_count": 2, "existing_count": 5}
+        return {"rows_saved_total": 7}
 
-    db_interfaces = types.ModuleType("src.db.indicators_partition.interfaces")
-    db_interfaces.run_indicators_partition_maintenance = (
-        _fake_run_indicators_partition_maintenance
+    monkeypatch.setattr(
+        features_dag_module, "run_features_calc_short", _fake_run_features_calc_short
     )
-    monkeypatch.setitem(
-        sys.modules, "src.db.indicators_partition.interfaces", db_interfaces
-    )
-
     monkeypatch.setattr(
         features_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
     )
     monkeypatch.setattr(features_dag_module, "setup_env", lambda env: None)
+    monkeypatch.setenv("DATABASE_URL", "db://test")
 
-    result = features_dag_module.features_calc_short_prepare_storage_task(
+    result = features_dag_module.features_calc_short_run_task(
         dag_run=SimpleNamespace(
             conf={
-                "partition_months_back": 2,
-                "partition_months_ahead": 4,
-            }
+                "symbols": ["BTC-USDT-SWAP"],
+                "timeframes": ["1m", "5m"],
+                "max_concurrent_symbols": 4,
+                "max_lag_fast": 300,
+                "max_lag_slow": 1500,
+                "warmup_bars": 600,
+            },
+            run_type="manual",
         ),
         logical_date=datetime(2026, 4, 2, 16, 15),
     )
 
-    assert result == {"created_count": 2, "existing_count": 5}
+    assert result["rows_saved_total"] == 7
+    assert "duration_seconds" in result
     assert calls == [
         {
-            "months_back": 2,
-            "months_ahead": 4,
-            "reference_dt": datetime(2026, 4, 2, 16, 15),
-            "require_parent_pk": True,
-            "repair_parent_schema": True,
+            "database_url": "db://test",
+            "symbols": ["BTC-USDT-SWAP"],
+            "timeframes": ["1m", "5m"],
+            "max_concurrent_symbols": 4,
+            "is_manual_run": True,
+            "max_lag_fast": 300,
+            "max_lag_slow": 1500,
+            "warmup_bars": 600,
         }
     ]

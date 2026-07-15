@@ -17,11 +17,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.ml.labeling.sample_weights import _build_concurrency, get_uniqueness_weights
 from src.ml.labeling.triple_barrier import _triple_barrier_scan
-
 
 # ---------------------------------------------------------------------------
 # Triple-barrier: hand-computed reference
@@ -80,7 +78,7 @@ def test_triple_barrier_pt_triggers_before_sl() -> None:
     high = np.array([100.0, 103.0])  # bar1 high >= 102 → PT
     low = np.array([100.0, 98.0])  # bar1 low  <= 99  → SL (тот же бар)
 
-    labels, t1_idx, barrier_code = _triple_barrier_scan(
+    labels, _t1_idx, barrier_code = _triple_barrier_scan(
         close, high, low, pt=0.02, sl=0.01, max_h=1
     )
 
@@ -96,7 +94,7 @@ def test_triple_barrier_vertical_when_no_barrier_hit() -> None:
     high = np.array([100.0, 100.5, 100.5, 100.5])  # < 102
     low = np.array([100.0, 99.5, 99.5, 99.5])  # > 99
 
-    labels, t1_idx, barrier_code = _triple_barrier_scan(
+    labels, _t1_idx, barrier_code = _triple_barrier_scan(
         close, high, low, pt=0.02, sl=0.01, max_h=3
     )
 

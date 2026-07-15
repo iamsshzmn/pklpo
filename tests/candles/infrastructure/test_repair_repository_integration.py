@@ -54,14 +54,14 @@ def _build_local_postgres_url() -> str:
 
 
 @pytest_asyncio.fixture
-async def session_factory() -> AsyncIterator[sessionmaker]:
+async def session_factory() -> AsyncIterator[async_sessionmaker]:
     engine = create_async_engine(
         _build_local_postgres_url(),
         future=True,
         pool_pre_ping=True,
         connect_args={"ssl": "disable"},
     )
-    factory = sessionmaker(
+    factory = async_sessionmaker(
         bind=engine,
         class_=AsyncSession,
         expire_on_commit=False,
@@ -92,7 +92,7 @@ async def session_factory() -> AsyncIterator[sessionmaker]:
 @pytest.fixture
 def patch_repair_repository_session(
     monkeypatch: pytest.MonkeyPatch,
-    session_factory: sessionmaker,
+    session_factory: async_sessionmaker,
 ) -> None:
     @asynccontextmanager
     async def _get_db_session() -> AsyncIterator[AsyncSession]:
@@ -103,7 +103,7 @@ def patch_repair_repository_session(
 
 
 async def _delete_test_rows(
-    session_factory: sessionmaker,
+    session_factory: async_sessionmaker,
     *,
     symbol: str,
     timeframe: str,
@@ -124,7 +124,7 @@ async def _delete_test_rows(
 
 @pytest.mark.usefixtures("patch_repair_repository_session")
 async def test_selective_upsert_preserves_noncanonical_columns_on_conflict(
-    session_factory: sessionmaker,
+    session_factory: async_sessionmaker,
 ) -> None:
     repository = RepairCandlesRepository()
     symbol = f"TEST-REPAIR-{uuid4().hex[:8]}"
@@ -249,7 +249,7 @@ async def test_selective_upsert_preserves_noncanonical_columns_on_conflict(
 
 @pytest.mark.usefixtures("patch_repair_repository_session")
 async def test_list_timestamps_and_count_candles_use_real_db_window(
-    session_factory: sessionmaker,
+    session_factory: async_sessionmaker,
 ) -> None:
     repository = RepairCandlesRepository()
     symbol = f"TEST-REPAIR-{uuid4().hex[:8]}"

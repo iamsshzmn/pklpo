@@ -53,6 +53,7 @@ def test_parquet_operations():
         import tempfile
 
         from calc import compute_and_dump_parquet
+
         from utils.memlog import memory_monitor
 
         # Create test data

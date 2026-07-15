@@ -212,7 +212,9 @@ async def test_selective_upsert_returns_zero_for_empty_input() -> None:
 async def test_selective_upsert_updates_only_canonical_candle_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = FakeSession(execute_results=[FakeResult(rowcount=2)])
+    session = FakeSession(
+        execute_results=[FakeResult(), FakeResult(), FakeResult(rowcount=2)]
+    )
     repository = RepairCandlesRepository()
 
     async def passthrough(operation: Any) -> Any:
@@ -231,7 +233,7 @@ async def test_selective_upsert_updates_only_canonical_candle_fields(
                 "timestamp": 0,
                 "open": 1,
                 "high": 2,
-                "low": 0,
+                "low": 1,
                 "close": 1,
                 "volume": 10,
                 "vol_ccy": 11,
@@ -255,7 +257,7 @@ async def test_selective_upsert_updates_only_canonical_candle_fields(
     assert result == 2
     assert session.committed is True
     assert session.rolled_back is False
-    statement, rows = session.executed[0]
+    statement, rows = session.executed[-1]
     assert "funding_rate" not in statement
     assert "open_interest" not in statement
     assert rows == [
@@ -265,7 +267,7 @@ async def test_selective_upsert_updates_only_canonical_candle_fields(
             "timestamp": 0,
             "open": 1,
             "high": 2,
-            "low": 0,
+            "low": 1,
             "close": 1,
             "volume": 10,
             "vol_ccy": 11,

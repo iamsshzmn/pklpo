@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from src.logging.context import get_current_context, get_current_run_id, set_log_context
 
 

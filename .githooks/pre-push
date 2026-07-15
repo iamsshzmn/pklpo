@@ -1,0 +1,26 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "${PKLPO_SKIP_PR_CI:-}" = "1" ]; then
+  echo "[pre-push] PKLPO_SKIP_PR_CI=1; skipping local PR CI."
+  exit 0
+fi
+
+PYTHON_CMD="${PKLPO_PR_CI_PYTHON:-}"
+if [ -z "$PYTHON_CMD" ]; then
+  if [ -x "venv/Scripts/python.exe" ]; then
+    PYTHON_CMD="venv/Scripts/python.exe"
+  elif [ -x ".venv/Scripts/python.exe" ]; then
+    PYTHON_CMD=".venv/Scripts/python.exe"
+  elif [ -x "venv/bin/python" ]; then
+    PYTHON_CMD="venv/bin/python"
+  elif [ -x ".venv/bin/python" ]; then
+    PYTHON_CMD=".venv/bin/python"
+  else
+    PYTHON_CMD="python"
+  fi
+fi
+
+echo "[pre-push] Running local PR CI. Set PKLPO_SKIP_PR_CI=1 to bypass intentionally."
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check_pr_ci.ps1 -Python "$PYTHON_CMD" -StopOnFailure
+

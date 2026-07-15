@@ -229,10 +229,6 @@ class TestAggregateMtfScores:
             "15m": {"A": 0.6},
             "5m": {"A": 0.5},
         }
-        tf_scores_no_senior = {
-            "15m": {"B": 0.9},
-            "5m": {"B": 0.9},
-        }
         results = scoring_engine.aggregate_mtf_scores(tf_scores, RegimeType.RANGE)
         symbols = {r.symbol for r in results}
         assert "A" in symbols

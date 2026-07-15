@@ -83,7 +83,13 @@ def test_grafana_alert_rules_reference_stable_datasource_uids() -> None:
             if isinstance(item.get("datasourceUid"), str)
         }
 
-        assert not datasource_uids - {"Prometheus", "Loki", "Tempo", "__expr__"}
+        assert not datasource_uids - {
+            "Prometheus",
+            "Loki",
+            "Tempo",
+            "PostgresPKLPO",
+            "__expr__",
+        }
 
 
 def test_operator_docs_describe_run_id_to_trace_id_to_tempo_workflow() -> None:

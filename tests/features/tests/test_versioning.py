@@ -2,6 +2,7 @@
 Tests for versioning module.
 """
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from src.features.infrastructure.versioning import (
@@ -49,7 +50,14 @@ class TestFeaturesVersionManager:
         """Test getting schema version."""
         manager = FeaturesVersionManager()
 
-        with patch("src.features.specs.FEATURE_SPECS", [{"name": "test_feature"}]):
+        with patch(
+            "src.features.specs.FEATURE_SPECS",
+            {
+                "test_feature": SimpleNamespace(
+                    name="test_feature", type="test", params={}
+                )
+            },
+        ):
             version = manager.get_schema_version()
             assert version.startswith("schema_v")
             assert len(version) >= 16  # 'schema_v' + 8+ chars
@@ -80,7 +88,14 @@ class TestFeaturesVersionManager:
         """Test getting complete version info."""
         manager = FeaturesVersionManager()
 
-        with patch("src.features.specs.FEATURE_SPECS", [{"name": "test_feature"}]):
+        with patch(
+            "src.features.specs.FEATURE_SPECS",
+            {
+                "test_feature": SimpleNamespace(
+                    name="test_feature", type="test", params={}
+                )
+            },
+        ):
             with patch(
                 "src.features.specs.PHASE_2_REQUIRED_FEATURES", ["test_feature"]
             ):
@@ -100,7 +115,14 @@ class TestFeaturesVersionManager:
         """Test version info caching."""
         manager = FeaturesVersionManager()
 
-        with patch("src.features.specs.FEATURE_SPECS", [{"name": "test_feature"}]):
+        with patch(
+            "src.features.specs.FEATURE_SPECS",
+            {
+                "test_feature": SimpleNamespace(
+                    name="test_feature", type="test", params={}
+                )
+            },
+        ):
             with patch(
                 "src.features.specs.PHASE_2_REQUIRED_FEATURES", ["test_feature"]
             ):
@@ -116,7 +138,14 @@ class TestFeaturesVersionManager:
         """Test clearing version cache."""
         manager = FeaturesVersionManager()
 
-        with patch("src.features.specs.FEATURE_SPECS", [{"name": "test_feature"}]):
+        with patch(
+            "src.features.specs.FEATURE_SPECS",
+            {
+                "test_feature": SimpleNamespace(
+                    name="test_feature", type="test", params={}
+                )
+            },
+        ):
             with patch(
                 "src.features.specs.PHASE_2_REQUIRED_FEATURES", ["test_feature"]
             ):
@@ -138,7 +167,14 @@ class TestFeaturesVersionManager:
         """Test exporting version info."""
         manager = FeaturesVersionManager()
 
-        with patch("src.features.specs.FEATURE_SPECS", [{"name": "test_feature"}]):
+        with patch(
+            "src.features.specs.FEATURE_SPECS",
+            {
+                "test_feature": SimpleNamespace(
+                    name="test_feature", type="test", params={}
+                )
+            },
+        ):
             with patch("builtins.open", create=True) as mock_open:
                 with patch("json.dump") as mock_json_dump:
                     manager.export_version_info("test_version.json")
@@ -150,7 +186,14 @@ class TestFeaturesVersionManager:
         """Test version consistency validation."""
         manager = FeaturesVersionManager()
 
-        with patch("src.features.specs.FEATURE_SPECS", [{"name": "test_feature"}]):
+        with patch(
+            "src.features.specs.FEATURE_SPECS",
+            {
+                "test_feature": SimpleNamespace(
+                    name="test_feature", type="test", params={}
+                )
+            },
+        ):
             # Test with no expected version
             result = manager.validate_version_consistency()
             assert result is True
@@ -168,7 +211,14 @@ class TestFeaturesVersionManager:
         """Test getting version summary."""
         manager = FeaturesVersionManager()
 
-        with patch("src.features.specs.FEATURE_SPECS", [{"name": "test_feature"}]):
+        with patch(
+            "src.features.specs.FEATURE_SPECS",
+            {
+                "test_feature": SimpleNamespace(
+                    name="test_feature", type="test", params={}
+                )
+            },
+        ):
             with patch(
                 "src.features.specs.PHASE_2_REQUIRED_FEATURES", ["test_feature"]
             ):
@@ -234,7 +284,9 @@ class TestGlobalFunctions:
 
     def test_get_current_version(self):
         """Test get_current_version function."""
-        with patch("src.features.versioning.version_manager") as mock_manager:
+        with patch(
+            "src.features.infrastructure.versioning.version_manager"
+        ) as mock_manager:
             mock_version_info = MagicMock()
             mock_manager.get_version_info.return_value = mock_version_info
 
@@ -245,7 +297,9 @@ class TestGlobalFunctions:
 
     def test_track_version_change(self):
         """Test track_version_change function."""
-        with patch("src.features.versioning.version_tracker") as mock_tracker:
+        with patch(
+            "src.features.infrastructure.versioning.version_tracker"
+        ) as mock_tracker:
             track_version_change("v1.0.0", "v1.1.0", "schema", {"test": "data"})
 
             mock_tracker.track_version_change.assert_called_once_with(
@@ -254,7 +308,9 @@ class TestGlobalFunctions:
 
     def test_export_version_info(self):
         """Test export_version_info function."""
-        with patch("src.features.versioning.version_manager") as mock_manager:
+        with patch(
+            "src.features.infrastructure.versioning.version_manager"
+        ) as mock_manager:
             export_version_info("test.json", test_param="value")
 
             mock_manager.export_version_info.assert_called_once_with(

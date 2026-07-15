@@ -215,7 +215,7 @@ def test_report_empty_config() -> None:
 
     assert isinstance(report, str)
     assert ctx.run_id in report
-    assert "не заданы" in report  # Placeholder для отсутствующих данных
+    assert "Model parameters not set" in report
 
 
 # ---------------------------------------------------------------------------

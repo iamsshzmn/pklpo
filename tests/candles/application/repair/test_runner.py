@@ -12,12 +12,15 @@ from src.candles.application.repair.planning import (
 )
 from src.candles.application.repair.runner import run_repair_timeframe
 from src.candles.application.repair.summary import RepairSummary
+from src.candles.domain.okx_calendar import OKXCandleCalendar
 from src.candles.domain.repair import (
     RepairExecutionMode,
     RepairStrategy,
     RepairVerificationMethod,
     RepairWindow,
 )
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 @dataclass
@@ -160,6 +163,7 @@ async def test_run_repair_timeframe_executes_newest_chunks_first_with_replanning
         execute_once=_execute_once,
         auto_apply_iteration_limit=10,
         chunk_size_bars=2,
+        calendar=UTC_CAL,
     )
 
     assert calls == [
@@ -215,6 +219,7 @@ async def test_run_repair_timeframe_stops_gracefully_on_incomplete_chunk(
         execute_once=_execute_once,
         auto_apply_iteration_limit=10,
         chunk_size_bars=2,
+        calendar=UTC_CAL,
     )
 
     assert calls == [(400_000, 500_000)]
@@ -275,6 +280,7 @@ async def test_run_repair_timeframe_marks_partial_when_chunk_limit_is_exhausted(
         execute_once=_execute_once,
         auto_apply_iteration_limit=1,
         chunk_size_bars=2,
+        calendar=UTC_CAL,
     )
 
     assert calls == [(400_000, 500_000)]

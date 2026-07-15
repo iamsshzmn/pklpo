@@ -58,10 +58,21 @@ def _load_controller_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.Module
     # Stub _common (DAG-local package, not importable from test process)
     import asyncio
 
+    def _get_or_create_event_loop() -> asyncio.AbstractEventLoop:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                raise RuntimeError("closed")
+            return loop
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop
+
     _common_mod = types.ModuleType("_common")
     _common_mod.get_dag_env = lambda: "local"  # type: ignore[attr-defined]
     _common_mod.setup_env = lambda env: None  # type: ignore[attr-defined]
-    _common_mod.get_or_create_event_loop = asyncio.get_event_loop  # type: ignore[attr-defined]
+    _common_mod.get_or_create_event_loop = _get_or_create_event_loop  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "_common", _common_mod)
 
     module_path = (

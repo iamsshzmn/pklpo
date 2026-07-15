@@ -1,7 +1,5 @@
 """Unit tests for DynamicBatchPolicy."""
 
-import pytest
-
 from src.candles.domain.batch_policy import DynamicBatchPolicy
 
 
