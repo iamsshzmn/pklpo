@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -379,9 +379,9 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
     class _MonthlyRepository:
         def __init__(self) -> None:
             self.timestamps = {
-                int(datetime(2026, 1, 1).timestamp() * 1000),
-                int(datetime(2026, 2, 1).timestamp() * 1000),
-                int(datetime(2026, 3, 1).timestamp() * 1000),
+                int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000),
+                int(datetime(2026, 2, 1, tzinfo=UTC).timestamp() * 1000),
+                int(datetime(2026, 3, 1, tzinfo=UTC).timestamp() * 1000),
             }
 
         async def get_coverage_bounds(
@@ -500,7 +500,8 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
     )
 
     assert summary["timeframe"] == "1M"
-    assert summary["rows_written"] == 1
+    assert summary["rows_written"] == 0
+    assert summary["guardrail_violations"] == []
     assert summary["outcome"] == "success"
 
 
