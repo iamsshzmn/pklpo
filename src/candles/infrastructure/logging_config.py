@@ -1,3 +1,4 @@
+# fmt: off
 """Deprecated market metadata logging compatibility helpers."""
 
 from __future__ import annotations
@@ -156,3 +157,4 @@ __all__ = [
     "log_risk_check",
     "log_validation_result",
 ]
+# fmt: on
