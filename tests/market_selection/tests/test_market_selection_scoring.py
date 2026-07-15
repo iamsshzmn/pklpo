@@ -25,16 +25,24 @@ class TestNormalizeMetrics:
     ) -> None:
         """Normalized scores are in [0, 1] and preserve order."""
         n = 60
-        df = pd.DataFrame({
-            "symbol": [f"S{i}" for i in range(n)],
-            "vol_raw": np.linspace(0.001, 0.05, n),
-            "trend_q_raw": np.linspace(0, 0.5, n),
-            "noise_raw": np.linspace(0.5, 2.0, n),
-            "stability_raw": np.linspace(0.2, 0.9, n),
-            "liq_raw": np.linspace(100, 1000, n),
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": [f"S{i}" for i in range(n)],
+                "vol_raw": np.linspace(0.001, 0.05, n),
+                "trend_q_raw": np.linspace(0, 0.5, n),
+                "noise_raw": np.linspace(0.5, 2.0, n),
+                "stability_raw": np.linspace(0.2, 0.9, n),
+                "liq_raw": np.linspace(100, 1000, n),
+            }
+        )
         out = scoring_engine.normalize_metrics(df, "1H")
-        for col in ["vol_score", "trend_q_score", "noise_score", "stability_score", "liq_score"]:
+        for col in [
+            "vol_score",
+            "trend_q_score",
+            "noise_score",
+            "stability_score",
+            "liq_score",
+        ]:
             assert col in out.columns
             assert out[col].min() >= 0
             assert out[col].max() <= 1
@@ -44,30 +52,37 @@ class TestNormalizeMetrics:
         scoring_engine: ScoringEngine,
     ) -> None:
         """Noise: lower raw -> higher score (inverted)."""
-        df = pd.DataFrame({
-            "symbol": ["A", "B", "C"],
-            "vol_raw": [0.01, 0.01, 0.01],
-            "trend_q_raw": [0.1, 0.1, 0.1],
-            "noise_raw": [0.5, 1.0, 2.0],
-            "stability_raw": [0.5, 0.5, 0.5],
-            "liq_raw": [500, 500, 500],
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": ["A", "B", "C"],
+                "vol_raw": [0.01, 0.01, 0.01],
+                "trend_q_raw": [0.1, 0.1, 0.1],
+                "noise_raw": [0.5, 1.0, 2.0],
+                "stability_raw": [0.5, 0.5, 0.5],
+                "liq_raw": [500, 500, 500],
+            }
+        )
         out = scoring_engine.normalize_metrics(df, "5m")
-        assert out.loc[out["symbol"] == "A", "noise_score"].iloc[0] >= out.loc[out["symbol"] == "C", "noise_score"].iloc[0]
+        assert (
+            out.loc[out["symbol"] == "A", "noise_score"].iloc[0]
+            >= out.loc[out["symbol"] == "C", "noise_score"].iloc[0]
+        )
 
     def test_nan_fills_zero(
         self,
         scoring_engine: ScoringEngine,
     ) -> None:
         """Missing metric column or NaN -> score 0."""
-        df = pd.DataFrame({
-            "symbol": ["A", "B"],
-            "vol_raw": [0.01, np.nan],
-            "trend_q_raw": [0.1, 0.1],
-            "noise_raw": [0.5, 0.5],
-            "stability_raw": [0.5, 0.5],
-            "liq_raw": [500, 500],
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": ["A", "B"],
+                "vol_raw": [0.01, np.nan],
+                "trend_q_raw": [0.1, 0.1],
+                "noise_raw": [0.5, 0.5],
+                "stability_raw": [0.5, 0.5],
+                "liq_raw": [500, 500],
+            }
+        )
         out = scoring_engine.normalize_metrics(df, "5m")
         assert "vol_score" in out.columns
         assert out["vol_score"].fillna(-1).ge(0).all()
@@ -77,7 +92,16 @@ class TestNormalizeMetrics:
         scoring_engine: ScoringEngine,
     ) -> None:
         """Empty DataFrame returns empty."""
-        df = pd.DataFrame(columns=["symbol", "vol_raw", "trend_q_raw", "noise_raw", "stability_raw", "liq_raw"])
+        df = pd.DataFrame(
+            columns=[
+                "symbol",
+                "vol_raw",
+                "trend_q_raw",
+                "noise_raw",
+                "stability_raw",
+                "liq_raw",
+            ]
+        )
         out = scoring_engine.normalize_metrics(df, "5m")
         assert len(out) == 0
 
@@ -91,16 +115,24 @@ class TestZScoreSigmoidFallback:
     ) -> None:
         """When n_eligible < fallback_zscore_threshold (20), use z-score sigmoid."""
         n = 15
-        df = pd.DataFrame({
-            "symbol": [f"S{i}" for i in range(n)],
-            "vol_raw": np.random.randn(n).cumsum() * 0.001 + 0.02,
-            "trend_q_raw": np.random.rand(n) * 0.3,
-            "noise_raw": np.random.rand(n) * 1.0 + 0.5,
-            "stability_raw": np.random.rand(n) * 0.5 + 0.3,
-            "liq_raw": np.random.rand(n) * 500 + 200,
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": [f"S{i}" for i in range(n)],
+                "vol_raw": np.random.randn(n).cumsum() * 0.001 + 0.02,
+                "trend_q_raw": np.random.rand(n) * 0.3,
+                "noise_raw": np.random.rand(n) * 1.0 + 0.5,
+                "stability_raw": np.random.rand(n) * 0.5 + 0.3,
+                "liq_raw": np.random.rand(n) * 500 + 200,
+            }
+        )
         out = scoring_engine.normalize_metrics(df, "5m")
-        for col in ["vol_score", "trend_q_score", "noise_score", "stability_score", "liq_score"]:
+        for col in [
+            "vol_score",
+            "trend_q_score",
+            "noise_score",
+            "stability_score",
+            "liq_score",
+        ]:
             assert out[col].between(0, 1).all() | out[col].isna().all()
 
 
@@ -142,16 +174,20 @@ class TestCalculateTfScores:
         scoring_engine: ScoringEngine,
     ) -> None:
         """score_tf = score_tf_base * quality_score."""
-        df = pd.DataFrame({
-            "symbol": ["A", "B"],
-            "vol_score": [0.5, 0.5],
-            "trend_q_score": [0.5, 0.5],
-            "noise_score": [0.5, 0.5],
-            "stability_score": [0.5, 0.5],
-            "liq_score": [0.5, 0.5],
-        })
+        df = pd.DataFrame(
+            {
+                "symbol": ["A", "B"],
+                "vol_score": [0.5, 0.5],
+                "trend_q_score": [0.5, 0.5],
+                "noise_score": [0.5, 0.5],
+                "stability_score": [0.5, 0.5],
+                "liq_score": [0.5, 0.5],
+            }
+        )
         quality_scores = {"A": 1.0, "B": 0.5}
-        results = scoring_engine.calculate_tf_scores(df, "1H", RegimeType.RANGE, quality_scores)
+        results = scoring_engine.calculate_tf_scores(
+            df, "1H", RegimeType.RANGE, quality_scores
+        )
         assert len(results) == 2
         a = next(r for r in results if r.symbol == "A")
         b = next(r for r in results if r.symbol == "B")
@@ -221,7 +257,9 @@ class TestAggregateMtfScores:
         results = scoring_engine.aggregate_mtf_scores(tf_scores, RegimeType.RANGE)
         assert [r.rank for r in results] == [1, 2, 3]
         assert results[0].symbol == "A"
-        assert results[0].final_score >= results[1].final_score >= results[2].final_score
+        assert (
+            results[0].final_score >= results[1].final_score >= results[2].final_score
+        )
 
 
 class TestApplyVolatileFilter:

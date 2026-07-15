@@ -79,7 +79,9 @@ class _InstrumentCatalogStub:
         max_size=50,
     )
 )
-def test_load_symbols_from_file_normalizes_json_payload(values: list[object | None]) -> None:
+def test_load_symbols_from_file_normalizes_json_payload(
+    values: list[object | None],
+) -> None:
     from pathlib import Path
 
     with tempfile.TemporaryDirectory() as tmp_dir:

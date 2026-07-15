@@ -8,10 +8,7 @@ def test_identity_sql_repository_converts_succession_timestamps_to_ms() -> None:
 
     assert _timestamp_to_ms(None) is None
     assert _timestamp_to_ms(1781692200000) == 1781692200000
-    assert (
-        _timestamp_to_ms(datetime(2026, 6, 17, 10, 30, tzinfo=UTC))
-        == 1781692200000
-    )
+    assert _timestamp_to_ms(datetime(2026, 6, 17, 10, 30, tzinfo=UTC)) == 1781692200000
 
 
 def test_identity_sql_repository_queries_enforce_pit_filters() -> None:
@@ -53,6 +50,7 @@ def test_identity_sql_repository_publish_contract_is_transactional_shape() -> No
     assert "ops.series_identity_build_audit" in INSERT_AUDIT_SQL
     assert "ON CONFLICT (run_id) DO UPDATE" in INSERT_AUDIT_SQL
     assert "ops.indicator_recalc_queue" in INSERT_RECALC_QUEUE_SQL
-    assert "ON CONFLICT (symbol, timeframe, range_start_ts, range_end_ts) DO NOTHING" in (
-        INSERT_RECALC_QUEUE_SQL
+    assert (
+        "ON CONFLICT (symbol, timeframe, range_start_ts, range_end_ts) DO NOTHING"
+        in (INSERT_RECALC_QUEUE_SQL)
     )

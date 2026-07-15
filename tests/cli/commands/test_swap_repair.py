@@ -87,7 +87,9 @@ async def test_handle_calls_run_swap_repair_for_each_timeframe_and_prints_json(
         swap_repair,
         "datetime",
         SimpleNamespace(
-            now=lambda tz=None: __import__("datetime").datetime(2026, 4, 1, 0, 30, tzinfo=tz),
+            now=lambda tz=None: __import__("datetime").datetime(
+                2026, 4, 1, 0, 30, tzinfo=tz
+            ),
             fromisoformat=__import__("datetime").datetime.fromisoformat,
         ),
     )

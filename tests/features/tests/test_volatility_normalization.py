@@ -68,9 +68,9 @@ def test_volatility_normalization_consistency(window, method):
             assert norm_std > 0, f"{col} стал константой после нормировки"
         else:
             # Для осцилляторов нормировка должна снижать волатильность
-            assert (
-                norm_std <= raw_std * 1.2
-            ), f"Нормировка не снизила волатильность для {col}"
+            assert norm_std <= raw_std * 1.2, (
+                f"Нормировка не снизила волатильность для {col}"
+            )
 
 
 @pytest.mark.parametrize("window", [10, 30, 60])
@@ -95,9 +95,9 @@ def test_volatility_normalization_window_effects(window):
 
         # Большее окно должно давать более стабильную нормировку
         # (хотя это не всегда строгое правило из-за разных паттернов)
-        assert (
-            std_10 > 0 and std_30 > 0 and std_60 > 0
-        ), f"Нулевая волатильность для {col}"
+        assert std_10 > 0 and std_30 > 0 and std_60 > 0, (
+            f"Нулевая волатильность для {col}"
+        )
 
 
 def test_volatility_normalization_preserves_ohlcv():
@@ -164,9 +164,9 @@ def test_volatility_normalization_methods_difference():
             assert not np.isnan(correlation), f"NaN корреляция для {col}"
             # Корреляция должна быть высокой, но не обязательно строго меньше 1.0
             # (могут быть случаи где методы дают очень похожие результаты)
-            assert (
-                correlation > 0.5
-            ), f"Слишком низкая корреляция {correlation:.3f} для {col}"
+            assert correlation > 0.5, (
+                f"Слишком низкая корреляция {correlation:.3f} для {col}"
+            )
 
 
 def test_volatility_normalization_integration():

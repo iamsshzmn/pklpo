@@ -191,18 +191,29 @@ class _FakeBootstrapState:
             last_error=kwargs.get("last_error"),
         )
 
-    async def get_bootstrap_state(self, *, symbol: str, timeframe: str) -> BootstrapProgress | None:
+    async def get_bootstrap_state(
+        self, *, symbol: str, timeframe: str
+    ) -> BootstrapProgress | None:
         return self.rows.get((symbol, timeframe))
 
 
 def _make_candle_page(start_ts: int, count: int, tf_ms: int) -> list[dict[str, Any]]:
     return [
-        {"timestamp": start_ts + i * tf_ms, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}
+        {
+            "timestamp": start_ts + i * tf_ms,
+            "open": 1.0,
+            "high": 1.0,
+            "low": 1.0,
+            "close": 1.0,
+            "volume": 1.0,
+        }
         for i in range(count)
     ]
 
 
-def _make_raw_okx_candle_page(start_ts: int, count: int, tf_ms: int) -> list[dict[str, Any]]:
+def _make_raw_okx_candle_page(
+    start_ts: int, count: int, tf_ms: int
+) -> list[dict[str, Any]]:
     return [
         {
             "ts": start_ts + i * tf_ms,
@@ -587,7 +598,9 @@ async def test_changed_lookback_days_resets_checkpoint() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completed_matching_window_reconciles_and_skips_when_live_db_valid() -> None:
+async def test_completed_matching_window_reconciles_and_skips_when_live_db_valid() -> (
+    None
+):
     target_end = 3 * _1H_MS
     existing_ts = {i * _1H_MS for i in range(3)}
     uc, state, coverage, source, _store, _telemetry = _make_uc(
@@ -616,7 +629,9 @@ async def test_completed_matching_window_reconciles_and_skips_when_live_db_valid
 
 
 @pytest.mark.asyncio
-async def test_completed_changed_window_reconciles_requested_window_before_skip() -> None:
+async def test_completed_changed_window_reconciles_requested_window_before_skip() -> (
+    None
+):
     old_target_end = 3 * _1H_MS
     new_target_end = 4 * _1H_MS
     existing_ts = {i * _1H_MS for i in range(4)}

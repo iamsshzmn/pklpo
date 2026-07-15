@@ -655,4 +655,5 @@ async def test_universe_equals_curated_no_discovery() -> None:
     assert result["snapshot_summary"]["universe"] == {"curated": 2}
     # RecoveryDiscoveryRepository must not exist in the module namespace
     import src.candles.interfaces.recovery_controller as rc_mod
+
     assert not hasattr(rc_mod, "RecoveryDiscoveryRepository")

@@ -38,7 +38,9 @@ async def test_features_pipeline_smoke_btc_1d():
 
     try:
         async for session in get_async_session():
-            df = await fetch_ohlcv_df(session, symbol, timeframe, since_ts=None, limit=200)
+            df = await fetch_ohlcv_df(
+                session, symbol, timeframe, since_ts=None, limit=200
+            )
             if df is None or len(df) < 50:
                 pytest.skip("Not enough OHLCV data in swap_ohlcv_p/ohlcv for BTC 1D")
 
@@ -53,9 +55,7 @@ async def test_features_pipeline_smoke_btc_1d():
             assert len(features) == len(df)
 
             last_row_ts = int(features["ts"].iloc[-1])
-            last_row_ts_ms = (
-                last_row_ts if last_row_ts > 10**12 else last_row_ts * 1000
-            )
+            last_row_ts_ms = last_row_ts if last_row_ts > 10**12 else last_row_ts * 1000
             one_row = features.tail(1)
 
             indicator_columns = [
@@ -67,7 +67,9 @@ async def test_features_pipeline_smoke_btc_1d():
             n = await insert_indicators(session, one_row, symbol, timeframe)
             assert n == 1
 
-            non_null_cols = [c for c in indicator_columns if pd.notna(one_row[c].iloc[0])]
+            non_null_cols = [
+                c for c in indicator_columns if pd.notna(one_row[c].iloc[0])
+            ]
             assert non_null_cols, "No non-null indicators on the last row"
 
             check_col = non_null_cols[0]
@@ -133,7 +135,9 @@ async def test_upsert_full_pipeline_with_validation():
             assert len(df_ohlcv) > 0, "No OHLCV data loaded"
 
             features_df = compute_features(df_ohlcv, specs=None)
-            assert features_df is not None and len(features_df) > 0, "No features computed"
+            assert features_df is not None and len(features_df) > 0, (
+                "No features computed"
+            )
 
             from src.features.infrastructure.persistence.inserter import (
                 insert_indicators as insert_indicators_v2,
@@ -171,9 +175,9 @@ async def test_upsert_full_pipeline_with_validation():
                 ):
                     val = check_row[i]
                     if val is not None:
-                        assert isinstance(
-                            val, int | float | Decimal
-                        ), f"Column {col_name} has wrong type: {type(val)}"
+                        assert isinstance(val, int | float | Decimal), (
+                            f"Column {col_name} has wrong type: {type(val)}"
+                        )
             break
     except Exception as exc:
         _skip_if_db_unavailable(exc)

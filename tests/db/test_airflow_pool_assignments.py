@@ -24,14 +24,22 @@ def _assert_pool(path: str, task_id: str, pool: str) -> None:
 
 
 def test_ohlcv_mutating_tasks_use_write_pool() -> None:
-    _assert_pool("ops/airflow/dags/okx_swap_ohlcv_sync_v2.py", "swap_sync", "ohlcv_write_pool")
+    _assert_pool(
+        "ops/airflow/dags/okx_swap_ohlcv_sync_v2.py", "swap_sync", "ohlcv_write_pool"
+    )
     _assert_pool(
         "ops/airflow/dags/okx_swap_ohlcv_bootstrap_v1.py",
         "bootstrap_symbol_tf",
         "ohlcv_write_pool",
     )
-    _assert_pool("ops/airflow/dags/okx_swap_repair_v1.py", "swap_repair", "ohlcv_write_pool")
-    _assert_pool("ops/airflow/dags/swap_ohlcv_retention.py", "cleanup_swap_ohlcv", "ohlcv_write_pool")
+    _assert_pool(
+        "ops/airflow/dags/okx_swap_repair_v1.py", "swap_repair", "ohlcv_write_pool"
+    )
+    _assert_pool(
+        "ops/airflow/dags/swap_ohlcv_retention.py",
+        "cleanup_swap_ohlcv",
+        "ohlcv_write_pool",
+    )
 
 
 def test_compute_tasks_use_compute_pool() -> None:
@@ -41,7 +49,9 @@ def test_compute_tasks_use_compute_pool() -> None:
         "compute_pool",
     )
     _assert_pool("ops/airflow/dags/features_calc.py", "features_run", "compute_pool")
-    _assert_pool("ops/airflow/dags/features_calc.py", "combinations_run", "compute_pool")
+    _assert_pool(
+        "ops/airflow/dags/features_calc.py", "combinations_run", "compute_pool"
+    )
 
 
 def test_api_only_task_uses_okx_api_pool() -> None:
@@ -55,6 +65,9 @@ def test_api_only_task_uses_okx_api_pool() -> None:
 def test_airflow_readme_documents_required_pools() -> None:
     readme = (ROOT / "ops/airflow/README.md").read_text(encoding="utf-8")
 
-    assert 'airflow pools set ohlcv_write_pool 1 "Serialize swap_ohlcv_p writers"' in readme
+    assert (
+        'airflow pools set ohlcv_write_pool 1 "Serialize swap_ohlcv_p writers"'
+        in readme
+    )
     assert 'airflow pools set okx_api_pool 2 "Throttle OKX API calls"' in readme
     assert 'airflow pools set compute_pool 2 "Throttle feature compute tasks"' in readme

@@ -190,9 +190,9 @@ class TestStageA:
         for spec in stochrsi_specs:
             values = result[spec].dropna()
             if len(values) > 0:
-                assert (values >= 0).all() and (
-                    values <= 1
-                ).all(), f"{spec} should be in range [0, 1]"
+                assert (values >= 0).all() and (values <= 1).all(), (
+                    f"{spec} should be in range [0, 1]"
+                )
 
         print(f"✅ StochRSI indicators: {len(stochrsi_specs)} passed")
 

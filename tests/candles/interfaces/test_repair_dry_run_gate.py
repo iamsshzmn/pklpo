@@ -107,7 +107,9 @@ async def test_repair_dry_run_gate_classifies_db_okx_mismatch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_repair_dry_run_gate_passes_classified_repairable_and_retired_gaps() -> None:
+async def test_repair_dry_run_gate_passes_classified_repairable_and_retired_gaps() -> (
+    None
+):
     gram_request = RepairDryRunGateRequest(
         symbol="GRAM-USDT-SWAP",
         timeframe="1m",

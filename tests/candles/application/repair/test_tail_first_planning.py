@@ -39,9 +39,7 @@ class _CoverageQueryStub:
                 "end_ts_ms": end_ts_ms,
             }
         )
-        return [
-            ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms
-        ]
+        return [ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms]
 
 
 @dataclass
@@ -150,7 +148,6 @@ async def test_plan_tail_first_repair_never_returns_future_or_unclosed_ranges() 
     assert [(gap.start_ts_ms, gap.end_ts_ms) for gap in plan.gaps] == [
         (120_000, 180_000),
     ]
-    assert [
-        (chunk.start_ts_ms, chunk.end_ts_ms)
-        for chunk in plan.gaps[0].chunks
-    ] == [(120_000, 180_000)]
+    assert [(chunk.start_ts_ms, chunk.end_ts_ms) for chunk in plan.gaps[0].chunks] == [
+        (120_000, 180_000)
+    ]

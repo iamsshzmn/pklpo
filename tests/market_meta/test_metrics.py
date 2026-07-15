@@ -1,4 +1,4 @@
-﻿"""
+"""
 РўРµСЃС‚С‹ РґР»СЏ СЃРёСЃС‚РµРјС‹ РјРµС‚СЂРёРє Рё РјРѕРЅРёС‚РѕСЂРёРЅРіР° market_meta.
 """
 
@@ -106,9 +106,7 @@ class TestMetricsCollector:
 
     def setup_method(self):
         """РќР°СЃС‚СЂРѕР№РєР° РїРµСЂРµРґ РєР°Р¶РґС‹Рј С‚РµСЃС‚РѕРј"""
-        with patch(
-            "src.candles.infrastructure.metrics.get_config"
-        ) as mock_get_config:
+        with patch("src.candles.infrastructure.metrics.get_config") as mock_get_config:
             mock_config = Mock()
             mock_config.metrics.enabled = True
             mock_get_config.return_value = mock_config
@@ -291,9 +289,7 @@ class TestMetricsContextManagers:
 
     def setup_method(self):
         """РќР°СЃС‚СЂРѕР№РєР° РїРµСЂРµРґ РєР°Р¶РґС‹Рј С‚РµСЃС‚РѕРј"""
-        with patch(
-            "src.candles.infrastructure.metrics.get_config"
-        ) as mock_get_config:
+        with patch("src.candles.infrastructure.metrics.get_config") as mock_get_config:
             mock_config = Mock()
             mock_config.metrics.enabled = True
             mock_get_config.return_value = mock_config
@@ -336,9 +332,7 @@ class TestMetricsExporter:
 
     def setup_method(self):
         """РќР°СЃС‚СЂРѕР№РєР° РїРµСЂРµРґ РєР°Р¶РґС‹Рј С‚РµСЃС‚РѕРј"""
-        with patch(
-            "src.candles.infrastructure.metrics.get_config"
-        ) as mock_get_config:
+        with patch("src.candles.infrastructure.metrics.get_config") as mock_get_config:
             mock_config = Mock()
             mock_config.metrics.export_metrics = True
             mock_config.metrics.metrics_port = 9090
@@ -374,9 +368,7 @@ class TestMetricsMonitor:
 
     def setup_method(self):
         """РќР°СЃС‚СЂРѕР№РєР° РїРµСЂРµРґ РєР°Р¶РґС‹Рј С‚РµСЃС‚РѕРј"""
-        with patch(
-            "src.candles.infrastructure.metrics.get_config"
-        ) as mock_get_config:
+        with patch("src.candles.infrastructure.metrics.get_config") as mock_get_config:
             mock_config = Mock()
             mock_config.metrics.enabled = True
             mock_get_config.return_value = mock_config
@@ -443,9 +435,7 @@ class TestMetricsIntegration:
 
     def test_get_metrics_collector_singleton(self):
         """РўРµСЃС‚ СЃРёРЅРіР»С‚РѕРЅР° СЃР±РѕСЂС‰РёРєР° РјРµС‚СЂРёРє"""
-        with patch(
-            "src.candles.infrastructure.metrics.get_config"
-        ) as mock_get_config:
+        with patch("src.candles.infrastructure.metrics.get_config") as mock_get_config:
             mock_config = Mock()
             mock_config.metrics.enabled = True
             mock_get_config.return_value = mock_config
@@ -463,9 +453,7 @@ class TestMetricsIntegration:
     @pytest.mark.asyncio
     async def test_start_stop_metrics_services(self):
         """РўРµСЃС‚ Р·Р°РїСѓСЃРєР° Рё РѕСЃС‚Р°РЅРѕРІРєРё СЃРµСЂРІРёСЃРѕРІ РјРµС‚СЂРёРє"""
-        with patch(
-            "src.candles.infrastructure.metrics.get_config"
-        ) as mock_get_config:
+        with patch("src.candles.infrastructure.metrics.get_config") as mock_get_config:
             mock_config = Mock()
             mock_config.metrics.enabled = True
             mock_config.metrics.export_metrics = False

@@ -66,10 +66,7 @@ def test_core_identity_migration_schema_contract() -> None:
     assert "CHECK (bar_kind IN ('native','synthetic'))" in CORE_IDENTITY_SQL
     assert "gap_marker" not in CORE_IDENTITY_SQL
     assert "adjusted" not in CORE_IDENTITY_SQL
-    assert (
-        "PRIMARY KEY (series_id, timeframe, timestamp)"
-        in CORE_IDENTITY_SQL
-    )
+    assert "PRIMARY KEY (series_id, timeframe, timestamp)" in CORE_IDENTITY_SQL
     assert "run_id TEXT NOT NULL" in CORE_IDENTITY_SQL
     assert "algo_version TEXT NOT NULL" in CORE_IDENTITY_SQL
     assert "params_hash TEXT NOT NULL" in CORE_IDENTITY_SQL

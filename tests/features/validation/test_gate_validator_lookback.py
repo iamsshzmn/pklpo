@@ -5,7 +5,9 @@ import pandas as pd
 from src.features.validation.gate_validator import validate_data_gate
 
 
-def test_gate_validator_rejects_indicator_when_rows_are_below_required_lookback() -> None:
+def test_gate_validator_rejects_indicator_when_rows_are_below_required_lookback() -> (
+    None
+):
     df = pd.DataFrame(
         {
             "timestamp": range(20),

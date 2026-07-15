@@ -64,8 +64,19 @@ def test_bars_empty_input() -> None:
     assert isinstance(result, pd.DataFrame)
     assert len(result) == 0
     assert isinstance(result.index, pd.DatetimeIndex)
-    expected_cols = {"open", "high", "low", "close", "volume", "turnover",
-                     "ts_start", "duration_s", "trades_count", "volume_unit", "bars_source"}
+    expected_cols = {
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "turnover",
+        "ts_start",
+        "duration_s",
+        "trades_count",
+        "volume_unit",
+        "bars_source",
+    }
     assert expected_cols.issubset(set(result.columns))
 
 
@@ -209,7 +220,9 @@ def test_bars_volume_unit_base() -> None:
     full_bars = result[result["trades_count"] >= 3]
     if len(full_bars) > 0:
         expected_turnover = expected_per_row * full_bars.iloc[0]["trades_count"]
-        assert full_bars.iloc[0]["turnover"] == pytest.approx(expected_turnover, rel=1e-6)
+        assert full_bars.iloc[0]["turnover"] == pytest.approx(
+            expected_turnover, rel=1e-6
+        )
     assert (result["volume_unit"] == "base").all()
 
 

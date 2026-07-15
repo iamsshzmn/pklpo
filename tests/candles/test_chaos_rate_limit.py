@@ -117,10 +117,13 @@ async def test_recovers_after_rate_limit_burst(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Symbols get rate-limited 2 times each, then succeed on 3rd attempt."""
+
     async def _no_sleep(_):
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     symbols = ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
     market = _RateLimitedMarketData(symbols, fail_count=2)
@@ -151,10 +154,13 @@ async def test_exhausts_retries_on_persistent_rate_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If rate limiting never stops, retries are exhausted and symbols error out."""
+
     async def _no_sleep(_):
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     symbols = ["BTC-USDT-SWAP"]
     market = _AlwaysRateLimitedMarketData(symbols)
@@ -186,10 +192,13 @@ async def test_rate_limit_stats_tracked(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Rate limit events are counted in endpoint_stats."""
+
     async def _no_sleep(_):
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     symbols = ["BTC-USDT-SWAP"]
     market = _RateLimitedMarketData(symbols, fail_count=2)

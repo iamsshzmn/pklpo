@@ -42,7 +42,9 @@ def _load_okx_swap_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleTy
 
     airflow_operators_python = types.ModuleType("airflow.operators.python")
     airflow_operators_python.PythonOperator = _DummyOperator
-    monkeypatch.setitem(sys.modules, "airflow.operators.python", airflow_operators_python)
+    monkeypatch.setitem(
+        sys.modules, "airflow.operators.python", airflow_operators_python
+    )
 
     common = types.ModuleType("_common")
     common.airflow_log_context = lambda context, **kwargs: nullcontext("run-id")

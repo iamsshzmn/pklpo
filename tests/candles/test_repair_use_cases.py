@@ -50,7 +50,11 @@ class _CoverageQueryStub:
         end_ts_ms: int,
     ) -> int:
         self.count_calls += 1
-        return self.verified_count if self.verified_count is not None else len(self.timestamps)
+        return (
+            self.verified_count
+            if self.verified_count is not None
+            else len(self.timestamps)
+        )
 
 
 @dataclass
@@ -136,7 +140,11 @@ async def test_gap_repair_detect_only_does_not_fetch_or_write() -> None:
 
     result = await RunGapRepairUseCase(
         coverage_query=query, historical_source=source, repair_store=store
-    ).run(_command(mode=RepairExecutionMode.DETECT_ONLY, strategy=RepairStrategy.GAP_REPAIR))
+    ).run(
+        _command(
+            mode=RepairExecutionMode.DETECT_ONLY, strategy=RepairStrategy.GAP_REPAIR
+        )
+    )
 
     assert result.mode is RepairExecutionMode.DETECT_ONLY
     assert result.fetch_calls == 0

@@ -33,9 +33,7 @@ def test_series_identity_build_audit_migration_schema_contract() -> None:
         "error_message_hash TEXT NULL",
     ):
         assert column in SERIES_IDENTITY_BUILD_AUDIT_SQL
-    assert "chk_series_identity_build_audit_status" in (
-        SERIES_IDENTITY_BUILD_AUDIT_SQL
-    )
+    assert "chk_series_identity_build_audit_status" in (SERIES_IDENTITY_BUILD_AUDIT_SQL)
     assert "ix_series_identity_build_audit_status_started" in (
         SERIES_IDENTITY_BUILD_AUDIT_SQL
     )

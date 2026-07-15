@@ -97,7 +97,9 @@ async def test_ohlcv_facade_fails_closed_for_composite_when_disabled() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ohlcv_facade_reads_pit_alias_from_continuous_and_applies_adjustment() -> None:
+async def test_ohlcv_facade_reads_pit_alias_from_continuous_and_applies_adjustment() -> (
+    None
+):
     from src.identity.application.ohlcv_facade import OhlcvFacade
 
     calls = []
@@ -119,7 +121,9 @@ async def test_ohlcv_facade_reads_pit_alias_from_continuous_and_applies_adjustme
             return [raw]
 
         async def read_raw(self, series_id, timeframe, start_ts, end_ts):
-            raise AssertionError("composite series must read continuous materialization")
+            raise AssertionError(
+                "composite series must read continuous materialization"
+            )
 
         async def read_gap_markers(self, series_id, timeframe, start_ts, end_ts, as_of):
             return []
@@ -183,7 +187,9 @@ async def test_ohlcv_facade_returns_gap_markers_only_when_requested() -> None:
         as_of=_ts("2026-07-03T00:00:00+00:00"),
         include_gap_markers=False,
     )
-    rows_with_gaps = await OhlcvFacade(_Repository(), continuous_read_enabled=True).read_ohlcv(
+    rows_with_gaps = await OhlcvFacade(
+        _Repository(), continuous_read_enabled=True
+    ).read_ohlcv(
         series_id="TON-USDT-SWAP",
         timeframe="1m",
         start_ts=1000,

@@ -2,6 +2,7 @@
 
 Host-runnable: only imports from stdlib and the filters module directly.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -24,13 +25,19 @@ def _load_filters() -> ModuleType:
 
 # ── T8.1: URL credential masking ─────────────────────────────────────────────
 
+
 def test_sensitive_filter_masks_db_url_credentials() -> None:
     """postgresql://user:pass@host — credentials must be masked, host preserved."""
     m = _load_filters()
     f = m.SensitiveDataFilter()
     record = logging.LogRecord(
-        "test", logging.INFO, "", 0,
-        "connecting to postgresql://admin:s3cr3t@db.internal:5432/pklpo", (), None,
+        "test",
+        logging.INFO,
+        "",
+        0,
+        "connecting to postgresql://admin:s3cr3t@db.internal:5432/pklpo",
+        (),
+        None,
     )
     f.filter(record)
     assert "s3cr3t" not in record.msg, "password still in message after filter"
@@ -44,8 +51,13 @@ def test_sensitive_filter_masks_redis_url_credentials() -> None:
     m = _load_filters()
     f = m.SensitiveDataFilter()
     record = logging.LogRecord(
-        "test", logging.INFO, "", 0,
-        "cache url=redis://:mypassword@cache:6379/0", (), None,
+        "test",
+        logging.INFO,
+        "",
+        0,
+        "cache url=redis://:mypassword@cache:6379/0",
+        (),
+        None,
     )
     f.filter(record)
     assert "mypassword" not in record.msg
@@ -75,11 +87,18 @@ def test_sensitive_filter_leaves_url_without_credentials_unchanged() -> None:
 
 # ── Pre-existing patterns still work ─────────────────────────────────────────
 
+
 def test_sensitive_filter_masks_password_kwarg() -> None:
     m = _load_filters()
     f = m.SensitiveDataFilter()
     record = logging.LogRecord(
-        "test", logging.INFO, "", 0, "login password=hunter2 ok", (), None,
+        "test",
+        logging.INFO,
+        "",
+        0,
+        "login password=hunter2 ok",
+        (),
+        None,
     )
     f.filter(record)
     assert "hunter2" not in record.msg
@@ -89,7 +108,13 @@ def test_sensitive_filter_masks_api_key() -> None:
     m = _load_filters()
     f = m.SensitiveDataFilter()
     record = logging.LogRecord(
-        "test", logging.INFO, "", 0, "api_key=sk-abc123 used", (), None,
+        "test",
+        logging.INFO,
+        "",
+        0,
+        "api_key=sk-abc123 used",
+        (),
+        None,
     )
     f.filter(record)
     assert "sk-abc123" not in record.msg

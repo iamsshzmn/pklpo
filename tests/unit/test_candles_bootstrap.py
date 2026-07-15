@@ -23,7 +23,9 @@ def test_create_candles_airflow_callbacks_returns_public_bundle(
     )
     monkeypatch.setattr(
         "src.features.infrastructure.alerts.extract_alert_context",
-        lambda context: SimpleNamespace(level=None, error_message=None, context=context),
+        lambda context: SimpleNamespace(
+            level=None, error_message=None, context=context
+        ),
     )
     monkeypatch.setattr(
         "src.features.infrastructure.alerts.success_callback",

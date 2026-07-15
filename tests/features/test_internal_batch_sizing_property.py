@@ -17,7 +17,9 @@ from src.features.infrastructure.upsert import (
     num_fields=st.integers(min_value=0, max_value=2000),
     total_records=st.integers(min_value=0, max_value=2_000_000),
 )
-def test_batch_size_is_within_global_bounds(num_fields: int, total_records: int) -> None:
+def test_batch_size_is_within_global_bounds(
+    num_fields: int, total_records: int
+) -> None:
     batch_size = _get_dynamic_batch_size(num_fields, total_records)
     assert DEFAULT_MIN_BATCH_SIZE <= batch_size <= DEFAULT_MAX_BATCH_SIZE
 

@@ -5,9 +5,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 DASHBOARD = ROOT / "ops/monitoring/grafana/dashboards/pklpo-candle-coverage.json"
-DATASOURCE = (
-    ROOT / "ops/monitoring/grafana/provisioning/datasources/postgres.yml"
-)
+DATASOURCE = ROOT / "ops/monitoring/grafana/provisioning/datasources/postgres.yml"
 COMPOSE = ROOT / "ops/monitoring/docker-compose.monitoring.yml"
 ROLE_SQL = ROOT / "ops/monitoring/grafana/sql/create_grafana_ro_role.sql"
 ENV_EXAMPLE = ROOT / ".env.example"
@@ -59,9 +57,7 @@ def test_readonly_role_script_is_idempotent_and_select_only() -> None:
     assert "GRANT USAGE ON SCHEMA public TO grafana_ro" in sql
     assert "GRANT USAGE ON SCHEMA ops TO grafana_ro" in sql
     assert "GRANT SELECT ON TABLE public.swap_ohlcv_p TO grafana_ro" in sql
-    assert (
-        "GRANT SELECT ON TABLE ops.pipeline_recovery_decisions TO grafana_ro" in sql
-    )
+    assert "GRANT SELECT ON TABLE ops.pipeline_recovery_decisions TO grafana_ro" in sql
     assert "GRANT INSERT" not in sql
     assert "GRANT UPDATE" not in sql
     assert "GRANT DELETE" not in sql

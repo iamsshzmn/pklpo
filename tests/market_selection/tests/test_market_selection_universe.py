@@ -68,10 +68,15 @@ class TestSelectUniverse:
             whitelist=set(),
             blacklist=set(),
         )
-        assert len(entries) <= universe_manager.config.top_n + universe_manager.config.buffer
+        assert (
+            len(entries)
+            <= universe_manager.config.top_n + universe_manager.config.buffer
+        )
         if entries:
             assert entries[0].rank == 1
-            assert entries[0].final_score >= (entries[-1].final_score if len(entries) > 1 else 0)
+            assert entries[0].final_score >= (
+                entries[-1].final_score if len(entries) > 1 else 0
+            )
 
     def test_blacklist_excluded(
         self,
@@ -175,7 +180,10 @@ class TestCheckSystemicOutage:
         """>30% missing 1H -> systemic outage True."""
         eligible_counts = {"5m": 100, "15m": 95, "1H": 60, "4H": 90}
         total_symbols = 100
-        assert universe_manager.check_systemic_outage(eligible_counts, total_symbols) is True
+        assert (
+            universe_manager.check_systemic_outage(eligible_counts, total_symbols)
+            is True
+        )
 
     def test_outage_when_many_missing_4h(
         self,
@@ -184,7 +192,10 @@ class TestCheckSystemicOutage:
         """>30% missing 4H -> systemic outage True."""
         eligible_counts = {"5m": 100, "15m": 95, "1H": 95, "4H": 65}
         total_symbols = 100
-        assert universe_manager.check_systemic_outage(eligible_counts, total_symbols) is True
+        assert (
+            universe_manager.check_systemic_outage(eligible_counts, total_symbols)
+            is True
+        )
 
     def test_no_outage_when_senior_tf_ok(
         self,
@@ -193,7 +204,10 @@ class TestCheckSystemicOutage:
         """1H and 4H both >= 70% -> no systemic outage."""
         eligible_counts = {"5m": 100, "15m": 95, "1H": 80, "4H": 85}
         total_symbols = 100
-        assert universe_manager.check_systemic_outage(eligible_counts, total_symbols) is False
+        assert (
+            universe_manager.check_systemic_outage(eligible_counts, total_symbols)
+            is False
+        )
 
     def test_outage_when_total_zero(
         self,

@@ -141,9 +141,9 @@ class TestTimestampsSync:
                 api_ts, bar_timestamps, strategy="nearest"
             )
             # Все должны привязаться к одному бару
-            assert (
-                aligned == bar_timestamp
-            ), f"Не удалось привязать {api_ts} к {bar_timestamp}"
+            assert aligned == bar_timestamp, (
+                f"Не удалось привязать {api_ts} к {bar_timestamp}"
+            )
 
     def test_align_with_large_lag(self):
         """
@@ -187,6 +187,6 @@ class TestTimestampsSync:
         for ts in timestamps_in_bar:
             aligned = self.aligner.align_to_bar(ts, bar_timestamps, strategy="floor")
             # Все должны привязаться к первому бару
-            assert aligned == datetime(
-                2023, 11, 14, 22, 13, 0
-            ), f"Неверная привязка для {ts}"
+            assert aligned == datetime(2023, 11, 14, 22, 13, 0), (
+                f"Неверная привязка для {ts}"
+            )

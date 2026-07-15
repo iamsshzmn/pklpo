@@ -196,9 +196,9 @@ def test_cli_commands():
                 found_basic.append(basic)
                 break
 
-    assert (
-        len(found_basic) >= 1
-    ), f"Не найдено ни одной базовой команды из {basic_commands}"
+    assert len(found_basic) >= 1, (
+        f"Не найдено ни одной базовой команды из {basic_commands}"
+    )
 
     print(f"✅ CLI команды зарегистрированы корректно (найдено {len(commands)} команд)")
 
@@ -259,7 +259,7 @@ def run_integration_test():
     print("📊 Результаты тестирования:")
     print(f"✅ Пройдено: {passed}")
     print(f"❌ Провалено: {failed}")
-    print(f"📈 Успешность: {passed/(passed+failed)*100:.1f}%")
+    print(f"📈 Успешность: {passed / (passed + failed) * 100:.1f}%")
 
     if failed == 0:
         print("\n🎉 Все интеграционные тесты прошли успешно!")

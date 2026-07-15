@@ -38,7 +38,9 @@ def sample_data():
 
 
 def test_calculate_all(metrics_calc, sample_data):
-    metrics = metrics_calc.calculate_all(sample_data, "BTC-USDT", "1H", expected_bars=100)
+    metrics = metrics_calc.calculate_all(
+        sample_data, "BTC-USDT", "1H", expected_bars=100
+    )
 
     assert isinstance(metrics, PairMetrics)
     assert metrics.symbol == "BTC-USDT"
@@ -59,7 +61,9 @@ def test_calc_volatility(metrics_calc, sample_data):
 
 def test_calc_trend_quality(metrics_calc, sample_data):
     assert metrics_calc._calc_trend_quality(sample_data) > 0
-    assert metrics_calc._calc_trend_quality(sample_data.drop(columns=["adx_14"])) is None
+    assert (
+        metrics_calc._calc_trend_quality(sample_data.drop(columns=["adx_14"])) is None
+    )
 
 
 def test_calc_ema_slope(metrics_calc, sample_data):
@@ -108,7 +112,9 @@ def test_calc_liquidity(metrics_calc, sample_data):
 
 
 def test_to_dict(metrics_calc, sample_data):
-    metrics = metrics_calc.calculate_all(sample_data, "BTC-USDT", "1H", expected_bars=100)
+    metrics = metrics_calc.calculate_all(
+        sample_data, "BTC-USDT", "1H", expected_bars=100
+    )
     metrics_dict = metrics.to_dict()
     assert metrics_dict["symbol"] == "BTC-USDT"
     assert metrics_dict["timeframe"] == "1H"

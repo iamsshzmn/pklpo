@@ -116,15 +116,15 @@ def test_pipeline_monitoring_dag_contract_and_read_only_sql(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_dag(monkeypatch)
-    source = Path("D:/projects/pklpo/ops/airflow/dags/pipeline_monitoring.py").read_text(
-        encoding="utf-8"
-    )
+    source = Path(
+        "D:/projects/pklpo/ops/airflow/dags/pipeline_monitoring.py"
+    ).read_text(encoding="utf-8")
     upper = source.upper()
 
     assert module.dag.kwargs["dag_id"] == "pipeline_monitoring"
     assert module.dag.kwargs["schedule"] == "*/10 * * * *"
     assert module.dag.kwargs["max_active_runs"] == 1
-    assert source.index("sys.path.insert(0, \"/opt/airflow/project\")") < source.index(
+    assert source.index('sys.path.insert(0, "/opt/airflow/project")') < source.index(
         "from src.candles.observability.prometheus"
     )
     assert module.collect_pipeline_monitoring.kwargs["task_id"] == (
@@ -154,7 +154,9 @@ def test_collect_pipeline_monitoring_task_pushes_snapshot(
     async def _probe_dependency_health() -> dict[str, bool]:
         return {"postgres_up": True, "okx_up": False}
 
-    monkeypatch.setattr(module, "_collect_pipeline_monitoring_snapshot", _collect_snapshot)
+    monkeypatch.setattr(
+        module, "_collect_pipeline_monitoring_snapshot", _collect_snapshot
+    )
     monkeypatch.setattr(module, "_probe_dependency_health", _probe_dependency_health)
     monkeypatch.setattr(
         module,

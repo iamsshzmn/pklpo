@@ -100,7 +100,7 @@ def test_memory_stability_large_dataset():
                 rows_per_second = len(chunk) / chunk_time if chunk_time > 0 else 0
 
                 print(
-                    f"    Chunk {i+1}/{len(chunks)}: {current_memory:.2f} MB, "
+                    f"    Chunk {i + 1}/{len(chunks)}: {current_memory:.2f} MB, "
                     f"{rows_per_second:.0f} rows/sec, {chunk_time:.2f}s"
                 )
 
@@ -204,7 +204,7 @@ def test_performance_degradation():
                 performance_measurements.append(rows_per_second)
 
                 print(
-                    f"    Chunk {i+1}: {rows_per_second:.0f} rows/sec, {chunk_time:.2f}s"
+                    f"    Chunk {i + 1}: {rows_per_second:.0f} rows/sec, {chunk_time:.2f}s"
                 )
 
                 # Clean up

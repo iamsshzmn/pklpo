@@ -234,9 +234,7 @@ def test_cpcv_all_data_covered() -> None:
         covered.update(test_idx.tolist())
 
     # Все индексы должны быть покрыты
-    assert len(covered) == n, (
-        f"Не все индексы покрыты: {n - len(covered)} пропущено"
-    )
+    assert len(covered) == n, f"Не все индексы покрыты: {n - len(covered)} пропущено"
 
 
 def test_cpcv_invalid_n_test_groups() -> None:

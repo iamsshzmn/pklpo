@@ -5,18 +5,28 @@ from decimal import Decimal
 from hypothesis import given, settings, strategies as st
 
 from src.candles.domain.batch_policy import DynamicBatchPolicy
-from src.candles.domain.metadata import InstrumentMetadata, InstrumentType, LotSize, TickSize
+from src.candles.domain.metadata import (
+    InstrumentMetadata,
+    InstrumentType,
+    LotSize,
+    TickSize,
+)
 from src.candles.domain.timeframes import TF_TO_MS, TF_TO_SEC
-from src.candles.infrastructure.sqlalchemy_pool_adapter import _build_params, _convert_pg_placeholders
+from src.candles.infrastructure.sqlalchemy_pool_adapter import (
+    _build_params,
+    _convert_pg_placeholders,
+)
 
 
 def _decimal_steps() -> st.SearchStrategy[Decimal]:
-    return st.sampled_from([
-        Decimal("1"),
-        Decimal("0.1"),
-        Decimal("0.01"),
-        Decimal("0.001"),
-    ])
+    return st.sampled_from(
+        [
+            Decimal("1"),
+            Decimal("0.1"),
+            Decimal("0.01"),
+            Decimal("0.001"),
+        ]
+    )
 
 
 @settings(max_examples=100)
@@ -46,7 +56,9 @@ def test_timeframe_conversion_tables_stay_consistent(tf: str) -> None:
         max_size=50,
     )
 )
-def test_dynamic_batch_policy_always_respects_bounds(samples: list[tuple[float, float]]) -> None:
+def test_dynamic_batch_policy_always_respects_bounds(
+    samples: list[tuple[float, float]],
+) -> None:
     policy = DynamicBatchPolicy(default_batch_size=300, min_batch_size=50)
 
     for latency_ms, cpu_pct in samples:
@@ -69,7 +81,9 @@ def test_dynamic_batch_policy_always_respects_bounds(samples: list[tuple[float, 
         allow_infinity=False,
     ),
 )
-def test_dynamic_batch_policy_forces_min_batch_on_high_cpu(latency_ms: float, cpu_pct: float) -> None:
+def test_dynamic_batch_policy_forces_min_batch_on_high_cpu(
+    latency_ms: float, cpu_pct: float
+) -> None:
     policy = DynamicBatchPolicy(default_batch_size=300, min_batch_size=50)
     assert policy.get_batch_size("1m", latency_ms, cpu_pct) == 50
 

@@ -71,12 +71,18 @@ async def session_factory() -> AsyncIterator[sessionmaker]:
     try:
         async with factory() as session:
             try:
-                result = await session.execute(text("SELECT to_regclass('public.swap_ohlcv_p')"))
+                result = await session.execute(
+                    text("SELECT to_regclass('public.swap_ohlcv_p')")
+                )
             except (ConnectionRefusedError, OSError, OperationalError) as exc:
-                pytest.skip(f"Postgres is unavailable for repair integration tests: {exc}")
+                pytest.skip(
+                    f"Postgres is unavailable for repair integration tests: {exc}"
+                )
 
             if result.scalar() is None:
-                pytest.skip("swap_ohlcv_p table is unavailable for repair integration tests")
+                pytest.skip(
+                    "swap_ohlcv_p table is unavailable for repair integration tests"
+                )
 
         yield factory
     finally:

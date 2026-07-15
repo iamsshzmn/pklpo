@@ -43,7 +43,13 @@ async def test_history_client_paginates_backward_deduplicates_and_sorts() -> Non
         end_ts_ms=300_000,
     )
 
-    assert [candle["ts"] for candle in candles] == [0, 60_000, 120_000, 180_000, 240_000]
+    assert [candle["ts"] for candle in candles] == [
+        0,
+        60_000,
+        120_000,
+        180_000,
+        240_000,
+    ]
     assert calls == [
         {
             "path": "/api/v5/market/history-candles",

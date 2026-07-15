@@ -29,7 +29,9 @@ def _make_ohlcv_df(n: int = 50) -> pd.DataFrame:
 def _make_fake_calculator(result_df: pd.DataFrame | None = None):
     """Fake FeatureCalculator for tests."""
     mock = MagicMock()
-    mock.calculate.return_value = result_df if result_df is not None else _make_ohlcv_df()
+    mock.calculate.return_value = (
+        result_df if result_df is not None else _make_ohlcv_df()
+    )
     return mock
 
 

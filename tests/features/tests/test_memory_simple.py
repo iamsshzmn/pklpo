@@ -225,7 +225,7 @@ def test_memory_usage_comparison():
                 max_streaming_memory = max(max_streaming_memory, current_memory)
 
                 print(
-                    f"    Chunk {i+1}: {current_memory:.2f} MB, shape: {chunk_copy.shape}"
+                    f"    Chunk {i + 1}: {current_memory:.2f} MB, shape: {chunk_copy.shape}"
                 )
 
                 # Clean up after each chunk

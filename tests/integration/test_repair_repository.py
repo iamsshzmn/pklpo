@@ -282,9 +282,9 @@ async def test_get_listing_anchor_metadata_detects_stale_metadata() -> None:
         assert metadata.list_time_ts_ms == listing_ts_ms
         assert metadata.metadata_refreshed_at_ms == stale_refreshed_at_ms
         age_ms = now_ms - (metadata.metadata_refreshed_at_ms or 0)
-        assert (
-            age_ms > _STALE_THRESHOLD_MS
-        ), "stale metadata should be detectable via age check"
+        assert age_ms > _STALE_THRESHOLD_MS, (
+            "stale metadata should be detectable via age check"
+        )
     finally:
         async with session_factory() as session:
             await session.execute(

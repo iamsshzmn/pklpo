@@ -34,7 +34,9 @@ class _FakeSession:
         self.committed = False
         self.rolled_back = False
 
-    async def execute(self, statement: Any, params: dict[str, Any] | None = None) -> _Result:
+    async def execute(
+        self, statement: Any, params: dict[str, Any] | None = None
+    ) -> _Result:
         self.statements.append(str(statement))
         self.params.append(params)
         if self.results:
@@ -125,20 +127,29 @@ async def test_validate_migration_audits_dirty_constraint_without_validating_it(
     await module.migrate_validate_swap_ohlcv_constraints()
 
     sql = "\n".join(session.statements)
-    assert "CREATE TABLE IF NOT EXISTS ops.swap_ohlcv_constraint_validation_audit" in sql
+    assert (
+        "CREATE TABLE IF NOT EXISTS ops.swap_ohlcv_constraint_validation_audit" in sql
+    )
     assert not any(
         "CREATE SCHEMA" in statement and "CREATE TABLE" in statement
         for statement in session.statements
     )
     assert "swap_ohlcv_p_2026_05" in sql
     validate_sql = [
-        statement for statement in session.statements if "VALIDATE CONSTRAINT" in statement
+        statement
+        for statement in session.statements
+        if "VALIDATE CONSTRAINT" in statement
     ]
     assert not any("chk_swap_ohlcv_p_timestamp_nonneg" in sql for sql in validate_sql)
     assert len(validate_sql) == 8
-    assert sum(
-        1 for sql in validate_sql if "ALTER TABLE swap_ohlcv_p VALIDATE CONSTRAINT" in sql
-    ) == 4
+    assert (
+        sum(
+            1
+            for sql in validate_sql
+            if "ALTER TABLE swap_ohlcv_p VALIDATE CONSTRAINT" in sql
+        )
+        == 4
+    )
     assert any(params and params["status"] == "dirty" for params in session.params)
     assert any(
         params
@@ -172,7 +183,9 @@ async def test_validate_migration_validates_clean_constraints_when_one_is_dirty(
     await module.migrate_validate_swap_ohlcv_constraints()
 
     validate_sql = [
-        statement for statement in session.statements if "VALIDATE CONSTRAINT" in statement
+        statement
+        for statement in session.statements
+        if "VALIDATE CONSTRAINT" in statement
     ]
     assert len(validate_sql) == 8
     assert any("chk_swap_ohlcv_p_timestamp_nonneg" in sql for sql in validate_sql)
@@ -186,10 +199,15 @@ async def test_validate_migration_validates_clean_constraints_when_one_is_dirty(
         for sql in validate_sql
     )
     assert any(params and params["status"] == "dirty" for params in session.params)
-    assert sum(
-        1 for params in session.params if params and params["status"] == "validated"
-    ) == 4
-    assert not any(params and params["status"] == "skipped" for params in session.params)
+    assert (
+        sum(
+            1 for params in session.params if params and params["status"] == "validated"
+        )
+        == 4
+    )
+    assert not any(
+        params and params["status"] == "skipped" for params in session.params
+    )
 
 
 @pytest.mark.asyncio
@@ -211,7 +229,9 @@ async def test_alignment_trigger_migration_creates_disabled_trigger(
     assert "CREATE TRIGGER trg_swap_ohlcv_p_align_check" in sql
     assert "END;\n$$" in sql
     assert "pg_trigger" in sql
-    assert "ALTER TABLE swap_ohlcv_p DISABLE TRIGGER trg_swap_ohlcv_p_align_check" in sql
+    assert (
+        "ALTER TABLE swap_ohlcv_p DISABLE TRIGGER trg_swap_ohlcv_p_align_check" in sql
+    )
     assert session.committed
 
 

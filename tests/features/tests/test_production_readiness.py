@@ -101,7 +101,7 @@ def test_load_testing_stability():
                 memory_measurements.append(current_memory)
 
                 if i % 5 == 0:  # Log every 5th chunk
-                    print(f"    Chunk {i+1}/{len(chunks)}: {current_memory:.2f} MB")
+                    print(f"    Chunk {i + 1}/{len(chunks)}: {current_memory:.2f} MB")
 
                 # Clean up
                 force_cleanup(chunk_copy)

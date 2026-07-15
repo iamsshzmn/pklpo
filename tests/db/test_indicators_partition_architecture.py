@@ -8,7 +8,10 @@ def test_dag_depends_on_db_interface_not_platform_ops() -> None:
         "D:/projects/pklpo/ops/airflow/dags/indicators_partition_maintenance.py"
     ).read_text(encoding="utf-8")
 
-    assert "src.db.indicators_partition.interfaces.indicators_partition_maintenance" in dag_source
+    assert (
+        "src.db.indicators_partition.interfaces.indicators_partition_maintenance"
+        in dag_source
+    )
     assert "src.platform_ops" not in dag_source
 
 

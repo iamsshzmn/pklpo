@@ -59,9 +59,9 @@ class TestCLIDependencies:
         assert compute_features is core_compute_features
 
         # Check specs count
-        assert (
-            len(FEATURE_SPECS) == 177
-        ), f"Expected 177 specs, got {len(FEATURE_SPECS)}"
+        assert len(FEATURE_SPECS) == 177, (
+            f"Expected 177 specs, got {len(FEATURE_SPECS)}"
+        )
 
 
 class TestConfigDependencies:

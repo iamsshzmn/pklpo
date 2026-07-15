@@ -47,7 +47,10 @@ def _make_t1_and_close(
     close = pd.Series(np.ones(total_bars) * 100.0, index=timestamps)
 
     entries = [timestamps[i * stride] for i in range(n_labels)]
-    exits = [timestamps[min(i * stride + span_bars - 1, total_bars - 1)] for i in range(n_labels)]
+    exits = [
+        timestamps[min(i * stride + span_bars - 1, total_bars - 1)]
+        for i in range(n_labels)
+    ]
 
     t1 = pd.Series(exits, index=pd.DatetimeIndex(entries))
     return t1, close

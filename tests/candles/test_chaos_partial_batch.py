@@ -109,10 +109,13 @@ async def test_partial_failure_continues_other_symbols(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """BTC fails on upsert, but ETH and SOL should still succeed."""
+
     async def _no_sleep(_):
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     symbols = ["BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP"]
     store = _CandleStorePartialFailure(fail_symbols={"BTC-USDT-SWAP"})
@@ -136,10 +139,13 @@ async def test_all_symbols_fail_on_upsert(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """All symbols fail — errors_count matches, no rows upserted."""
+
     async def _no_sleep(_):
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     symbols = ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
     store = _CandleStorePartialFailure(fail_symbols=set(symbols))
@@ -163,10 +169,13 @@ async def test_row_count_mismatch_reported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When upsert returns fewer rows, the count should reflect reality."""
+
     async def _no_sleep(_):
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     symbols = ["BTC-USDT-SWAP"]
     store = _CandleStoreRowCountMismatch()

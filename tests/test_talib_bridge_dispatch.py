@@ -14,6 +14,7 @@ from src.features.ta_safe.errors import FeatureCalcError
 
 def _make_df(rows: int = 30) -> pd.DataFrame:
     import numpy as np
+
     rng = np.random.default_rng(0)
     close = 100.0 + rng.normal(0, 1, rows).cumsum()
     return pd.DataFrame(
@@ -28,6 +29,7 @@ def _make_df(rows: int = 30) -> pd.DataFrame:
 
 
 # --- Dispatch table contract ---
+
 
 def test_talib_dispatch_is_dict():
     assert isinstance(TALIB_DISPATCH, dict)
@@ -49,6 +51,7 @@ def test_squeeze_not_in_dispatch():
 
 
 # --- Bridge error handling ---
+
 
 def test_bridge_unknown_name_raises():
     df = _make_df()

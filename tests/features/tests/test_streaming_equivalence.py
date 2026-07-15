@@ -169,7 +169,7 @@ def test_streaming_equivalence():
         )
     ):
         streaming_results.append(result_chunk)
-        print(f"Streaming chunk {i+1}: {result_chunk.shape}")
+        print(f"Streaming chunk {i + 1}: {result_chunk.shape}")
 
     # Combine streaming results
     if streaming_results:
@@ -184,12 +184,12 @@ def test_streaming_equivalence():
     print("Comparing results...")
 
     # Check basic properties
-    assert (
-        baseline_df.shape[0] == streaming_df.shape[0]
-    ), f"Row count mismatch: {baseline_df.shape[0]} vs {streaming_df.shape[0]}"
-    assert set(baseline_df.columns) == set(
-        streaming_df.columns
-    ), f"Column mismatch: {set(baseline_df.columns)} vs {set(streaming_df.columns)}"
+    assert baseline_df.shape[0] == streaming_df.shape[0], (
+        f"Row count mismatch: {baseline_df.shape[0]} vs {streaming_df.shape[0]}"
+    )
+    assert set(baseline_df.columns) == set(streaming_df.columns), (
+        f"Column mismatch: {set(baseline_df.columns)} vs {set(streaming_df.columns)}"
+    )
 
     # Compare values (excluding first max_lookback-1 rows)
     skip_rows = max_lookback - 1
@@ -311,7 +311,7 @@ def test_memory_usage():
         max_memory = max(max_memory, current_memory)
         memory_usage.append(current_memory)
 
-        print(f"Chunk {i+1}: {current_memory:.2f} MB")
+        print(f"Chunk {i + 1}: {current_memory:.2f} MB")
 
         # Force cleanup
         del result_chunk
@@ -329,9 +329,9 @@ def test_memory_usage():
     peak_increase = max_memory - initial_memory
 
     assert memory_increase < 100, f"Memory increase too large: {memory_increase:.2f} MB"
-    assert (
-        peak_increase < 200
-    ), f"Peak memory increase too large: {peak_increase:.2f} MB"
+    assert peak_increase < 200, (
+        f"Peak memory increase too large: {peak_increase:.2f} MB"
+    )
 
     print("✅ Memory usage test passed!")
     return {
@@ -353,21 +353,21 @@ def test_chunk_overlap():
 
     # Test overlap calculation
     expected_chunks = (n_rows + chunk_size - 1) // chunk_size
-    assert (
-        len(chunks) == expected_chunks
-    ), f"Expected {expected_chunks} chunks, got {len(chunks)}"
+    assert len(chunks) == expected_chunks, (
+        f"Expected {expected_chunks} chunks, got {len(chunks)}"
+    )
 
     # Test chunk sizes
     for i, chunk in enumerate(chunks):
         if i < len(chunks) - 1:
-            assert (
-                len(chunk) == chunk_size
-            ), f"Chunk {i} size: {len(chunk)} (expected {chunk_size})"
+            assert len(chunk) == chunk_size, (
+                f"Chunk {i} size: {len(chunk)} (expected {chunk_size})"
+            )
         else:
             # Last chunk can be smaller
-            assert (
-                len(chunk) <= chunk_size
-            ), f"Last chunk size: {len(chunk)} (expected <= {chunk_size})"
+            assert len(chunk) <= chunk_size, (
+                f"Last chunk size: {len(chunk)} (expected <= {chunk_size})"
+            )
 
     print("✅ Chunk overlap test passed!")
     return {

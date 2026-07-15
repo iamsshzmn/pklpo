@@ -22,7 +22,11 @@ class _RepoStub:
         return self._symbols
 
     async def get_instrument_counts(self) -> dict[str, int]:
-        return {"all": len(self._symbols), "swap": len(self._symbols), "usdt": len(self._symbols)}
+        return {
+            "all": len(self._symbols),
+            "swap": len(self._symbols),
+            "usdt": len(self._symbols),
+        }
 
 
 class _LoggerStub:

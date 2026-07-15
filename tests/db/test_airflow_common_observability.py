@@ -28,7 +28,9 @@ def _load_common_module(module_name: str) -> types.ModuleType:
     return module
 
 
-def test_get_dag_env_defaults_enable_pushgateway(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_dag_env_defaults_enable_pushgateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     env_module = _load_common_module("env")
 
     class _BaseHook:

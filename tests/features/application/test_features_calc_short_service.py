@@ -20,7 +20,9 @@ class _FakeSession:
     def __init__(self) -> None:
         self.executed: list[tuple[Any, dict[str, Any] | None]] = []
 
-    async def execute(self, stmt: Any, params: dict[str, Any] | None = None) -> _FakeExecuteResult:
+    async def execute(
+        self, stmt: Any, params: dict[str, Any] | None = None
+    ) -> _FakeExecuteResult:
         self.executed.append((stmt, params))
         return _FakeExecuteResult(1_710_000_000_000)
 
@@ -80,7 +82,9 @@ async def test_run_features_calc_short_validate_uses_quality_runner_summary(
     fake_engine = _FakeEngine("sqlite:///:memory:")
     fake_runner = _FakeQualityRunner()
 
-    monkeypatch.setattr(service, "create_async_engine", lambda *args, **kwargs: fake_engine)
+    monkeypatch.setattr(
+        service, "create_async_engine", lambda *args, **kwargs: fake_engine
+    )
     monkeypatch.setattr(service, "AsyncSession", _FakeAsyncSession)
     monkeypatch.setattr(service, "_push_prometheus_metrics", lambda **kwargs: True)
 

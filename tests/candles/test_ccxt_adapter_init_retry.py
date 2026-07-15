@@ -106,6 +106,7 @@ def _build_adapter(
 
 # ── Test 1: Retriable timeout → retried → success ──────────────────
 
+
 @pytest.mark.asyncio
 async def test_load_markets_timeout_retried_then_succeeds() -> None:
     """load_markets() fails with RequestTimeout twice, then succeeds on 3rd try."""
@@ -143,6 +144,7 @@ async def test_load_markets_timeout_retried_then_succeeds() -> None:
 
 # ── Test 2: Fatal error → no retry ─────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_load_markets_fatal_error_not_retried() -> None:
     """AuthenticationError (FATAL) is not retried."""
@@ -170,6 +172,7 @@ async def test_load_markets_fatal_error_not_retried() -> None:
 
 # ── Test 3: Exchange cleanup between attempts ───────────────────────
 
+
 @pytest.mark.asyncio
 async def test_exchange_closed_between_retry_attempts() -> None:
     """Exchange.close() should be called after each failed attempt."""
@@ -192,6 +195,7 @@ async def test_exchange_closed_between_retry_attempts() -> None:
 
 # ── Test 4: Rate-limit errors are retried ───────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_load_markets_rate_limit_retried() -> None:
     """Rate-limit errors should be retried."""
@@ -212,6 +216,7 @@ async def test_load_markets_rate_limit_retried() -> None:
 
 
 # ── Test 5: Max retries exhausted → raises last error ───────────────
+
 
 @pytest.mark.asyncio
 async def test_load_markets_max_retries_exhausted() -> None:
@@ -238,6 +243,7 @@ async def test_load_markets_max_retries_exhausted() -> None:
 
 # ── Test 6: __aexit__ closes exchange on success too ────────────────
 
+
 @pytest.mark.asyncio
 async def test_aexit_closes_exchange() -> None:
     """After successful init, __aexit__ closes the exchange."""
@@ -252,6 +258,7 @@ async def test_aexit_closes_exchange() -> None:
 
 
 # ── Test 7: Exchange closed when retries exhausted (no leak) ────────
+
 
 @pytest.mark.asyncio
 async def test_exchange_closed_when_retries_exhausted() -> None:
@@ -279,6 +286,7 @@ async def test_exchange_closed_when_retries_exhausted() -> None:
 
 # ── Test 8: Integration — sync survives transient init failure ──────
 
+
 @pytest.mark.asyncio
 async def test_sync_survives_transient_init_failure(
     monkeypatch: pytest.MonkeyPatch,
@@ -294,16 +302,22 @@ async def test_sync_survives_transient_init_failure(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     class _StoreOK:
         async def upsert_candles(self, **kwargs: Any) -> int:
             return len(kwargs["candles"])
 
-        async def get_latest_timestamp(self, *, symbol: str, timeframe: str) -> int | None:
+        async def get_latest_timestamp(
+            self, *, symbol: str, timeframe: str
+        ) -> int | None:
             return None
 
-        async def get_fill_stats(self, start_timestamp_ms: int) -> dict[str, int | float]:
+        async def get_fill_stats(
+            self, start_timestamp_ms: int
+        ) -> dict[str, int | float]:
             return {"rows_today": 1}
 
     class _InstrumentCatalog:
@@ -340,16 +354,29 @@ async def test_sync_survives_transient_init_failure(
         async def fetch_candles(self, **kwargs: Any) -> list[dict[str, Any]]:
             self.fetch_candles_calls += 1
             return [
-                {"ts": 123, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10},
+                {
+                    "ts": 123,
+                    "open": 1,
+                    "high": 2,
+                    "low": 0.5,
+                    "close": 1.5,
+                    "volume": 10,
+                },
             ]
 
-        async def fetch_instruments(self, instrument_type: str = "SWAP") -> list[dict[str, Any]]:
+        async def fetch_instruments(
+            self, instrument_type: str = "SWAP"
+        ) -> list[dict[str, Any]]:
             return [{"instId": "BTC-USDT-SWAP"}]
 
-        async def fetch_funding_rates(self, instrument_ids: list[str]) -> dict[str, dict[str, Any]]:
+        async def fetch_funding_rates(
+            self, instrument_ids: list[str]
+        ) -> dict[str, dict[str, Any]]:
             return {s: {} for s in instrument_ids}
 
-        async def fetch_open_interest(self, instrument_ids: list[str]) -> dict[str, dict[str, Any]]:
+        async def fetch_open_interest(
+            self, instrument_ids: list[str]
+        ) -> dict[str, dict[str, Any]]:
             return {s: {} for s in instrument_ids}
 
     # Note: The application layer calls `async with self._market_data:`.

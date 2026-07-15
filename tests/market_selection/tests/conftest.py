@@ -92,7 +92,9 @@ def scoring_engine(market_selection_config: MarketSelectionConfig) -> ScoringEng
 
 
 @pytest.fixture
-def regime_classifier(market_selection_config: MarketSelectionConfig) -> RegimeClassifier:
+def regime_classifier(
+    market_selection_config: MarketSelectionConfig,
+) -> RegimeClassifier:
     """RegimeClassifier with test config."""
     return RegimeClassifier(build_regime_classifier_config(market_selection_config))
 

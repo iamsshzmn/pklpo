@@ -103,7 +103,9 @@ def test_retention_dag_runs_daily_at_quiet_slot(
 def test_cleanup_task_uses_ohlcv_write_pool(
     retention_dag_module: types.ModuleType,
 ) -> None:
-    cleanup_task = next(t for t in retention_dag_module.dag.tasks if t.task_id == "cleanup_swap_ohlcv")
+    cleanup_task = next(
+        t for t in retention_dag_module.dag.tasks if t.task_id == "cleanup_swap_ohlcv"
+    )
     assert cleanup_task.kwargs["pool"] == "ohlcv_write_pool"
     assert cleanup_task.kwargs["pool_slots"] == 1
 

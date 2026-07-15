@@ -30,9 +30,7 @@ def test_symbol_succession_migration_schema_contract() -> None:
         "split",
     )
     assert "CREATE SCHEMA IF NOT EXISTS ops" in SYMBOL_SUCCESSION_SQL
-    assert "CREATE TABLE IF NOT EXISTS ops.symbol_succession" in (
-        SYMBOL_SUCCESSION_SQL
-    )
+    assert "CREATE TABLE IF NOT EXISTS ops.symbol_succession" in (SYMBOL_SUCCESSION_SQL)
     assert "old_symbol               text        NOT NULL" in SYMBOL_SUCCESSION_SQL
     assert "new_symbol               text        NOT NULL" in SYMBOL_SUCCESSION_SQL
     assert "venue                    text        NOT NULL DEFAULT 'OKX'" in (

@@ -1,4 +1,4 @@
-﻿"""
+"""
 РљРѕРјРїР»РµРєСЃРЅС‹Рµ С‚РµСЃС‚С‹ РґР»СЏ РјРѕРґСѓР»СЏ market_meta.
 
 РџСЂРѕРІРµСЂСЏРµС‚ РІСЃСЋ С„СѓРЅРєС†РёРѕРЅР°Р»СЊРЅРѕСЃС‚СЊ РјРѕРґСѓР»СЏ:
@@ -216,7 +216,9 @@ def test_position_validator():
         inst_type=InstrumentType.SWAP,
         base_ccy="BTC",
         quote_ccy="USDT",
-        contract_val=Decimal("100"),  # РЈРІРµР»РёС‡РёРІР°РµРј contract_val РґР»СЏ РїСЂРѕС…РѕР¶РґРµРЅРёСЏ С‚РµСЃС‚Р°
+        contract_val=Decimal(
+            "100"
+        ),  # РЈРІРµР»РёС‡РёРІР°РµРј contract_val РґР»СЏ РїСЂРѕС…РѕР¶РґРµРЅРёСЏ С‚РµСЃС‚Р°
     )
 
     market = MarketMetadata(exchange="OKX", instruments={"BTC-USDT": instrument})
@@ -242,7 +244,9 @@ def test_position_validator():
     result = validator.validate_position_risk(
         "BTC-USDT", 0.1, 50000.0, account_balance=10000.0
     )
-    assert result.is_valid  # 0.1 * 100 = 10, С‡С‚Рѕ СЃРѕСЃС‚Р°РІР»СЏРµС‚ 0.1% РѕС‚ Р±Р°Р»Р°РЅСЃР° 10000
+    assert (
+        result.is_valid
+    )  # 0.1 * 100 = 10, С‡С‚Рѕ СЃРѕСЃС‚Р°РІР»СЏРµС‚ 0.1% РѕС‚ Р±Р°Р»Р°РЅСЃР° 10000
 
     # РўРµСЃС‚ РїСЂРµРІС‹С€РµРЅРёСЏ Р»РёРјРёС‚Р° (0.05% РѕС‚ Р±Р°Р»Р°РЅСЃР°)
     result = validator.validate_position_risk(
@@ -258,12 +262,16 @@ def test_validation_result():
     # Р”РѕР±Р°РІР»СЏРµРј РїСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ
     result.add_warning("Test warning")
     assert len(result.warnings) == 1
-    assert result.is_valid  # РїСЂРµРґСѓРїСЂРµР¶РґРµРЅРёСЏ РЅРµ РІР»РёСЏСЋС‚ РЅР° РІР°Р»РёРґРЅРѕСЃС‚СЊ
+    assert (
+        result.is_valid
+    )  # РїСЂРµРґСѓРїСЂРµР¶РґРµРЅРёСЏ РЅРµ РІР»РёСЏСЋС‚ РЅР° РІР°Р»РёРґРЅРѕСЃС‚СЊ
 
     # Р”РѕР±Р°РІР»СЏРµРј РѕС€РёР±РєСѓ
     result.add_error("Test error")
     assert len(result.errors) == 1
-    assert not result.is_valid  # РѕС€РёР±РєРё РґРµР»Р°СЋС‚ СЂРµР·СѓР»СЊС‚Р°С‚ РЅРµРІР°Р»РёРґРЅС‹Рј
+    assert (
+        not result.is_valid
+    )  # РѕС€РёР±РєРё РґРµР»Р°СЋС‚ СЂРµР·СѓР»СЊС‚Р°С‚ РЅРµРІР°Р»РёРґРЅС‹Рј
 
 
 # =============================================================================
@@ -546,7 +554,8 @@ class TestMarketMetaAPI:
         # РЎРѕР·РґР°РµРј РІР°Р»РёРґР°С‚РѕСЂ СЃ РѕС€РёР±РєРѕР№ С†РµРЅС‹
         self.api.validator = Mock()
         self.api.validator.validate_price_data.return_value = Mock(
-            is_valid=False, errors=["Р¦РµРЅР° РЅРµ СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓРµС‚ СЂР°Р·РјРµСЂСѓ С‚РёРєР°"]
+            is_valid=False,
+            errors=["Р¦РµРЅР° РЅРµ СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓРµС‚ СЂР°Р·РјРµСЂСѓ С‚РёРєР°"],
         )
         self.api.validator.validate_volume_data.return_value = Mock(
             is_valid=True, errors=[]
@@ -749,7 +758,9 @@ def test_full_validation_flow():
     position_validator = PositionValidator(market)
 
     # РЎРѕР·РґР°РµРј Р»РёРјРёС‚С‹ СЃ СѓРІРµР»РёС‡РµРЅРЅС‹Рј Р»РёРјРёС‚РѕРј СЌРєСЃРїРѕР·РёС†РёРё
-    risk_limits = RiskLimits(max_total_exposure_pct=Decimal("0.6"))  # 60% РІРјРµСЃС‚Рѕ 50%
+    risk_limits = RiskLimits(
+        max_total_exposure_pct=Decimal("0.6")
+    )  # 60% РІРјРµСЃС‚Рѕ 50%
     position_limits = PositionLimits(risk_limits, market)
 
     # РўРµСЃС‚РёСЂСѓРµРј РІР°Р»РёРґР°С†РёСЋ РѕСЂРґРµСЂР°
@@ -849,10 +860,14 @@ if __name__ == "__main__":
 
     # РўРµСЃС‚ Р±РµР· РјРµС‚Р°РґР°РЅРЅС‹С…
     violations = api.validate_order("BTC-USDT", 50000.0, 0.1)
-    print(f"вњ… РўРµСЃС‚ РІР°Р»РёРґР°С†РёРё РѕСЂРґРµСЂР° Р±РµР· РјРµС‚Р°РґР°РЅРЅС‹С…: {len(violations)} РЅР°СЂСѓС€РµРЅРёР№")
+    print(
+        f"вњ… РўРµСЃС‚ РІР°Р»РёРґР°С†РёРё РѕСЂРґРµСЂР° Р±РµР· РјРµС‚Р°РґР°РЅРЅС‹С…: {len(violations)} РЅР°СЂСѓС€РµРЅРёР№"
+    )
 
     # РўРµСЃС‚ РїРѕР»СѓС‡РµРЅРёСЏ РёРЅС„РѕСЂРјР°С†РёРё Р±РµР· РјРµС‚Р°РґР°РЅРЅС‹С…
     info = api.get_instrument_info("BTC-USDT")
-    print(f"вњ… РўРµСЃС‚ РїРѕР»СѓС‡РµРЅРёСЏ РёРЅС„РѕСЂРјР°С†РёРё Р±РµР· РјРµС‚Р°РґР°РЅРЅС‹С…: {info is None}")
+    print(
+        f"вњ… РўРµСЃС‚ РїРѕР»СѓС‡РµРЅРёСЏ РёРЅС„РѕСЂРјР°С†РёРё Р±РµР· РјРµС‚Р°РґР°РЅРЅС‹С…: {info is None}"
+    )
 
     print("\nрџЋ‰ Р’СЃРµ С‚РµСЃС‚С‹ Р·Р°РІРµСЂС€РµРЅС‹!")

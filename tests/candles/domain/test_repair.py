@@ -32,7 +32,9 @@ def test_detect_gap_tasks_groups_adjacent_missing_bars() -> None:
     window = RepairWindow(start_ts_ms=0, end_ts_ms=6 * 60_000)
     timestamps = [0, 60_000, 4 * 60_000]
 
-    tasks = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window, calendar=UTC_CAL)
+    tasks = detect_gap_tasks(
+        timestamps=timestamps, timeframe="1m", window=window, calendar=UTC_CAL
+    )
 
     assert tasks == [
         type(tasks[0])(start_ts_ms=2 * 60_000, end_ts_ms=4 * 60_000, missing_bars=2),
@@ -49,7 +51,9 @@ def test_detect_gap_tasks_property_based_for_sorted_non_overlapping_ranges(
     window = RepairWindow(start_ts_ms=0, end_ts_ms=bars * step)
     timestamps = sorted(index * step for index in existing_indexes)
 
-    tasks = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window, calendar=UTC_CAL)
+    tasks = detect_gap_tasks(
+        timestamps=timestamps, timeframe="1m", window=window, calendar=UTC_CAL
+    )
 
     assert tasks == sorted(tasks, key=lambda task: task.start_ts_ms)
     assert all(

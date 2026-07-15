@@ -62,7 +62,11 @@ class TestDefaultOHLCVValidator:
     def test_required_columns(self):
         """Required columns are defined correctly."""
         assert {
-            "open", "high", "low", "close", "volume"
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
         } == DefaultOHLCVValidator.REQUIRED_COLUMNS
 
 
@@ -98,11 +102,15 @@ class TestFeatureCalculationService:
     @pytest.fixture
     def mock_compute_fn(self):
         """Mock compute function."""
-        return Mock(return_value=pd.DataFrame({
-            "open": [100, 101, 102],
-            "close": [104, 105, 106],
-            "rsi_14": [50.0, 60.0, 70.0],
-        }))
+        return Mock(
+            return_value=pd.DataFrame(
+                {
+                    "open": [100, 101, 102],
+                    "close": [104, 105, 106],
+                    "rsi_14": [50.0, 60.0, 70.0],
+                }
+            )
+        )
 
     def test_service_creation_defaults(self):
         """Service uses default implementations."""
@@ -197,7 +205,9 @@ class TestFeatureCalculationService:
         call_kwargs = mock_compute_fn.call_args[1]
         assert call_kwargs["specs"] == ["rsi_14"]
 
-    def test_calculate_passes_normalize_false_to_compute(self, ohlcv_basic, mock_compute_fn):
+    def test_calculate_passes_normalize_false_to_compute(
+        self, ohlcv_basic, mock_compute_fn
+    ):
         """Calculate passes volatility_normalize=False to compute function."""
         service = FeatureCalculationService(_compute_fn=mock_compute_fn)
 
@@ -209,9 +219,9 @@ class TestFeatureCalculationService:
     def test_calculate_applies_normalization(self, ohlcv_basic, mock_compute_fn):
         """Calculate applies normalization when requested."""
         mock_normalizer = Mock()
-        mock_normalizer.normalize = Mock(return_value=pd.DataFrame({
-            "rsi_14_norm": [0.5, 0.6, 0.7]
-        }))
+        mock_normalizer.normalize = Mock(
+            return_value=pd.DataFrame({"rsi_14_norm": [0.5, 0.6, 0.7]})
+        )
 
         service = FeatureCalculationService(
             normalizer=mock_normalizer,
@@ -219,15 +229,15 @@ class TestFeatureCalculationService:
         )
 
         result = service.calculate(
-            ohlcv_basic,
-            volatility_normalize=True,
-            normalize_window=30
+            ohlcv_basic, volatility_normalize=True, normalize_window=30
         )
 
         mock_normalizer.normalize.assert_called_once()
         assert "rsi_14_norm" in result.columns
 
-    def test_calculate_skips_normalization_when_false(self, ohlcv_basic, mock_compute_fn):
+    def test_calculate_skips_normalization_when_false(
+        self, ohlcv_basic, mock_compute_fn
+    ):
         """Calculate skips normalization when not requested."""
         mock_normalizer = Mock()
         mock_normalizer.normalize = Mock()
@@ -298,11 +308,7 @@ class TestFeatureCalculationServiceBatch:
             normalizer=mock_normalizer,
         )
 
-        service.calculate_batch(
-            ohlcv_basic,
-            {"rsi_14"},
-            volatility_normalize=True
-        )
+        service.calculate_batch(ohlcv_basic, {"rsi_14"}, volatility_normalize=True)
 
         mock_normalizer.normalize.assert_called_once()
 
@@ -368,7 +374,9 @@ class TestFactoryFunctions:
 
         assert service.backend is custom_backend
 
-    def test_default_feature_calculator_backend_restores_env(self, ohlcv_basic, monkeypatch):
+    def test_default_feature_calculator_backend_restores_env(
+        self, ohlcv_basic, monkeypatch
+    ):
         """Default backend wrapper temporarily overrides FEATURES_TA_BACKEND."""
         seen_backends: list[str | None] = []
 

@@ -95,7 +95,9 @@ def _plan(
             )
         )
     return TailFirstRepairPlan(
-        start_ts_ms=normalized_gaps[-1].start_ts_ms if normalized_gaps else closed_until_ts_ms,
+        start_ts_ms=normalized_gaps[-1].start_ts_ms
+        if normalized_gaps
+        else closed_until_ts_ms,
         end_ts_ms=closed_until_ts_ms,
         closed_until_ts_ms=closed_until_ts_ms,
         gaps=tuple(normalized_gaps),
@@ -142,7 +144,11 @@ async def test_run_repair_timeframe_executes_newest_chunks_first_with_replanning
         )
 
     summary = await run_repair_timeframe(
-        validated={"symbol": "BTC-USDT-SWAP", "repair_strategy": "gap-repair", "padding_bars": 0},
+        validated={
+            "symbol": "BTC-USDT-SWAP",
+            "repair_strategy": "gap-repair",
+            "padding_bars": 0,
+        },
         timeframe="1m",
         start_ts_ms=None,
         end_ts_ms=None,
@@ -193,7 +199,11 @@ async def test_run_repair_timeframe_stops_gracefully_on_incomplete_chunk(
         )
 
     summary = await run_repair_timeframe(
-        validated={"symbol": "BTC-USDT-SWAP", "repair_strategy": "gap-repair", "padding_bars": 0},
+        validated={
+            "symbol": "BTC-USDT-SWAP",
+            "repair_strategy": "gap-repair",
+            "padding_bars": 0,
+        },
         timeframe="1m",
         start_ts_ms=None,
         end_ts_ms=None,
@@ -249,7 +259,11 @@ async def test_run_repair_timeframe_marks_partial_when_chunk_limit_is_exhausted(
         )
 
     summary = await run_repair_timeframe(
-        validated={"symbol": "BTC-USDT-SWAP", "repair_strategy": "gap-repair", "padding_bars": 0},
+        validated={
+            "symbol": "BTC-USDT-SWAP",
+            "repair_strategy": "gap-repair",
+            "padding_bars": 0,
+        },
         timeframe="1m",
         start_ts_ms=None,
         end_ts_ms=None,

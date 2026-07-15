@@ -26,9 +26,30 @@ class _MarketDataStub:
             }
         )
         return [
-            {"ts": 1_000, "open": 0.5, "high": 0.5, "low": 0.5, "close": 0.5, "volume": 5.0},
-            {"ts": 61_000, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 10.0},
-            {"ts": 121_000, "open": 2.0, "high": 2.0, "low": 2.0, "close": 2.0, "volume": 20.0},
+            {
+                "ts": 1_000,
+                "open": 0.5,
+                "high": 0.5,
+                "low": 0.5,
+                "close": 0.5,
+                "volume": 5.0,
+            },
+            {
+                "ts": 61_000,
+                "open": 1.0,
+                "high": 1.0,
+                "low": 1.0,
+                "close": 1.0,
+                "volume": 10.0,
+            },
+            {
+                "ts": 121_000,
+                "open": 2.0,
+                "high": 2.0,
+                "low": 2.0,
+                "close": 2.0,
+                "volume": 20.0,
+            },
         ]
 
 

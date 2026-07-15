@@ -54,7 +54,9 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     common.get_or_create_event_loop = lambda: _Loop()  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "_common", common)
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/feature_eligibility_refresh.py")
+    module_path = Path(
+        "D:/projects/pklpo/ops/airflow/dags/feature_eligibility_refresh.py"
+    )
     module_name = "tests.db._feature_eligibility_refresh_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
@@ -73,7 +75,7 @@ def test_feature_eligibility_refresh_dag_contract(
 
     assert module.dag.kwargs["schedule"] == "0 2 * * *"
     assert module.dag.kwargs["max_active_runs"] == 1
-    assert source.index("sys.path.insert(0, \"/opt/airflow/project\")") < source.index(
+    assert source.index('sys.path.insert(0, "/opt/airflow/project")') < source.index(
         "from src.candles.interfaces"
     )
     assert module.refresh_eligibility.kwargs["task_id"] == "refresh_eligibility"

@@ -52,9 +52,9 @@ def test_batch_builder_is_thin_facade():
     import src.features.infrastructure.persistence.batch_builder as bb
 
     src_lines = inspect.getsource(bb).splitlines()
-    assert (
-        len(src_lines) <= 25
-    ), f"batch_builder.py is {len(src_lines)} lines; expected <=25"
+    assert len(src_lines) <= 25, (
+        f"batch_builder.py is {len(src_lines)} lines; expected <=25"
+    )
 
 
 def test_validate_timestamp_valid():
@@ -610,7 +610,13 @@ def test_execute_upsert_with_retry_success():
             mock_upsert,
         ):
             return await execute_upsert_with_retry(
-                MagicMock(), MagicMock(), records, set(), ("symbol",), set(), max_retries=1
+                MagicMock(),
+                MagicMock(),
+                records,
+                set(),
+                ("symbol",),
+                set(),
+                max_retries=1,
             )
 
     result = asyncio.get_event_loop().run_until_complete(run())
@@ -631,10 +637,13 @@ def test_execute_upsert_with_retry_retries_then_succeeds():
     mock_upsert = AsyncMock(side_effect=[OperationalError("conn", None, None), 1])
 
     async def run():
-        with patch(
-            "src.features.infrastructure.persistence.upsert_executor.build_and_execute_upsert",
-            mock_upsert,
-        ), patch("asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch(
+                "src.features.infrastructure.persistence.upsert_executor.build_and_execute_upsert",
+                mock_upsert,
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
             return await execute_upsert_with_retry(
                 MagicMock(),
                 MagicMock(),
@@ -666,10 +675,13 @@ def test_execute_upsert_with_retry_exhausted_raises():
     mock_upsert = AsyncMock(side_effect=err)
 
     async def run():
-        with patch(
-            "src.features.infrastructure.persistence.upsert_executor.build_and_execute_upsert",
-            mock_upsert,
-        ), patch("asyncio.sleep", new_callable=AsyncMock):
+        with (
+            patch(
+                "src.features.infrastructure.persistence.upsert_executor.build_and_execute_upsert",
+                mock_upsert,
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
             return await execute_upsert_with_retry(
                 MagicMock(),
                 MagicMock(),

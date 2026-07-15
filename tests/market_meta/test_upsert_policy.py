@@ -1,4 +1,4 @@
-﻿"""РўРµСЃС‚С‹ upsert-РїРѕР»РёС‚РёРєРё DO_NOT_OVERWRITE_NON_NULL_WITH_NULL.
+"""РўРµСЃС‚С‹ upsert-РїРѕР»РёС‚РёРєРё DO_NOT_OVERWRITE_NON_NULL_WITH_NULL.
 
 РџСЂРѕРІРµСЂСЏРµС‚:
 1. NULL РІ Р±Р°С‚С‡Рµ РЅРµ Р·Р°С‚РёСЂР°РµС‚ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РµРµ Р·РЅР°С‡РµРЅРёРµ
@@ -23,7 +23,10 @@ class TestBuildUpsertSetClause:
         """РџРѕР»СЏ РёР· coalesce_fields РґРѕР»Р¶РЅС‹ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ COALESCE."""
         # Arrange
         mock_stmt = MagicMock()
-        mock_stmt.excluded = {"open_interest": "excluded_oi", "algo_version": "excluded_av"}
+        mock_stmt.excluded = {
+            "open_interest": "excluded_oi",
+            "algo_version": "excluded_av",
+        }
 
         mock_col_oi = MagicMock()
         mock_col_oi.name = "open_interest"

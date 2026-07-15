@@ -54,14 +54,14 @@ class TestPerformance:
 
         execution_time = end_time - start_time
 
-        assert (
-            execution_time < 2.0
-        ), f"Execution took {execution_time:.2f}s, expected < 2.0s"
+        assert execution_time < 2.0, (
+            f"Execution took {execution_time:.2f}s, expected < 2.0s"
+        )
 
         expected_columns = available | {"ts"}
-        assert (
-            set(result.columns) >= expected_columns
-        ), f"Missing columns: {expected_columns - set(result.columns)}"
+        assert set(result.columns) >= expected_columns, (
+            f"Missing columns: {expected_columns - set(result.columns)}"
+        )
 
         assert len(result) == n_rows, f"Expected {n_rows} rows, got {len(result)}"
 
@@ -85,20 +85,22 @@ class TestPerformance:
 
         execution_time = end_time - start_time
 
-        assert (
-            execution_time < 0.1
-        ), f"Data cleaning took {execution_time:.3f}s, expected < 0.1s"
+        assert execution_time < 0.1, (
+            f"Data cleaning took {execution_time:.3f}s, expected < 0.1s"
+        )
 
-        assert (
-            not open_clean.isna().any()
-        ), "Open series should not contain NaN after cleaning"
-        assert (
-            not high_clean.isna().any()
-        ), "High series should not contain NaN after cleaning"
-        assert not low_clean.isna().any(), "Low series should not contain NaN after cleaning"
-        assert (
-            not close_clean.isna().any()
-        ), "Close series should not contain NaN after cleaning"
+        assert not open_clean.isna().any(), (
+            "Open series should not contain NaN after cleaning"
+        )
+        assert not high_clean.isna().any(), (
+            "High series should not contain NaN after cleaning"
+        )
+        assert not low_clean.isna().any(), (
+            "Low series should not contain NaN after cleaning"
+        )
+        assert not close_clean.isna().any(), (
+            "Close series should not contain NaN after cleaning"
+        )
 
     def test_close_data_cleaning_performance(self):
         """РўРµСЃС‚ РїСЂРѕРёР·РІРѕРґРёС‚РµР»СЊРЅРѕСЃС‚Рё РѕС‡РёСЃС‚РєРё С‚РѕР»СЊРєРѕ close РґР°РЅРЅС‹С…"""
@@ -113,13 +115,13 @@ class TestPerformance:
 
         execution_time = end_time - start_time
 
-        assert (
-            execution_time < 0.05
-        ), f"Close data cleaning took {execution_time:.3f}s, expected < 0.05s"
+        assert execution_time < 0.05, (
+            f"Close data cleaning took {execution_time:.3f}s, expected < 0.05s"
+        )
 
-        assert (
-            not close_clean.isna().any()
-        ), "Close series should not contain NaN after cleaning"
+        assert not close_clean.isna().any(), (
+            "Close series should not contain NaN after cleaning"
+        )
         assert has_sufficient, "Should have sufficient data after cleaning"
 
     def test_specs_registry_validation_performance(self):
@@ -130,9 +132,9 @@ class TestPerformance:
 
         execution_time = end_time - start_time
 
-        assert (
-            execution_time < 0.5
-        ), f"Validation took {execution_time:.3f}s, expected < 0.5s"
+        assert execution_time < 0.5, (
+            f"Validation took {execution_time:.3f}s, expected < 0.5s"
+        )
 
         assert is_consistent, "Specs and registry should be consistent"
 
@@ -170,14 +172,14 @@ class TestPerformance:
 
         execution_time = end_time - start_time
 
-        assert (
-            execution_time < 10.0
-        ), f"Large dataset processing took {execution_time:.2f}s, expected < 10.0s"
+        assert execution_time < 10.0, (
+            f"Large dataset processing took {execution_time:.2f}s, expected < 10.0s"
+        )
 
         assert len(result) == n_rows, f"Expected {n_rows} rows, got {len(result)}"
-        assert len(result.columns) >= len(
-            available
-        ), f"Expected at least {len(available)} columns, got {len(result.columns)}"
+        assert len(result.columns) >= len(available), (
+            f"Expected at least {len(available)} columns, got {len(result.columns)}"
+        )
 
 
 if __name__ == "__main__":

@@ -130,6 +130,13 @@ jobs:
 
       - name: pytest — fast markers
         # --override-ini addopts="" strips --cov-fail-under=85 from pyproject.toml
+        env:
+          ENVIRONMENT: test
+          POSTGRES_USER: pklpo_ci
+          POSTGRES_PASSWORD: ci_dummy
+          POSTGRES_DB: pklpo_ci
+          DB_HOST: localhost
+          DB_PORT: "5432"
         run: |
           pytest \
             -m "not slow and not integration" \
@@ -156,6 +163,13 @@ jobs:
           pip install -e ".[dev]"
 
       - name: pytest — lookahead marker
+        env:
+          ENVIRONMENT: test
+          POSTGRES_USER: pklpo_ci
+          POSTGRES_PASSWORD: ci_dummy
+          POSTGRES_DB: pklpo_ci
+          DB_HOST: localhost
+          DB_PORT: "5432"
         run: |
           pytest \
             -m lookahead \

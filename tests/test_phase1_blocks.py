@@ -92,12 +92,15 @@ class TestPrometheusMetricsEnabled:
         monkeypatch.setenv("OBSERVABILITY_PROMETHEUS_ENABLED", "true")
         # Clear settings cache so new env is picked up
         from src.config import reload_settings
+
         reload_settings()
         from src.features.observability.prometheus import reset_metrics
+
         reset_metrics()
         yield
         # Cleanup
         from src.config import reload_settings
+
         reset_metrics()
         reload_settings()
 
@@ -290,7 +293,13 @@ class TestGrafanaDashboard:
 
 class TestGrafanaAlertRules:
     def test_alert_rules_yaml_valid(self):
-        path = MONITORING_DIR / "grafana" / "provisioning" / "alerting" / "data_quality_alerts.yml"
+        path = (
+            MONITORING_DIR
+            / "grafana"
+            / "provisioning"
+            / "alerting"
+            / "data_quality_alerts.yml"
+        )
         assert path.exists()
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert "groups" in data
@@ -298,7 +307,13 @@ class TestGrafanaAlertRules:
         assert len(rules) >= 6
 
     def test_alert_severities(self):
-        path = MONITORING_DIR / "grafana" / "provisioning" / "alerting" / "data_quality_alerts.yml"
+        path = (
+            MONITORING_DIR
+            / "grafana"
+            / "provisioning"
+            / "alerting"
+            / "data_quality_alerts.yml"
+        )
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         rules = data["groups"][0]["rules"]
         severities = {r["labels"]["severity"] for r in rules}
@@ -306,7 +321,13 @@ class TestGrafanaAlertRules:
         assert "critical" in severities
 
     def test_all_alerts_have_annotations(self):
-        path = MONITORING_DIR / "grafana" / "provisioning" / "alerting" / "data_quality_alerts.yml"
+        path = (
+            MONITORING_DIR
+            / "grafana"
+            / "provisioning"
+            / "alerting"
+            / "data_quality_alerts.yml"
+        )
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         for rule in data["groups"][0]["rules"]:
             assert "summary" in rule["annotations"]
@@ -324,7 +345,14 @@ class TestDockerCompose:
         path = MONITORING_DIR / "docker-compose.monitoring.yml"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         services = set(data["services"].keys())
-        assert {"prometheus", "pushgateway", "grafana", "loki", "promtail", "tempo"} <= services
+        assert {
+            "prometheus",
+            "pushgateway",
+            "grafana",
+            "loki",
+            "alloy",
+            "tempo",
+        } <= services
 
     def test_tempo_service_is_pinned_and_exposes_otlp(self):
         path = MONITORING_DIR / "docker-compose.monitoring.yml"
@@ -359,7 +387,13 @@ class TestDockerCompose:
         assert "pushgateway" in job_names
 
     def test_grafana_datasource_provisioning(self):
-        path = MONITORING_DIR / "grafana" / "provisioning" / "datasources" / "prometheus.yml"
+        path = (
+            MONITORING_DIR
+            / "grafana"
+            / "provisioning"
+            / "datasources"
+            / "prometheus.yml"
+        )
         assert path.exists()
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert data["datasources"][0]["type"] == "prometheus"
@@ -378,7 +412,9 @@ class TestDockerCompose:
         data = yaml.safe_load(AIRFLOW_COMPOSE.read_text(encoding="utf-8"))
         env = data["x-environment"]
 
-        assert env["OBSERVABILITY_OTEL_ENABLED"] == "${OBSERVABILITY_OTEL_ENABLED:-false}"
+        assert (
+            env["OBSERVABILITY_OTEL_ENABLED"] == "${OBSERVABILITY_OTEL_ENABLED:-false}"
+        )
         assert env["OBSERVABILITY_OTEL_SERVICE_NAME"] == (
             "${OBSERVABILITY_OTEL_SERVICE_NAME:-pklpo-airflow}"
         )
@@ -510,7 +546,10 @@ class TestMigration:
 
     def test_migration_syntax(self):
         import py_compile
-        path = str(PROJECT_ROOT / "src" / "db" / "migrate_create_data_quality_metrics.py")
+
+        path = str(
+            PROJECT_ROOT / "src" / "db" / "migrate_create_data_quality_metrics.py"
+        )
         py_compile.compile(path, doraise=True)
 
     def test_migration_function_importable(self):
@@ -519,18 +558,21 @@ class TestMigration:
         from src.db.migrate_create_data_quality_metrics import (
             migrate_create_data_quality_metrics,
         )
+
         assert asyncio.iscoroutinefunction(migrate_create_data_quality_metrics)
 
 
 class TestValidateTaskRefactored:
     def test_dag_file_syntax(self):
         import py_compile
+
         path = str(PROJECT_ROOT / "ops" / "airflow" / "dags" / "features_calc_short.py")
         py_compile.compile(path, doraise=True)
 
     def test_check_quality_helper_importable(self):
         """Verify _check_quality_for_window is defined in DAG module."""
         import importlib.util
+
         spec = importlib.util.spec_from_file_location(
             "dag_module",
             str(PROJECT_ROOT / "ops" / "airflow" / "dags" / "features_calc_short.py"),

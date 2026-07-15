@@ -104,7 +104,9 @@ def test_detect_gap_tasks_groups_consecutive_missing_bars() -> None:
         window=window,
     )
 
-    assert [(task.start_ts_ms, task.end_ts_ms, task.missing_bars) for task in tasks] == [
+    assert [
+        (task.start_ts_ms, task.end_ts_ms, task.missing_bars) for task in tasks
+    ] == [
         (_ts(2026, 4, 11, 10, 1), _ts(2026, 4, 11, 10, 2), 1),
         (_ts(2026, 4, 11, 10, 3), _ts(2026, 4, 11, 10, 5), 2),
     ]
@@ -184,7 +186,11 @@ def test_backfill_plan_uses_explicit_domain_type() -> None:
 
 def test_gap_planning_is_idempotent() -> None:
     window = RepairWindow(_ts(2026, 4, 11, 10, 0), _ts(2026, 4, 11, 10, 6))
-    timestamps = [_ts(2026, 4, 11, 10, 0), _ts(2026, 4, 11, 10, 2), _ts(2026, 4, 11, 10, 5)]
+    timestamps = [
+        _ts(2026, 4, 11, 10, 0),
+        _ts(2026, 4, 11, 10, 2),
+        _ts(2026, 4, 11, 10, 5),
+    ]
 
     first = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window)
     second = detect_gap_tasks(timestamps=timestamps, timeframe="1m", window=window)

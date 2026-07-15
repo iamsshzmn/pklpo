@@ -102,7 +102,9 @@ async def test_pipeline_success(pipeline, mock_session):
         )
     )
     pipeline.scoring_engine.calculate_tf_scores = Mock(return_value=[])
-    pipeline.scoring_engine.aggregate_mtf_scores = Mock(return_value=[Mock(symbol="BTC-USDT")])
+    pipeline.scoring_engine.aggregate_mtf_scores = Mock(
+        return_value=[Mock(symbol="BTC-USDT")]
+    )
     pipeline.steps.select_universe = AsyncMock(
         return_value=([UniverseEntry(symbol="BTC-USDT", final_score=0.85, rank=1)], [])
     )
@@ -213,9 +215,13 @@ async def test_pipeline_small_universe(pipeline):
     pipeline.persistence.insert_regime_history = AsyncMock()
     pipeline.steps.compute_quality_gate = AsyncMock(side_effect=[[], [], [], []])
     pipeline.universe_manager.check_systemic_outage = Mock(return_value=False)
-    pipeline.scoring_engine.aggregate_mtf_scores = Mock(return_value=[Mock(symbol="BTC-USDT")])
+    pipeline.scoring_engine.aggregate_mtf_scores = Mock(
+        return_value=[Mock(symbol="BTC-USDT")]
+    )
     pipeline.steps.select_universe = AsyncMock(return_value=([], []))
-    pipeline.universe_manager.should_fallback = Mock(return_value=(True, "SMALL_UNIVERSE"))
+    pipeline.universe_manager.should_fallback = Mock(
+        return_value=(True, "SMALL_UNIVERSE")
+    )
     pipeline.steps.handle_fallback = AsyncMock(
         return_value=PipelineResult(
             success=True,

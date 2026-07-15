@@ -6,6 +6,7 @@ Covers the scenario where Postgres briefly goes down and comes back:
 - upsert_candles recovers after transient error
 - Persistent outage fails fast with a single clear DatabaseUnavailableError
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -24,6 +25,7 @@ from src.candles.repository import SwapCandlesRepository
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class _FakeSession:
     def __init__(self) -> None:
@@ -74,6 +76,7 @@ class _LatestTsSession(_FakeSession):
 # Repository unit tests — reconnect paths
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_get_latest_timestamp_recovers_after_transient_error(
     monkeypatch: pytest.MonkeyPatch,
@@ -119,7 +122,9 @@ async def test_upsert_candles_recovers_after_transient_error(
     saved = await repo.upsert_candles(
         symbol="BTC-USDT-SWAP",
         timeframe="1m",
-        candles=[{"ts": 1, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}],
+        candles=[
+            {"ts": 1, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}
+        ],
         additional_data={},
     )
 
@@ -130,6 +135,7 @@ async def test_upsert_candles_recovers_after_transient_error(
 # ---------------------------------------------------------------------------
 # Use case level — persistent outage fails with one clear error
 # ---------------------------------------------------------------------------
+
 
 class _MarketDataStub:
     def __init__(self, symbols: list[str]) -> None:
@@ -189,10 +195,13 @@ async def test_persistent_db_outage_raises_database_unavailable_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When DB is persistently down, the run must fail fast with DatabaseUnavailableError."""
+
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
     symbols = ["BTC-USDT-SWAP"]
     use_case = RunCandleSyncUseCase(
         market_data=_MarketDataStub(symbols),
@@ -202,4 +211,6 @@ async def test_persistent_db_outage_raises_database_unavailable_error(
     )
 
     with pytest.raises(DatabaseUnavailableError, match="database_unavailable"):
-        await use_case.run(SyncJobRequest(mode=ExecutionMode.FAST, max_concurrent_symbols=1))
+        await use_case.run(
+            SyncJobRequest(mode=ExecutionMode.FAST, max_concurrent_symbols=1)
+        )

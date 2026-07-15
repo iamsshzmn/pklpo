@@ -1,4 +1,4 @@
-﻿"""
+"""
 РўРµСЃС‚С‹ РґР»СЏ СЂР°СЃС€РёСЂРµРЅРЅС‹С… С„СѓРЅРєС†РёР№ market_meta.
 
 РџСЂРѕРІРµСЂСЏРµС‚ РЅРѕРІС‹Рµ РІРѕР·РјРѕР¶РЅРѕСЃС‚Рё:
@@ -315,7 +315,9 @@ class TestExtendedFeatures(unittest.TestCase):
 
 def run_tests():
     """Р—Р°РїСѓСЃРє С‚РµСЃС‚РѕРІ"""
-    print("рџ§Є Р—Р°РїСѓСЃРє С‚РµСЃС‚РѕРІ СЂР°СЃС€РёСЂРµРЅРЅС‹С… С„СѓРЅРєС†РёР№ market_meta...")
+    print(
+        "рџ§Є Р—Р°РїСѓСЃРє С‚РµСЃС‚РѕРІ СЂР°СЃС€РёСЂРµРЅРЅС‹С… С„СѓРЅРєС†РёР№ market_meta..."
+    )
 
     # РЎРѕР·РґР°РµРј С‚РµСЃС‚РѕРІС‹Р№ РЅР°Р±РѕСЂ
     loader = unittest.TestLoader()
@@ -328,7 +330,9 @@ def run_tests():
     # Р’С‹РІРѕРґРёРј СЂРµР·СѓР»СЊС‚Р°С‚С‹
     print("\nрџ“Љ Р РµР·СѓР»СЊС‚Р°С‚С‹ С‚РµСЃС‚РѕРІ:")
     print(f"  Р’СЃРµРіРѕ С‚РµСЃС‚РѕРІ: {result.testsRun}")
-    print(f"  РЈСЃРїРµС€РЅРѕ: {result.testsRun - len(result.failures) - len(result.errors)}")
+    print(
+        f"  РЈСЃРїРµС€РЅРѕ: {result.testsRun - len(result.failures) - len(result.errors)}"
+    )
     print(f"  РћС€РёР±РѕРє: {len(result.errors)}")
     print(f"  РџСЂРѕРІР°Р»РѕРІ: {len(result.failures)}")
 

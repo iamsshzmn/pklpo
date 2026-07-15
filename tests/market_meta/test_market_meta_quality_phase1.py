@@ -1,4 +1,4 @@
-﻿"""
+"""
 Phase-1 gate tests: duplicate detection + quality alerts wiring.
 
 Covers:
@@ -31,7 +31,12 @@ def _make_pool(rows_by_query: dict | None = None) -> MagicMock:
     conn.executemany = AsyncMock()
 
     pool = MagicMock()
-    pool.acquire = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=conn), __aexit__=AsyncMock(return_value=False)))
+    pool.acquire = MagicMock(
+        return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=conn),
+            __aexit__=AsyncMock(return_value=False),
+        )
+    )
     return pool
 
 
@@ -93,9 +98,7 @@ async def test_run_quality_pipeline_dispatches_alerts_on_violation():
         patch(
             "src.candles.application.quality_pipeline.dispatch_quality_alerts"
         ) as mock_dispatch,
-        patch(
-            "src.candles.application.quality_pipeline.push_quality_metrics"
-        ),
+        patch("src.candles.application.quality_pipeline.push_quality_metrics"),
     ):
         report = QualityReport()
         report.extend([critical_result])
@@ -131,9 +134,7 @@ async def test_run_quality_pipeline_skips_dispatch_when_send_alerts_false():
         patch(
             "src.candles.application.quality_pipeline.dispatch_quality_alerts"
         ) as mock_dispatch,
-        patch(
-            "src.candles.application.quality_pipeline.push_quality_metrics"
-        ),
+        patch("src.candles.application.quality_pipeline.push_quality_metrics"),
     ):
         mock_checks.return_value = QualityReport()
         repo_instance = AsyncMock()

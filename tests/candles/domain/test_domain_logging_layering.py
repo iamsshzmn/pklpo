@@ -64,6 +64,4 @@ def test_domain_modules_avoid_infrastructure_and_keep_logger_names() -> None:
     assert risk_limits.logger.name == "pklpo.market_meta.risk_limits"
     assert "src.candles.infrastructure" not in sys.modules
     assert "src.candles.infrastructure.logging_config" not in sys.modules
-    assert not any(
-        m.endswith("candles.observability.prometheus") for m in sys.modules
-    )
+    assert not any(m.endswith("candles.observability.prometheus") for m in sys.modules)

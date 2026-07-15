@@ -40,7 +40,9 @@ def test_feature_eligibility_transitions_migration_creates_audit_contract() -> N
         FEATURE_ELIGIBILITY_TRANSITIONS_SQL
     )
     assert "from_state        TEXT" in FEATURE_ELIGIBILITY_TRANSITIONS_SQL
-    assert "to_state          TEXT        NOT NULL" in FEATURE_ELIGIBILITY_TRANSITIONS_SQL
+    assert (
+        "to_state          TEXT        NOT NULL" in FEATURE_ELIGIBILITY_TRANSITIONS_SQL
+    )
     assert "CREATE INDEX IF NOT EXISTS ix_fet_occurred" in (
         FEATURE_ELIGIBILITY_TRANSITIONS_SQL
     )

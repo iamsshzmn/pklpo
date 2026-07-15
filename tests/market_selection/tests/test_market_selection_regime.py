@@ -24,10 +24,12 @@ class TestSelectBasket:
         regime_classifier: RegimeClassifier,
     ) -> None:
         """Returns top-K symbols by volume_median descending."""
-        volume_data = pd.DataFrame({
-            "symbol": ["A", "B", "C", "D", "E", "F"],
-            "volume_median": [1000, 800, 600, 400, 200, 100],
-        })
+        volume_data = pd.DataFrame(
+            {
+                "symbol": ["A", "B", "C", "D", "E", "F"],
+                "volume_median": [1000, 800, 600, 400, 200, 100],
+            }
+        )
         basket = regime_classifier.select_basket(volume_data)
         assert len(basket) == min(6, regime_classifier.config.basket_k)
         assert basket[0] == "A"
@@ -38,10 +40,12 @@ class TestSelectBasket:
         regime_classifier: RegimeClassifier,
     ) -> None:
         """When len(volume_data) <= K, return all symbols."""
-        volume_data = pd.DataFrame({
-            "symbol": ["A", "B", "C"],
-            "volume_median": [100, 80, 60],
-        })
+        volume_data = pd.DataFrame(
+            {
+                "symbol": ["A", "B", "C"],
+                "volume_median": [100, 80, 60],
+            }
+        )
         basket = regime_classifier.select_basket(volume_data)
         assert len(basket) == 3
         assert set(basket) == {"A", "B", "C"}
@@ -115,13 +119,15 @@ class TestAggregateBasketMetrics:
         regime_classifier: RegimeClassifier,
     ) -> None:
         """Returns adx, atr_close, ema_slope from weighted aggregation."""
-        basket_data = pd.DataFrame({
-            "symbol": ["A", "B"],
-            "volume_median": [1000, 500],
-            "adx_median": [30, 20],
-            "atr_close_ratio": [0.02, 0.01],
-            "ema_slope": [0.001, -0.0005],
-        })
+        basket_data = pd.DataFrame(
+            {
+                "symbol": ["A", "B"],
+                "volume_median": [1000, 500],
+                "adx_median": [30, 20],
+                "atr_close_ratio": [0.02, 0.01],
+                "ema_slope": [0.001, -0.0005],
+            }
+        )
         agg = regime_classifier.aggregate_basket_metrics(basket_data)
         assert "adx" in agg
         assert "atr_close" in agg
@@ -135,7 +141,13 @@ class TestAggregateBasketMetrics:
     ) -> None:
         """Empty basket returns default metrics."""
         basket_data = pd.DataFrame(
-            columns=["symbol", "volume_median", "adx_median", "atr_close_ratio", "ema_slope"]
+            columns=[
+                "symbol",
+                "volume_median",
+                "adx_median",
+                "atr_close_ratio",
+                "ema_slope",
+            ]
         )
         agg = regime_classifier.aggregate_basket_metrics(basket_data)
         assert agg["adx"] == 20.0
@@ -211,27 +223,33 @@ class TestComputeGlobalRegime:
         """Full flow: basket symbols + tf_data + atr_percentiles -> GlobalRegime."""
         basket_symbols = ["A", "B"]
         tf_data = {
-            "1D": pd.DataFrame({
-                "symbol": ["A", "B"],
-                "adx_median": [25, 22],
-                "atr_close_ratio": [0.015, 0.012],
-                "ema_slope": [0.0005, 0.0003],
-                "volume_median": [1000, 800],
-            }),
-            "4H": pd.DataFrame({
-                "symbol": ["A", "B"],
-                "adx_median": [26, 23],
-                "atr_close_ratio": [0.014, 0.013],
-                "ema_slope": [0.0004, 0.0002],
-                "volume_median": [1000, 800],
-            }),
-            "1H": pd.DataFrame({
-                "symbol": ["A", "B"],
-                "adx_median": [24, 21],
-                "atr_close_ratio": [0.013, 0.011],
-                "ema_slope": [0.0003, 0.0001],
-                "volume_median": [1000, 800],
-            }),
+            "1D": pd.DataFrame(
+                {
+                    "symbol": ["A", "B"],
+                    "adx_median": [25, 22],
+                    "atr_close_ratio": [0.015, 0.012],
+                    "ema_slope": [0.0005, 0.0003],
+                    "volume_median": [1000, 800],
+                }
+            ),
+            "4H": pd.DataFrame(
+                {
+                    "symbol": ["A", "B"],
+                    "adx_median": [26, 23],
+                    "atr_close_ratio": [0.014, 0.013],
+                    "ema_slope": [0.0004, 0.0002],
+                    "volume_median": [1000, 800],
+                }
+            ),
+            "1H": pd.DataFrame(
+                {
+                    "symbol": ["A", "B"],
+                    "adx_median": [24, 21],
+                    "atr_close_ratio": [0.013, 0.011],
+                    "ema_slope": [0.0003, 0.0001],
+                    "volume_median": [1000, 800],
+                }
+            ),
         }
         atr_percentiles = {"1D": 0.02, "4H": 0.02, "1H": 0.02}
         global_regime = regime_classifier.compute_global_regime(

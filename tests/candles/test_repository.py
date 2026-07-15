@@ -48,7 +48,9 @@ class _FakeSessionCM:
 
 
 @pytest.mark.asyncio
-async def test_upsert_candles_uses_bulk_execute(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_upsert_candles_uses_bulk_execute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = _FakeSession()
 
     def _fake_get_db_session() -> _FakeSessionCM:
@@ -88,7 +90,9 @@ class _CountsResult:
 
 
 @pytest.mark.asyncio
-async def test_get_instrument_counts_uses_single_query(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_instrument_counts_uses_single_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = _FakeSession()
 
     async def _execute(stmt: Any, params: Any = None):

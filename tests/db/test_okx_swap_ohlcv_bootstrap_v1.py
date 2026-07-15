@@ -505,9 +505,9 @@ def test_enqueue_indicator_recalc_skips_1m_timeframe(
         {"symbol": "BTC-USDT-SWAP", "timeframe": "1H", "status": "completed"},
     ]
     ti_stub = SimpleNamespace(
-        xcom_pull=lambda task_ids, key: results
-        if task_ids == "validate_bootstrap_xcom"
-        else None
+        xcom_pull=lambda task_ids, key: (
+            results if task_ids == "validate_bootstrap_xcom" else None
+        )
     )
     context = {"ti": ti_stub, "params": {}, "dag_run": SimpleNamespace(conf={})}
 
@@ -520,5 +520,7 @@ def test_enqueue_indicator_recalc_skips_1m_timeframe(
     ) as mock_enqueue:
         bootstrap_dag_module.task_enqueue_indicator_recalc(**context)
 
-    called_timeframes = [call.kwargs["timeframe"] for call in mock_enqueue.call_args_list]
+    called_timeframes = [
+        call.kwargs["timeframe"] for call in mock_enqueue.call_args_list
+    ]
     assert called_timeframes == ["1H"]

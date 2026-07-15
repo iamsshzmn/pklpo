@@ -88,7 +88,9 @@ def test_drain_indicator_recalc_queue_marks_completed_and_blocked(
     ]
     marked: list[tuple[int, str, dict[str, Any]]] = []
 
-    async def _claim_rows(*, limit: int, stale_after_minutes: int) -> list[dict[str, Any]]:
+    async def _claim_rows(
+        *, limit: int, stale_after_minutes: int
+    ) -> list[dict[str, Any]]:
         assert limit == 25
         assert stale_after_minutes == 60
         return rows
@@ -121,7 +123,11 @@ def test_drain_indicator_recalc_queue_marks_completed_and_blocked(
         "failed": 0,
     }
     assert marked == [
-        (1, "completed", {"status": "completed", "rows_written": 7, "run_id": "manual__2026-05-25"}),
+        (
+            1,
+            "completed",
+            {"status": "completed", "rows_written": 7, "run_id": "manual__2026-05-25"},
+        ),
         (
             2,
             "blocked",

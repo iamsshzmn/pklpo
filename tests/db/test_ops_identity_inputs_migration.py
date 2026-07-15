@@ -28,12 +28,8 @@ def test_ops_identity_inputs_migration_schema_contract() -> None:
     )
     assert "chk_symbol_succession_approved_at" in SYMBOL_SUCCESSION_PIT_SQL
     assert "chk_symbol_succession_effective_from" in SYMBOL_SUCCESSION_PIT_SQL
-    assert "chk_symbol_succession_known_before_approved" in (
-        SYMBOL_SUCCESSION_PIT_SQL
-    )
-    assert "ix_symbol_succession_status_approved_at" in (
-        SYMBOL_SUCCESSION_PIT_SQL
-    )
+    assert "chk_symbol_succession_known_before_approved" in (SYMBOL_SUCCESSION_PIT_SQL)
+    assert "ix_symbol_succession_status_approved_at" in (SYMBOL_SUCCESSION_PIT_SQL)
     assert "ix_symbol_succession_build_lookup" in SYMBOL_SUCCESSION_PIT_SQL
     assert "ix_symbol_succession_new_symbol_known" in SYMBOL_SUCCESSION_PIT_SQL
 
@@ -64,9 +60,7 @@ def test_ops_identity_inputs_migration_schema_contract() -> None:
     assert "chk_gap_classification_type" in GAP_CLASSIFICATION_SQL
     assert "chk_gap_classification_status" in GAP_CLASSIFICATION_SQL
     assert "chk_gap_classification_approved_at" in GAP_CLASSIFICATION_SQL
-    assert "chk_gap_classification_known_before_approved" in (
-        GAP_CLASSIFICATION_SQL
-    )
+    assert "chk_gap_classification_known_before_approved" in (GAP_CLASSIFICATION_SQL)
     assert "ux_gap_classification_identity" in GAP_CLASSIFICATION_SQL
     assert "COALESCE(timeframe, '*')" in GAP_CLASSIFICATION_SQL
     assert "ix_gap_classification_approved" in GAP_CLASSIFICATION_SQL

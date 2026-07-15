@@ -21,6 +21,7 @@ def test_get_logger_falls_back_to_console_when_file_handler_fails(
     try:
         base_logger.handlers.clear()
         base_logger.filters.clear()
+        base_logger.propagate = True
         logger_module._base_logger = None
         monkeypatch.setattr(logger_module, "_build_file_handler", fail_file_handler)
 

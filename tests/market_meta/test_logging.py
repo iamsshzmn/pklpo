@@ -1,4 +1,4 @@
-﻿from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -46,7 +46,9 @@ class TestMarketMetaLogger:
         self.logger.logger.warning = Mock()
         self.logger.logger.error = Mock()
 
-        self.logger.log_cache_status({"is_valid": True, "instruments_count": 10, "ttl_hours": 1.5})
+        self.logger.log_cache_status(
+            {"is_valid": True, "instruments_count": 10, "ttl_hours": 1.5}
+        )
         self.logger.log_refresh_status(True, 10)
         self.logger.log_refresh_status(False, 0, "boom")
         self.logger.log_risk_check("BTC-USDT", "HIGH", "danger")

@@ -29,6 +29,7 @@ class TestIndicatorCalculatorProtocol:
 
     def test_valid_implementation(self):
         """Class with correct signature is instance of protocol."""
+
         class MyCalculator:
             def calculate(self, df_ohlcv, **params):
                 return df_ohlcv["close"]
@@ -38,6 +39,7 @@ class TestIndicatorCalculatorProtocol:
 
     def test_invalid_implementation(self):
         """Class without method is not instance."""
+
         class NotCalculator:
             pass
 
@@ -49,6 +51,7 @@ class TestBatchIndicatorCalculatorProtocol:
 
     def test_valid_implementation(self):
         """Class with correct signature is instance of protocol."""
+
         class MyBatch:
             def calculate_many(self, df_ohlcv, names, **params):
                 return {}
@@ -58,6 +61,7 @@ class TestBatchIndicatorCalculatorProtocol:
 
     def test_invalid_implementation(self):
         """Class without method is not instance."""
+
         class NotBatch:
             def calculate(self, df):  # Wrong method name
                 return {}
@@ -70,9 +74,17 @@ class TestFeatureCalculatorProtocol:
 
     def test_valid_implementation(self):
         """Class with correct signature is instance of protocol."""
+
         class MyFeatureCalc:
-            def calculate(self, df_ohlcv, specs=None, *,
-                         volatility_normalize=False, normalize_window=20, **kwargs):
+            def calculate(
+                self,
+                df_ohlcv,
+                specs=None,
+                *,
+                volatility_normalize=False,
+                normalize_window=20,
+                **kwargs,
+            ):
                 return df_ohlcv
 
         fc = MyFeatureCalc()
@@ -80,6 +92,7 @@ class TestFeatureCalculatorProtocol:
 
     def test_minimal_implementation(self):
         """Minimal implementation with just required signature."""
+
         class MinimalCalc:
             def calculate(self, df_ohlcv, specs=None, **kwargs):
                 return df_ohlcv
@@ -90,6 +103,7 @@ class TestFeatureCalculatorProtocol:
 
     def test_invalid_implementation(self):
         """Class without calculate method is not instance."""
+
         class NotFeatureCalc:
             def compute(self, df):  # Wrong method name
                 return df
@@ -102,6 +116,7 @@ class TestFeatureCalculatorBackendProtocol:
 
     def test_valid_implementation(self):
         """Class with backend wrapper contract is instance of protocol."""
+
         class Backend:
             backend_id = "talib"
 
@@ -112,6 +127,7 @@ class TestFeatureCalculatorBackendProtocol:
 
     def test_invalid_implementation(self):
         """Class without callable wrapper is not instance."""
+
         class NotBackend:
             backend_id = "talib"
 
@@ -119,6 +135,7 @@ class TestFeatureCalculatorBackendProtocol:
 
     def test_can_call_method(self):
         """Protocol implementation can be called."""
+
         class WorkingCalc:
             def calculate(self, df_ohlcv, specs=None, **kwargs):
                 return df_ohlcv.copy()
@@ -135,6 +152,7 @@ class TestOHLCVValidatorProtocol:
 
     def test_valid_implementation(self):
         """Class with correct signature is instance of protocol."""
+
         class MyValidator:
             def validate(self, df):
                 return True
@@ -144,6 +162,7 @@ class TestOHLCVValidatorProtocol:
 
     def test_invalid_implementation(self):
         """Class without validate method is not instance."""
+
         class NotValidator:
             def check(self, df):
                 return True
@@ -152,6 +171,7 @@ class TestOHLCVValidatorProtocol:
 
     def test_validate_returns_bool(self):
         """Validate method returns boolean."""
+
         class BoolValidator:
             def validate(self, df):
                 return df is not None and not df.empty
@@ -168,6 +188,7 @@ class TestFeatureNormalizerProtocol:
 
     def test_valid_implementation(self):
         """Class with correct signature is instance of protocol."""
+
         class MyNorm:
             def normalize(self, df, window=20):
                 return df
@@ -177,6 +198,7 @@ class TestFeatureNormalizerProtocol:
 
     def test_invalid_implementation(self):
         """Class without normalize method is not instance."""
+
         class NotNormalizer:
             def standardize(self, df):
                 return df
@@ -185,6 +207,7 @@ class TestFeatureNormalizerProtocol:
 
     def test_normalize_with_default_window(self):
         """Normalize can be called with default window."""
+
         class SimpleNorm:
             def normalize(self, df, window=20):
                 # Simple normalization: subtract mean
@@ -322,6 +345,7 @@ class TestProtocolCombinations:
 
     def test_class_implements_multiple_protocols(self):
         """Class can implement multiple protocols."""
+
         class MultiProtocol:
             def validate(self, df):
                 return True
@@ -336,6 +360,7 @@ class TestProtocolCombinations:
 
     def test_all_protocols_independent(self):
         """Each protocol check is independent."""
+
         class OnlyValidator:
             def validate(self, df):
                 return True

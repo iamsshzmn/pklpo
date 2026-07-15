@@ -89,7 +89,9 @@ def test_select_universe_respects_whitelist(
     assert "SOL-USDT" in {entry.symbol for entry in universe}
 
 
-def test_select_universe_hysteresis(universe_manager, sample_final_scores, sample_regime):
+def test_select_universe_hysteresis(
+    universe_manager, sample_final_scores, sample_regime
+):
     universe, _ = universe_manager.select_universe(
         final_scores=sample_final_scores,
         score_history={},

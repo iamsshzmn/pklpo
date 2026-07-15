@@ -35,7 +35,9 @@ def _load_features_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleTy
 
     airflow_operators_python = types.ModuleType("airflow.operators.python")
     airflow_operators_python.PythonOperator = _DummyOperator
-    monkeypatch.setitem(sys.modules, "airflow.operators.python", airflow_operators_python)
+    monkeypatch.setitem(
+        sys.modules, "airflow.operators.python", airflow_operators_python
+    )
 
     common = types.ModuleType("_common")
     common.airflow_log_context = lambda context, **kwargs: nullcontext("run-id")
@@ -75,13 +77,19 @@ def test_prepare_storage_task_returns_loop_result(
 ) -> None:
     calls: list[dict[str, Any]] = []
 
-    async def _fake_run_indicators_partition_maintenance(**kwargs: Any) -> dict[str, Any]:
+    async def _fake_run_indicators_partition_maintenance(
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         calls.append(kwargs)
         return {"created_count": 2, "existing_count": 5}
 
     db_interfaces = types.ModuleType("src.db.indicators_partition.interfaces")
-    db_interfaces.run_indicators_partition_maintenance = _fake_run_indicators_partition_maintenance
-    monkeypatch.setitem(sys.modules, "src.db.indicators_partition.interfaces", db_interfaces)
+    db_interfaces.run_indicators_partition_maintenance = (
+        _fake_run_indicators_partition_maintenance
+    )
+    monkeypatch.setitem(
+        sys.modules, "src.db.indicators_partition.interfaces", db_interfaces
+    )
 
     monkeypatch.setattr(
         features_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}

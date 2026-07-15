@@ -85,16 +85,19 @@ def test_identity_snapshot_derives_approved_succession_as_composite_series() -> 
         as_of=_ts("2026-07-03T00:00:00+00:00"),
     )
 
-    assert [(row.series_id, row.series_label, row.series_kind) for row in snapshot.registry] == [
-        ("TON-USDT-SWAP", "ton_gram", "composite")
-    ]
-    assert [(row.series_id, row.source_symbol, row.valid_from, row.valid_to) for row in snapshot.members] == [
+    assert [
+        (row.series_id, row.series_label, row.series_kind) for row in snapshot.registry
+    ] == [("TON-USDT-SWAP", "ton_gram", "composite")]
+    assert [
+        (row.series_id, row.source_symbol, row.valid_from, row.valid_to)
+        for row in snapshot.members
+    ] == [
         ("TON-USDT-SWAP", "TON-USDT-SWAP", 0, 1781054400000),
         ("TON-USDT-SWAP", "GRAM-USDT-SWAP", 1781685000000, None),
     ]
-    assert [(row.old_series_id, row.canonical_series_id) for row in snapshot.aliases] == [
-        ("GRAM-USDT-SWAP", "TON-USDT-SWAP")
-    ]
+    assert [
+        (row.old_series_id, row.canonical_series_id) for row in snapshot.aliases
+    ] == [("GRAM-USDT-SWAP", "TON-USDT-SWAP")]
     assert [(row.series_id, row.gap_type) for row in snapshot.gap_ranges] == [
         ("TON-USDT-SWAP", "recoverable_data_gap")
     ]
@@ -154,9 +157,7 @@ async def test_identity_build_job_publishes_snapshot_and_enqueues_recalc() -> No
         async def load_inputs(self, as_of):
             return IdentityBuildInputs(
                 instruments=[
-                    RawInstrument(
-                        symbol="BTC-USDT-SWAP", venue="OKX", inst_type="SWAP"
-                    )
+                    RawInstrument(symbol="BTC-USDT-SWAP", venue="OKX", inst_type="SWAP")
                 ],
                 successions=[],
                 gap_classifications=[],

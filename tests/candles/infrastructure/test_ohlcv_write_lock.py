@@ -9,7 +9,9 @@ class _Session:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
-    async def execute(self, statement: Any, params: dict[str, Any] | None = None) -> None:
+    async def execute(
+        self, statement: Any, params: dict[str, Any] | None = None
+    ) -> None:
         self.calls.append((str(statement), params or {}))
 
 

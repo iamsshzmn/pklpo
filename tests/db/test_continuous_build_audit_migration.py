@@ -27,6 +27,6 @@ def test_continuous_build_audit_migration_registered_after_identity_audit() -> N
     migration_ids = [migration.id for migration in get_migrations()]
 
     assert "530_continuous_ohlcv_build_audit" in migration_ids
-    assert migration_ids.index("530_continuous_ohlcv_build_audit") > migration_ids.index(
-        "520_series_identity_build_audit"
-    )
+    assert migration_ids.index(
+        "530_continuous_ohlcv_build_audit"
+    ) > migration_ids.index("520_series_identity_build_audit")

@@ -403,9 +403,7 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
             end_ts_ms: int,
         ) -> list[int]:
             del symbol, timeframe
-            return sorted(
-                ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms
-            )
+            return sorted(ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms)
 
         async def count_missing_timestamps(
             self,
@@ -421,9 +419,7 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
             while cursor < end_ts_ms:
                 expected.append(cursor)
                 cursor = expected_next_open(cursor, timeframe)
-            existing = {
-                ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms
-            }
+            existing = {ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms}
             return sum(1 for ts in expected if ts not in existing)
 
         async def selective_upsert_candles(

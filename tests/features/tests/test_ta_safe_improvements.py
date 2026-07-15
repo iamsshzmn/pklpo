@@ -122,9 +122,9 @@ if __name__ == "__main__":
     print(f"✅ RSI dtypes: {result.dtypes.to_dict()}")
 
     # Тест 2: типы данных
-    assert all(
-        result[c].dtype == "float64" for c in result.columns
-    ), "❌ Object типы найдены"
+    assert all(result[c].dtype == "float64" for c in result.columns), (
+        "❌ Object типы найдены"
+    )
     print("✅ Все колонки имеют float64 тип")
 
     # Тест 3: индекс
