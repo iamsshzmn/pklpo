@@ -231,6 +231,13 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Candles DoD
+        env:
+          ENVIRONMENT: test
+          POSTGRES_USER: pklpo_ci
+          POSTGRES_PASSWORD: ci_dummy
+          POSTGRES_DB: pklpo_ci
+          DB_HOST: localhost
+          DB_PORT: "5432"
         run: python scripts/run_candles_dod.py --cov-fail-under=50
 
   # ---------------------------------------------------------------------------
@@ -259,6 +266,7 @@ jobs:
 
       - name: pytest-benchmark
         run: |
+          mkdir -p benchmarks/results
           pytest \
             tests/features/benchmarks/bench_pipeline.py \
             -q --benchmark-json=benchmarks/results/pytest_benchmark.json \
