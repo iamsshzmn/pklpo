@@ -75,7 +75,7 @@ def _load_market_selection_module(monkeypatch: pytest.MonkeyPatch) -> types.Modu
         sys.modules, "airflow.sensors.external_task", airflow_sensors_external
     )
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/market_selection.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/market_selection.py"
     module_name = "tests.market_selection._market_selection_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None

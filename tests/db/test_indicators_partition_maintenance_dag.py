@@ -39,7 +39,10 @@ def _load_partition_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleT
     )
 
     module_path = Path(
-        "D:/projects/pklpo/ops/airflow/dags/indicators_partition_maintenance.py"
+        str(
+            Path(__file__).parents[2]
+            / "ops/airflow/dags/indicators_partition_maintenance.py"
+        )
     )
     module_name = "tests.db._indicators_partition_maintenance_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)

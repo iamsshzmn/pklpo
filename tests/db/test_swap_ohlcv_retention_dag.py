@@ -78,7 +78,7 @@ def _load_retention_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleT
     )
     monkeypatch.setitem(sys.modules, "src.candles.bootstrap", candles_bootstrap)
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/swap_ohlcv_retention.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/swap_ohlcv_retention.py"
     module_name = "tests.db._swap_ohlcv_retention_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None

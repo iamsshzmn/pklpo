@@ -56,7 +56,7 @@ def _load_features_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleTy
     )
     monkeypatch.setitem(sys.modules, "src.features.bootstrap", features_bootstrap)
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/features_calc_short.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/features_calc_short.py"
     module_name = "tests.db._features_calc_short_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None

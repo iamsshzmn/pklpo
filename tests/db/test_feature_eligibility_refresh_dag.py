@@ -55,7 +55,10 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     monkeypatch.setitem(sys.modules, "_common", common)
 
     module_path = Path(
-        "D:/projects/pklpo/ops/airflow/dags/feature_eligibility_refresh.py"
+        str(
+            Path(__file__).parents[2]
+            / "ops/airflow/dags/feature_eligibility_refresh.py"
+        )
     )
     module_name = "tests.db._feature_eligibility_refresh_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -70,7 +73,10 @@ def test_feature_eligibility_refresh_dag_contract(
 ) -> None:
     module = _load_dag(monkeypatch)
     source = Path(
-        "D:/projects/pklpo/ops/airflow/dags/feature_eligibility_refresh.py"
+        str(
+            Path(__file__).parents[2]
+            / "ops/airflow/dags/feature_eligibility_refresh.py"
+        )
     ).read_text(encoding="utf-8")
 
     assert module.dag.kwargs["schedule"] == "0 2 * * *"

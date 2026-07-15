@@ -65,7 +65,7 @@ def _load_repair_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType
     )
     monkeypatch.setitem(sys.modules, "src.candles.bootstrap", candles_bootstrap)
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/okx_swap_repair_v1.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/okx_swap_repair_v1.py"
     module_name = "tests.db._okx_swap_repair_v1_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None

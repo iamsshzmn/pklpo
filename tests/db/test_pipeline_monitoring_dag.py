@@ -103,7 +103,7 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     common.get_or_create_event_loop = lambda: _Loop()  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "_common", common)
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/pipeline_monitoring.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/pipeline_monitoring.py"
     module_name = "tests.db._pipeline_monitoring_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
@@ -117,7 +117,7 @@ def test_pipeline_monitoring_dag_contract_and_read_only_sql(
 ) -> None:
     module = _load_dag(monkeypatch)
     source = Path(
-        "D:/projects/pklpo/ops/airflow/dags/pipeline_monitoring.py"
+        str(Path(__file__).parents[2] / "ops/airflow/dags/pipeline_monitoring.py")
     ).read_text(encoding="utf-8")
     upper = source.upper()
 

@@ -141,9 +141,9 @@ class TestCalcCliExamplePath:
         """CLI/example path should build calculator through factory."""
         from pathlib import Path
 
-        source = Path("D:/projects/pklpo/src/features/application/calc.py").read_text(
-            encoding="utf-8"
-        )
+        source = (
+            Path(__file__).parents[2] / "src/features/application/calc.py"
+        ).read_text(encoding="utf-8")
 
         assert "from .feature_service import create_feature_service" in source
         assert "calculator=create_feature_service()" in source

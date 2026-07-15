@@ -92,7 +92,10 @@ def _load_bootstrap_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleT
     monkeypatch.setitem(sys.modules, "src.candles.bootstrap", candles_bootstrap)
 
     module_path = Path(
-        "D:/projects/pklpo/ops/airflow/dags/okx_swap_ohlcv_bootstrap_v1.py"
+        str(
+            Path(__file__).parents[2]
+            / "ops/airflow/dags/okx_swap_ohlcv_bootstrap_v1.py"
+        )
     )
     module_name = "tests.db._okx_swap_ohlcv_bootstrap_v1_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)

@@ -36,7 +36,7 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         airflow_operators_python,
     )
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/indicators_recalc.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/indicators_recalc.py"
     module_name = "tests.db._indicators_recalc_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
@@ -47,9 +47,9 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
 def test_indicators_recalc_dag_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_dag(monkeypatch)
-    source = Path("D:/projects/pklpo/ops/airflow/dags/indicators_recalc.py").read_text(
-        encoding="utf-8"
-    )
+    source = (
+        Path(__file__).parents[2] / "ops/airflow/dags/indicators_recalc.py"
+    ).read_text(encoding="utf-8")
 
     assert module.dag.kwargs["dag_id"] == "indicators_recalc"
     assert module.dag.kwargs["schedule"] == "*/10 * * * *"

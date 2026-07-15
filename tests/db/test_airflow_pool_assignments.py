@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-ROOT = Path("D:/projects/pklpo")
+ROOT = Path(__file__).parents[2]
 
 
 def _operator_block(path: str, task_id: str) -> str:

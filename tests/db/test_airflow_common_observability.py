@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 from src.logging.context import get_current_context, get_current_run_id
 
-_COMMON_DIR = Path("D:/projects/pklpo/ops/airflow/dags/_common")
+_COMMON_DIR = Path(__file__).parents[2] / "ops/airflow/dags/_common"
 
 
 def _load_common_module(module_name: str) -> types.ModuleType:
