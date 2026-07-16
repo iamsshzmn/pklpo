@@ -8,7 +8,10 @@ def test_retention_horizon_guard_clamps_finite_cutoff_to_warmup_horizon() -> Non
     )
 
     assert WARMUP_HORIZON_BARS == 500
-    assert "CREATE OR REPLACE FUNCTION cleanup_old_swap_data" in RETENTION_HORIZON_GUARD_SQL
+    assert (
+        "CREATE OR REPLACE FUNCTION cleanup_old_swap_data"
+        in RETENTION_HORIZON_GUARD_SQL
+    )
     assert "policy.retention_days IS NULL" in RETENTION_HORIZON_GUARD_SQL
     assert "skipped_reason := 'infinite_retention'" in RETENTION_HORIZON_GUARD_SQL
     assert "min_keep_ts" in RETENTION_HORIZON_GUARD_SQL

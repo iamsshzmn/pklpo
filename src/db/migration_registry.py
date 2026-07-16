@@ -40,8 +40,20 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_add_swap_ohlcv_constraints import (
         migrate_add_swap_ohlcv_constraints,
     )
+    from src.db.migrations.migrate_allow_candidate_pipeline_recovery_decisions import (
+        migrate_allow_candidate_pipeline_recovery_decisions,
+    )
     from src.db.migrations.migrate_create_combination_features import (
         migrate_create_combination_features,
+    )
+    from src.db.migrations.migrate_create_continuous_ohlcv_build_audit import (
+        migrate_create_continuous_ohlcv_build_audit,
+    )
+    from src.db.migrations.migrate_create_core_identity import (
+        migrate_create_core_identity,
+    )
+    from src.db.migrations.migrate_create_core_ohlcv_facade import (
+        migrate_create_core_ohlcv_facade,
     )
     from src.db.migrations.migrate_create_features_table import (
         migrate_create_features_table,
@@ -74,11 +86,17 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_create_ops_pipeline_recovery_decisions import (
         migrate_create_ops_pipeline_recovery_decisions,
     )
+    from src.db.migrations.migrate_create_ops_recovery_symbol_discovery import (
+        migrate_create_ops_recovery_symbol_discovery,
+    )
     from src.db.migrations.migrate_create_ops_swap_ohlcv_bootstrap_state import (
         migrate_create_ops_swap_ohlcv_bootstrap_state,
     )
     from src.db.migrations.migrate_create_ops_swap_repair_audit import (
         migrate_create_ops_swap_repair_audit,
+    )
+    from src.db.migrations.migrate_create_ops_symbol_succession import (
+        migrate_create_ops_symbol_succession,
     )
     from src.db.migrations.migrate_create_positions import (
         run_migrations as mig_positions,
@@ -89,16 +107,25 @@ def get_migrations() -> list[Migration]:
     from src.db.migrations.migrate_create_score_results import (
         migrate_create_score_results,
     )
+    from src.db.migrations.migrate_create_series_identity_build_audit import (
+        migrate_create_series_identity_build_audit,
+    )
     from src.db.migrations.migrate_create_swap_ohlcv import migrate_create_swap_ohlcv
     from src.db.migrations.migrate_create_trade_recommendations import (
         migrate_create_trade_recommendations,
     )
     from src.db.migrations.migrate_data_cleanup import migrate_data_cleanup
+    from src.db.migrations.migrate_drop_ops_recovery_symbol_discovery import (
+        migrate_drop_ops_recovery_symbol_discovery,
+    )
     from src.db.migrations.migrate_drop_redundant_swap_ohlcv_indexes import (
         migrate_drop_redundant_swap_ohlcv_indexes,
     )
     from src.db.migrations.migrate_expand_indicators_precision import (
         migrate_expand_indicators_precision,
+    )
+    from src.db.migrations.migrate_extend_ops_identity_inputs import (
+        migrate_extend_ops_identity_inputs,
     )
     from src.db.migrations.migrate_extend_ops_swap_repair_audit_semantics import (
         migrate_extend_ops_swap_repair_audit_semantics,
@@ -323,5 +350,50 @@ def get_migrations() -> list[Migration]:
             "450_ops_pipeline_recovery_decisions",
             "create ops pipeline recovery decisions table",
             migrate_create_ops_pipeline_recovery_decisions,
+        ),
+        Migration(
+            "460_allow_candidate_pipeline_recovery_decisions",
+            "allow candidate recovery decision status",
+            migrate_allow_candidate_pipeline_recovery_decisions,
+        ),
+        Migration(
+            "470_ops_recovery_symbol_discovery",
+            "create ops recovery symbol discovery table",
+            migrate_create_ops_recovery_symbol_discovery,
+        ),
+        Migration(
+            "480_ops_symbol_succession",
+            "create ops symbol succession",
+            migrate_create_ops_symbol_succession,
+        ),
+        Migration(
+            "490_drop_ops_recovery_symbol_discovery",
+            "drop ops recovery symbol discovery table",
+            migrate_drop_ops_recovery_symbol_discovery,
+        ),
+        Migration(
+            "500_ops_identity_inputs",
+            "extend ops identity input tables",
+            migrate_extend_ops_identity_inputs,
+        ),
+        Migration(
+            "510_core_identity",
+            "create core identity tables",
+            migrate_create_core_identity,
+        ),
+        Migration(
+            "520_series_identity_build_audit",
+            "create identity build audit table",
+            migrate_create_series_identity_build_audit,
+        ),
+        Migration(
+            "530_continuous_ohlcv_build_audit",
+            "create continuous OHLCV build audit table",
+            migrate_create_continuous_ohlcv_build_audit,
+        ),
+        Migration(
+            "540_core_ohlcv_facade",
+            "create DB-side OHLCV facade (view + PIT function) for BI/SQL",
+            migrate_create_core_ohlcv_facade,
         ),
     ]

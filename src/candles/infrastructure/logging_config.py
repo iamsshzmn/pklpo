@@ -1,9 +1,7 @@
-"""
-Централизованная конфигурация логирования для модуля market_meta.
+# fmt: off
+"""Deprecated market metadata logging compatibility helpers."""
 
-DEPRECATED: This module now delegates to src.logging.
-Use `from src.logging import get_logger` directly.
-"""
+from __future__ import annotations
 
 import os
 import warnings
@@ -11,7 +9,6 @@ from typing import Any
 
 from src.logging import get_logger as _get_logger, setup_logging
 
-# Emit deprecation warning
 warnings.warn(
     "src.candles.infrastructure.logging_config is deprecated. "
     "Use src.logging instead.",
@@ -19,23 +16,18 @@ warnings.warn(
     stacklevel=2,
 )
 
-# Constants for backward compatibility
 LOGGER_NAME = "market_meta"
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_FORMAT = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
 DEFAULT_LOG_FILE = "/opt/airflow/project/logs/market_meta.log"
-MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_LOG_SIZE = 10 * 1024 * 1024
 BACKUP_COUNT = 5
 
 
 class MarketMetaLogger:
-    """
-    Централизованный логгер для модуля market_meta.
+    """Compatibility facade over :mod:`src.logging`."""
 
-    DEPRECATED: Use src.logging directly.
-    """
-
-    def __init__(self, name: str = LOGGER_NAME):
+    def __init__(self, name: str = LOGGER_NAME) -> None:
         self.name = name
         self.logger = _get_logger(name)
         self._configured = False
@@ -50,115 +42,112 @@ class MarketMetaLogger:
         max_size: int = MAX_LOG_SIZE,
         backup_count: int = BACKUP_COUNT,
     ) -> None:
-        """Настраивает логирование для модуля."""
+        del log_file, log_format, console_output, file_output, max_size, backup_count
         if self._configured:
             return
         setup_logging(level=level)
         self._configured = True
 
-    def get_logger(self, name: str | None = None):
-        """Возвращает логгер для указанного компонента."""
+    def get_logger(self, name: str | None = None) -> Any:
         if name:
             return _get_logger(f"{self.name}.{name}")
         return self.logger
 
     def log_validation_result(
-        self, symbol: str, violations: list[str], warnings_list: list[str] | None = None
+        self,
+        symbol: str,
+        violations: list[str],
+        warnings_list: list[str] | None = None,
     ) -> None:
-        """Логирует результат валидации ордера."""
         if violations:
             self.logger.warning(
-                f"Валидация ордера {symbol} не прошла: {len(violations)} нарушений"
+                "Validation failed for %s: %s violations", symbol, len(violations)
             )
-            for i, violation in enumerate(violations, 1):
-                self.logger.warning(f"  {i}. {violation}")
+            for index, violation in enumerate(violations, 1):
+                self.logger.warning("  %s. %s", index, violation)
         else:
-            self.logger.info(f"Валидация ордера {symbol} прошла успешно")
+            self.logger.info("Validation passed for %s", symbol)
 
-        if warnings_list:
-            for warning in warnings_list:
-                self.logger.info(f"Предупреждение для {symbol}: {warning}")
+        for warning in warnings_list or []:
+            self.logger.info("Warning for %s: %s", symbol, warning)
 
     def log_cache_status(self, status: dict[str, Any]) -> None:
-        """Логирует статус кэша."""
         self.logger.info(
-            f"Статус кэша: актуален={status.get('is_valid')}, "
-            f"инструментов={status.get('instruments_count')}, "
-            f"TTL={status.get('ttl_hours', 0):.1f}ч"
+            "Cache status: valid=%s, instruments=%s, ttl=%.1fh",
+            status.get("is_valid"),
+            status.get("instruments_count"),
+            status.get("ttl_hours", 0),
         )
 
     def log_refresh_status(
-        self, success: bool, instruments_count: int = 0, error: str | None = None
+        self,
+        success: bool,
+        instruments_count: int = 0,
+        error: str | None = None,
     ) -> None:
-        """Логирует статус обновления метаданных."""
         if success:
             self.logger.info(
-                f"Обновление метаданных успешно завершено: {instruments_count} инструментов"
+                "Metadata refresh completed: %s instruments", instruments_count
             )
         else:
-            self.logger.error(f"Ошибка обновления метаданных: {error}")
+            self.logger.error("Metadata refresh failed: %s", error)
 
     def log_risk_check(self, symbol: str, risk_level: str, details: str) -> None:
-        """Логирует проверку рисков."""
-        if risk_level.upper() in ["HIGH", "CRITICAL"]:
-            self.logger.warning(f"Высокий риск для {symbol}: {details}")
+        if risk_level.upper() in {"HIGH", "CRITICAL"}:
+            self.logger.warning("High risk for %s: %s", symbol, details)
         else:
-            self.logger.info(f"Проверка рисков {symbol}: {details}")
+            self.logger.info("Risk check for %s: %s", symbol, details)
 
 
-# Global instance
 _market_meta_logger = MarketMetaLogger()
 
 
-def get_logger(name: str | None = None):
-    """Возвращает настроенный логгер для модуля market_meta."""
+def get_logger(name: str | None = None) -> Any:
     if name:
         return _get_logger(f"{LOGGER_NAME}.{name}")
     return _market_meta_logger.get_logger()
 
 
-def configure_logging(**kwargs) -> None:
-    """Настраивает логирование для модуля market_meta."""
+def configure_logging(**kwargs: Any) -> None:
     _market_meta_logger.configure(**kwargs)
 
 
 def log_validation_result(
-    symbol: str, violations: list[str], warnings_list: list[str] | None = None
+    symbol: str,
+    violations: list[str],
+    warnings_list: list[str] | None = None,
 ) -> None:
-    """Логирует результат валидации ордера."""
     _market_meta_logger.log_validation_result(symbol, violations, warnings_list)
 
 
 def log_cache_status(status: dict[str, Any]) -> None:
-    """Логирует статус кэша."""
     _market_meta_logger.log_cache_status(status)
 
 
 def log_refresh_status(
-    success: bool, instruments_count: int = 0, error: str | None = None
+    success: bool,
+    instruments_count: int = 0,
+    error: str | None = None,
 ) -> None:
-    """Логирует статус обновления метаданных."""
     _market_meta_logger.log_refresh_status(success, instruments_count, error)
 
 
 def log_risk_check(symbol: str, risk_level: str, details: str) -> None:
-    """Логирует проверку рисков."""
     _market_meta_logger.log_risk_check(symbol, risk_level, details)
 
 
 def auto_configure() -> None:
-    """Автоматическая настройка логирования из переменных окружения.
-
-    T8.3: No longer called automatically at import time to avoid creating file
-    handlers as a side-effect of ``import logging_config``.  Call explicitly
-    if needed; prefer ``from src.logging import setup_logging`` directly.
-    """
     level = os.getenv("MARKET_META_LOG_LEVEL", DEFAULT_LOG_LEVEL)
     configure_logging(level=level)
 
 
 __all__ = [
+    "BACKUP_COUNT",
+    "DEFAULT_LOG_FILE",
+    "DEFAULT_LOG_FORMAT",
+    "DEFAULT_LOG_LEVEL",
     "LOGGER_NAME",
+    "MAX_LOG_SIZE",
     "MarketMetaLogger",
     "auto_configure",
     "configure_logging",
@@ -168,3 +157,4 @@ __all__ = [
     "log_risk_check",
     "log_validation_result",
 ]
+# fmt: on

@@ -9,6 +9,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base
 
+from src.features.infrastructure.models import Indicator
 from src.features.storage_contract import IndicatorStorageContract
 
 Base = declarative_base()
@@ -157,3 +158,17 @@ class CombinationResult(Base):
 
     indicators_used = Column(String, nullable=True)  # JSON list
     calculated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+__all__ = [
+    "INDICATORS_TABLE_NAME",
+    "OHLCV",
+    "Base",
+    "CombinationResult",
+    "Indicator",
+    "Instrument",
+    "Signal",
+    "SignalDetailed",
+    "SignalRuleCodes",
+    "SwapOhlcvP",
+]

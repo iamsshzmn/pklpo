@@ -73,13 +73,17 @@ def _session_factory(session: FakeSession):
 async def test_get_listing_time_ts_ms_returns_listing_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = FakeSession(execute_results=[FakeResult(fetchall_rows=[(61_000, 123_000)])])
+    session = FakeSession(
+        execute_results=[FakeResult(fetchall_rows=[(61_000, 123_000)])]
+    )
     repository = RepairCandlesRepository()
 
     async def passthrough(operation: Any) -> Any:
         return await operation()
 
-    monkeypatch.setattr(repair_repository_module, "get_db_session", _session_factory(session))
+    monkeypatch.setattr(
+        repair_repository_module, "get_db_session", _session_factory(session)
+    )
     monkeypatch.setattr(repository, "_run_with_db_retry", passthrough)
 
     result = await repository.get_listing_time_ts_ms(symbol="BTC-USDT-SWAP")
@@ -98,7 +102,9 @@ async def test_get_listing_time_ts_ms_returns_none_for_missing_or_null_row(
     async def passthrough(operation: Any) -> Any:
         return await operation()
 
-    monkeypatch.setattr(repair_repository_module, "get_db_session", _session_factory(session))
+    monkeypatch.setattr(
+        repair_repository_module, "get_db_session", _session_factory(session)
+    )
     monkeypatch.setattr(repository, "_run_with_db_retry", passthrough)
 
     result = await repository.get_listing_time_ts_ms(symbol="BTC-USDT-SWAP")
@@ -118,7 +124,9 @@ async def test_get_listing_anchor_metadata_returns_listing_time_and_freshness(
     async def passthrough(operation: Any) -> Any:
         return await operation()
 
-    monkeypatch.setattr(repair_repository_module, "get_db_session", _session_factory(session))
+    monkeypatch.setattr(
+        repair_repository_module, "get_db_session", _session_factory(session)
+    )
     monkeypatch.setattr(repository, "_run_with_db_retry", passthrough)
 
     metadata = await repository.get_listing_anchor_metadata(symbol="BTC-USDT-SWAP")
@@ -128,15 +136,22 @@ async def test_get_listing_anchor_metadata_returns_listing_time_and_freshness(
     assert metadata.metadata_refreshed_at_ms == 123_000
     assert session.executed[0][1] == {"symbol": "BTC-USDT-SWAP"}
 
+
 @pytest.mark.asyncio
-async def test_list_timestamps_maps_rows_to_ints(monkeypatch: pytest.MonkeyPatch) -> None:
-    session = FakeSession(execute_results=[FakeResult(fetchall_rows=[(60_000,), (120_000,)])])
+async def test_list_timestamps_maps_rows_to_ints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession(
+        execute_results=[FakeResult(fetchall_rows=[(60_000,), (120_000,)])]
+    )
     repository = RepairCandlesRepository()
 
     async def passthrough(operation: Any) -> Any:
         return await operation()
 
-    monkeypatch.setattr(repair_repository_module, "get_db_session", _session_factory(session))
+    monkeypatch.setattr(
+        repair_repository_module, "get_db_session", _session_factory(session)
+    )
     monkeypatch.setattr(repository, "_run_with_db_retry", passthrough)
 
     result = await repository.list_timestamps(
@@ -156,14 +171,18 @@ async def test_list_timestamps_maps_rows_to_ints(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_count_candles_returns_scalar_count(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_count_candles_returns_scalar_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = FakeSession(execute_results=[FakeResult(scalar_value=7)])
     repository = RepairCandlesRepository()
 
     async def passthrough(operation: Any) -> Any:
         return await operation()
 
-    monkeypatch.setattr(repair_repository_module, "get_db_session", _session_factory(session))
+    monkeypatch.setattr(
+        repair_repository_module, "get_db_session", _session_factory(session)
+    )
     monkeypatch.setattr(repository, "_run_with_db_retry", passthrough)
 
     result = await repository.count_candles(
@@ -193,13 +212,17 @@ async def test_selective_upsert_returns_zero_for_empty_input() -> None:
 async def test_selective_upsert_updates_only_canonical_candle_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = FakeSession(execute_results=[FakeResult(rowcount=2)])
+    session = FakeSession(
+        execute_results=[FakeResult(), FakeResult(), FakeResult(rowcount=2)]
+    )
     repository = RepairCandlesRepository()
 
     async def passthrough(operation: Any) -> Any:
         return await operation()
 
-    monkeypatch.setattr(repair_repository_module, "get_db_session", _session_factory(session))
+    monkeypatch.setattr(
+        repair_repository_module, "get_db_session", _session_factory(session)
+    )
     monkeypatch.setattr(repository, "_run_with_db_retry", passthrough)
 
     result = await repository.selective_upsert_candles(
@@ -210,7 +233,7 @@ async def test_selective_upsert_updates_only_canonical_candle_fields(
                 "timestamp": 0,
                 "open": 1,
                 "high": 2,
-                "low": 0,
+                "low": 1,
                 "close": 1,
                 "volume": 10,
                 "vol_ccy": 11,
@@ -234,7 +257,7 @@ async def test_selective_upsert_updates_only_canonical_candle_fields(
     assert result == 2
     assert session.committed is True
     assert session.rolled_back is False
-    statement, rows = session.executed[0]
+    statement, rows = session.executed[-1]
     assert "funding_rate" not in statement
     assert "open_interest" not in statement
     assert rows == [
@@ -244,7 +267,7 @@ async def test_selective_upsert_updates_only_canonical_candle_fields(
             "timestamp": 0,
             "open": 1,
             "high": 2,
-            "low": 0,
+            "low": 1,
             "close": 1,
             "volume": 10,
             "vol_ccy": 11,

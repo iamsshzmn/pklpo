@@ -36,7 +36,7 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         airflow_operators_python,
     )
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/indicators_recalc.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/indicators_recalc.py"
     module_name = "tests.db._indicators_recalc_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
@@ -47,9 +47,9 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
 
 def test_indicators_recalc_dag_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_dag(monkeypatch)
-    source = Path("D:/projects/pklpo/ops/airflow/dags/indicators_recalc.py").read_text(
-        encoding="utf-8"
-    )
+    source = (
+        Path(__file__).parents[2] / "ops/airflow/dags/indicators_recalc.py"
+    ).read_text(encoding="utf-8")
 
     assert module.dag.kwargs["dag_id"] == "indicators_recalc"
     assert module.dag.kwargs["schedule"] == "*/10 * * * *"
@@ -88,7 +88,9 @@ def test_drain_indicator_recalc_queue_marks_completed_and_blocked(
     ]
     marked: list[tuple[int, str, dict[str, Any]]] = []
 
-    async def _claim_rows(*, limit: int, stale_after_minutes: int) -> list[dict[str, Any]]:
+    async def _claim_rows(
+        *, limit: int, stale_after_minutes: int
+    ) -> list[dict[str, Any]]:
         assert limit == 25
         assert stale_after_minutes == 60
         return rows
@@ -121,7 +123,11 @@ def test_drain_indicator_recalc_queue_marks_completed_and_blocked(
         "failed": 0,
     }
     assert marked == [
-        (1, "completed", {"status": "completed", "rows_written": 7, "run_id": "manual__2026-05-25"}),
+        (
+            1,
+            "completed",
+            {"status": "completed", "rows_written": 7, "run_id": "manual__2026-05-25"},
+        ),
         (
             2,
             "blocked",

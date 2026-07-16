@@ -79,7 +79,7 @@ async def job_lock(
     symbol: str | None = None,
     timeframe: str | None = None,
     component: str | None = None,
-) -> "AsyncIterator[str]":
+) -> AsyncIterator[str]:
     """Async context manager that acquires a distributed job lock.
 
     Args:
@@ -95,8 +95,9 @@ async def job_lock(
         LockConflict: Another process holds the lock and retries exhausted.
         RedisLockError: Redis unavailable (fail-closed).
     """
-    from .redis_client import _key, get_redis  # noqa: F401 (trigger import check)
     from src.config.settings import get_settings
+
+    from .redis_client import _key, get_redis  # noqa: F401 (trigger import check)
 
     settings = get_settings().redis
 

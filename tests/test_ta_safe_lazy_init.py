@@ -14,6 +14,7 @@ def _reset_lazy_cache() -> None:
 
 # --- Lazy init contract ---
 
+
 def test_lazy_init_starts_as_none():
     _reset_lazy_cache()
     assert backend_module._AVAILABLE_FUNCTIONS is None
@@ -58,8 +59,10 @@ def test_get_available_functions_no_reinit_on_repeated_calls():
 
 # --- detect_available_functions contract ---
 
+
 def test_detect_returns_subset_of_allow():
     from src.features.ta_safe.constants import ALLOW
+
     _reset_lazy_cache()
     detected = backend_module._detect_available_functions()
     assert isinstance(detected, set)
@@ -74,6 +77,7 @@ def test_available_functions_are_strings():
 
 
 # --- safe_ta contract ---
+
 
 def test_safe_ta_raises_for_forbidden_name():
     import pandas as pd

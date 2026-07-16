@@ -87,6 +87,87 @@ def _build_log_context(context: dict[str, Any]) -> str:
     return f"dag_run_id={dag_run_id} logical_date={logical_date}"
 
 
+def _get_recovery_decision_repository() -> Any:
+    from src.candles.infrastructure.recovery_decision_repository import (
+        RecoveryDecisionRepository,
+    )
+
+    return RecoveryDecisionRepository()
+
+
+def _build_target_run_id(
+    *,
+    target_dag_id: str,
+    controller_decision_id: int | None,
+    context: dict[str, Any],
+) -> str | None:
+    if controller_decision_id is None:
+        return None
+    dag_run = context.get("dag_run")
+    controller_run_id = getattr(dag_run, "run_id", "manual")
+    return (
+        f"{CONTROLLER_DAG_ID}__{controller_decision_id}__"
+        f"{target_dag_id}__{controller_run_id}"
+    )
+
+
+def _coerce_decision_id(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.warning("invalid controller_decision_id=%r", value)
+        return None
+
+
+def _extract_target_run_id(
+    execute_result: Any,
+    *,
+    fallback_run_id: str | None,
+    inner_task_id: str,
+    context: dict[str, Any],
+) -> str | None:
+    if isinstance(execute_result, dict):
+        for key in ("run_id", "dag_run_id", "trigger_run_id"):
+            value = execute_result.get(key)
+            if value:
+                return str(value)
+    if isinstance(execute_result, str) and execute_result:
+        return execute_result
+
+    ti = context.get("ti")
+    if ti is not None:
+        try:
+            value = ti.xcom_pull(task_ids=inner_task_id, key="trigger_run_id")
+            if value:
+                return str(value)
+        except Exception:
+            logger.debug("target_run_id xcom pull failed", exc_info=True)
+
+    return fallback_run_id
+
+
+def _mark_trigger_result(
+    *,
+    controller_decision_id: int | None,
+    decision_status: str,
+    target_run_id: str | None,
+    error: str | None = None,
+) -> None:
+    if controller_decision_id is None:
+        return
+    repository = _get_recovery_decision_repository()
+    _get_loop().run_until_complete(
+        repository.mark_trigger_result(
+            decision_id=controller_decision_id,
+            decision_status=decision_status,
+            target_run_id=target_run_id,
+            error=error,
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Task callables
 # ---------------------------------------------------------------------------
@@ -120,7 +201,14 @@ def task_collect_recovery_state(**context: Any) -> dict[str, Any]:
 
     snapshot_summary = result.get("snapshot_summary", {})
     decisions = result.get("decisions", [])
-    triggered_decisions = [d for d in decisions if d.decision_status == "triggered"]
+    persisted = result.get("persisted", [])
+    triggered_rows = [
+        row
+        for row in persisted
+        if row.get("decision") is not None
+        and row["decision"].decision_status == "triggered"
+    ]
+    triggered_decisions = [row["decision"] for row in triggered_rows]
 
     logger.info(
         "collect_recovery_state finish %s snapshot=%s decisions=%d triggered=%d",
@@ -142,9 +230,10 @@ def task_collect_recovery_state(**context: Any) -> dict[str, Any]:
                 "symbol": d.symbol,
                 "timeframe": d.timeframe,
                 "target_dag_id": d.target_dag_id,
+                "controller_decision_id": row.get("id"),
                 "trigger_conf": d.trigger_conf,
             }
-            for d in triggered_decisions
+            for row, d in zip(triggered_rows, triggered_decisions, strict=False)
         ],
     }
 
@@ -184,6 +273,7 @@ def task_choose_recovery_action(**context: Any) -> dict[str, Any]:
         "symbol": action.get("symbol"),
         "timeframe": action.get("timeframe"),
         "target_dag_id": action.get("target_dag_id"),
+        "controller_decision_id": action.get("controller_decision_id"),
         "trigger_conf": action.get("trigger_conf", {}),
     }
     logger.info("choose_recovery_action result %s branch=%s", log_ctx, branch)
@@ -224,6 +314,12 @@ def task_trigger_repair(**context: Any) -> dict[str, Any]:
     chosen = ti.xcom_pull(task_ids=TASK_CHOOSE, key="return_value") or {}
     trigger_conf = chosen.get("trigger_conf", {})
     target_dag_id = chosen.get("target_dag_id", REPAIR_DAG_ID)
+    controller_decision_id = _coerce_decision_id(chosen.get("controller_decision_id"))
+    target_run_id = _build_target_run_id(
+        target_dag_id=target_dag_id,
+        controller_decision_id=controller_decision_id,
+        context=context,
+    )
 
     # Heavy import inside callable
     from airflow.operators.trigger_dagrun import TriggerDagRunOperator
@@ -239,16 +335,40 @@ def task_trigger_repair(**context: Any) -> dict[str, Any]:
     trigger_op = TriggerDagRunOperator(
         task_id="__trigger_repair_inner",
         trigger_dag_id=target_dag_id,
+        trigger_run_id=target_run_id,
         conf=trigger_conf,
         wait_for_completion=False,
         reset_dag_run=False,
         dag=context["dag"],
     )
-    trigger_op.execute(context)
+    try:
+        execute_result = trigger_op.execute(context)
+    except Exception as exc:
+        _mark_trigger_result(
+            controller_decision_id=controller_decision_id,
+            decision_status="trigger_failed",
+            target_run_id=target_run_id,
+            error=str(exc),
+        )
+        raise
+
+    target_run_id = _extract_target_run_id(
+        execute_result,
+        fallback_run_id=target_run_id,
+        inner_task_id="__trigger_repair_inner",
+        context=context,
+    )
+    _mark_trigger_result(
+        controller_decision_id=controller_decision_id,
+        decision_status="triggered",
+        target_run_id=target_run_id,
+        error=None,
+    )
 
     return {
         "triggered": True,
         "target_dag_id": target_dag_id,
+        "target_run_id": target_run_id,
         "trigger_conf": trigger_conf,
     }
 
@@ -265,6 +385,12 @@ def task_trigger_bootstrap(**context: Any) -> dict[str, Any]:
     chosen = ti.xcom_pull(task_ids=TASK_CHOOSE, key="return_value") or {}
     trigger_conf = chosen.get("trigger_conf", {})
     target_dag_id = chosen.get("target_dag_id", BOOTSTRAP_DAG_ID)
+    controller_decision_id = _coerce_decision_id(chosen.get("controller_decision_id"))
+    target_run_id = _build_target_run_id(
+        target_dag_id=target_dag_id,
+        controller_decision_id=controller_decision_id,
+        context=context,
+    )
 
     from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
@@ -277,16 +403,40 @@ def task_trigger_bootstrap(**context: Any) -> dict[str, Any]:
     trigger_op = TriggerDagRunOperator(
         task_id="__trigger_bootstrap_inner",
         trigger_dag_id=target_dag_id,
+        trigger_run_id=target_run_id,
         conf=trigger_conf,
         wait_for_completion=False,
         reset_dag_run=False,
         dag=context["dag"],
     )
-    trigger_op.execute(context)
+    try:
+        execute_result = trigger_op.execute(context)
+    except Exception as exc:
+        _mark_trigger_result(
+            controller_decision_id=controller_decision_id,
+            decision_status="trigger_failed",
+            target_run_id=target_run_id,
+            error=str(exc),
+        )
+        raise
+
+    target_run_id = _extract_target_run_id(
+        execute_result,
+        fallback_run_id=target_run_id,
+        inner_task_id="__trigger_bootstrap_inner",
+        context=context,
+    )
+    _mark_trigger_result(
+        controller_decision_id=controller_decision_id,
+        decision_status="triggered",
+        target_run_id=target_run_id,
+        error=None,
+    )
 
     return {
         "triggered": True,
         "target_dag_id": target_dag_id,
+        "target_run_id": target_run_id,
         "trigger_conf": trigger_conf,
     }
 
@@ -326,6 +476,9 @@ def task_record_controller_completion(**context: Any) -> dict[str, Any]:
     actually_triggered = repair_result.get("triggered") or bootstrap_result.get(
         "triggered"
     )
+    target_run_id = repair_result.get("target_run_id") or bootstrap_result.get(
+        "target_run_id"
+    )
     branch_taken = choose_result.get("branch", TASK_SKIP)
 
     result = {
@@ -334,6 +487,7 @@ def task_record_controller_completion(**context: Any) -> dict[str, Any]:
         "actually_triggered": bool(actually_triggered),
         "decision_count": collect_result.get("decision_count", 0),
         "triggered_count": collect_result.get("triggered_count", 0),
+        "target_run_id": target_run_id,
         "snapshot_summary": collect_result.get("snapshot_summary", {}),
         "skipped": bool(skip_result.get("skipped")),
     }

@@ -62,9 +62,13 @@ def test_triple_barrier_numba_vs_loop(synthetic_ohlcv: pd.DataFrame) -> None:
 
     # Warm up numba JIT (первый вызов компилирует)
     labels_jit, t1_jit, bc_jit = _scan_jit(close, high, low, pt, sl, max_h)
-    labels_loop, t1_loop, bc_loop = _triple_barrier_scan(close, high, low, pt, sl, max_h)
+    labels_loop, t1_loop, bc_loop = _triple_barrier_scan(
+        close, high, low, pt, sl, max_h
+    )
 
-    np.testing.assert_array_equal(labels_jit, labels_loop, err_msg="labels не совпадают")
+    np.testing.assert_array_equal(
+        labels_jit, labels_loop, err_msg="labels не совпадают"
+    )
     np.testing.assert_array_equal(t1_jit, t1_loop, err_msg="t1_idx не совпадают")
     np.testing.assert_array_equal(bc_jit, bc_loop, err_msg="barrier_code не совпадают")
 
@@ -188,7 +192,7 @@ def test_triple_barrier_edge_bars() -> None:
     assert result["barrier_type"].isin(["pt", "sl", "vert"]).all()
 
     # t1 >= entry для каждого бара
-    for i, (entry, t1) in enumerate(zip(result.index, result["t1"])):
+    for i, (entry, t1) in enumerate(zip(result.index, result["t1"], strict=True)):
         assert t1 >= entry, f"Бар {i}: t1={t1} < entry={entry}"
 
     # t1 <= последний timestamp в данных
@@ -285,7 +289,7 @@ def test_triple_barrier_nonmonotonic_raises() -> None:
     df = df.iloc[::-1].copy()  # reverse
 
     config = BarrierConfig(profit_take=0.02, stop_loss=0.01, max_horizon=3)
-    with pytest.raises(ValueError, match="монотонно"):
+    with pytest.raises(ValueError, match="monotonically increasing"):
         triple_barrier_labels(df, config)
 
 
@@ -318,9 +322,9 @@ def test_triple_barrier_output_schema(synthetic_ohlcv: pd.DataFrame) -> None:
     assert result["barrier_type"].isin(["pt", "sl", "vert"]).all()
 
     # t1 и vert_time — timezone-aware
-    assert isinstance(result["t1"], pd.DatetimeIndex) or pd.api.types.is_datetime64_any_dtype(
-        result["t1"]
-    )
+    assert isinstance(
+        result["t1"], pd.DatetimeIndex
+    ) or pd.api.types.is_datetime64_any_dtype(result["t1"])
     assert result["t1"].dt.tz is not None
 
     # vert_time не выходит за пределы данных
@@ -336,7 +340,13 @@ def test_triple_barrier_single_bar() -> None:
     """DataFrame из одного бара → label=0, vert (нет данных вперёд)."""
     timestamps = pd.DatetimeIndex([pd.Timestamp("2026-01-01", tz="UTC")])
     df = pd.DataFrame(
-        {"open": [100.0], "high": [105.0], "low": [95.0], "close": [100.0], "volume": [1.0]},
+        {
+            "open": [100.0],
+            "high": [105.0],
+            "low": [95.0],
+            "close": [100.0],
+            "volume": [1.0],
+        },
         index=timestamps,
     )
     config = BarrierConfig(profit_take=0.02, stop_loss=0.01, max_horizon=5)

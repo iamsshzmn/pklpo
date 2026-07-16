@@ -330,8 +330,8 @@ class FeaturesBackfillManager:
                     "description": "Identify records that would be affected by rollback",
                     "sql": f"""
                     SELECT COUNT(*) FROM indicators
-                    WHERE symbol IN ({','.join([f"'{s}'" for s in config.symbols])})
-                    AND timeframe IN ({','.join([f"'{t}'" for t in config.timeframes])})
+                    WHERE symbol IN ({",".join([f"'{s}'" for s in config.symbols])})
+                    AND timeframe IN ({",".join([f"'{t}'" for t in config.timeframes])})
                     AND timestamp >= {int(config.start_date.timestamp() * 1000)}
                     AND timestamp <= {int(config.end_date.timestamp() * 1000)}
                     """,
@@ -342,8 +342,8 @@ class FeaturesBackfillManager:
                     "description": "Delete records that were backfilled",
                     "sql": f"""
                     DELETE FROM indicators
-                    WHERE symbol IN ({','.join([f"'{s}'" for s in config.symbols])})
-                    AND timeframe IN ({','.join([f"'{t}'" for t in config.timeframes])})
+                    WHERE symbol IN ({",".join([f"'{s}'" for s in config.symbols])})
+                    AND timeframe IN ({",".join([f"'{t}'" for t in config.timeframes])})
                     AND timestamp >= {int(config.start_date.timestamp() * 1000)}
                     AND timestamp <= {int(config.end_date.timestamp() * 1000)}
                     """,

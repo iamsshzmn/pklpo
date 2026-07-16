@@ -7,9 +7,7 @@ from pathlib import Path
 from typing import Any
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_DASHBOARD_DIR = (
-    _PROJECT_ROOT / "ops" / "monitoring" / "grafana" / "dashboards"
-)
+_DASHBOARD_DIR = _PROJECT_ROOT / "ops" / "monitoring" / "grafana" / "dashboards"
 
 
 def _load_dashboard(name: str) -> dict[str, Any]:
@@ -51,7 +49,10 @@ def test_instrument_onboarding_dashboard_contract() -> None:
     exprs = "\n".join(_target_exprs(dashboard))
     assert "pklpo_pipeline_bootstrap_state_rows" in exprs
     assert "sum by (state) (pklpo_feature_eligibility_symbols" in exprs
-    assert "sum by (to_state) (increase(pklpo_feature_eligibility_transitions_total[1h]))" in exprs
+    assert (
+        "sum by (to_state) (increase(pklpo_feature_eligibility_transitions_total[1h]))"
+        in exprs
+    )
     assert 'from_state="insufficient_history",to_state="eligible"' in exprs
     assert "pklpo_feature_eligible_total" in exprs
     assert "pklpo_market_selection_universe_size" in exprs
@@ -69,7 +70,10 @@ def test_instrument_drilldown_dashboard_contract() -> None:
     variables = {item["name"]: item for item in dashboard["templating"]["list"]}
     assert variables["symbol"]["type"] == "textbox"
     assert variables["symbol"]["current"]["value"] == "BTC-USDT-SWAP"
-    assert variables["timeframe"]["query"] == "label_values(pklpo_data_freshness_lag_seconds, timeframe)"
+    assert (
+        variables["timeframe"]["query"]
+        == "label_values(pklpo_data_freshness_lag_seconds, timeframe)"
+    )
 
     exprs = "\n".join(_target_exprs(dashboard))
     assert '{symbol="$symbol",timeframe="$timeframe"}' in exprs
@@ -94,7 +98,9 @@ def test_data_quality_dashboard_scales_with_symbol_variable_and_topn() -> None:
 
     exprs = _target_exprs(dashboard)
     assert any('symbol=~"$symbol"' in expr for expr in exprs)
-    assert any("topk($top_n, pklpo_data_freshness_lag_seconds" in expr for expr in exprs)
+    assert any(
+        "topk($top_n, pklpo_data_freshness_lag_seconds" in expr for expr in exprs
+    )
     assert any("topk($top_n, pklpo_data_hole_rate" in expr for expr in exprs)
     assert any("bottomk($top_n, pklpo_data_quality_score" in expr for expr in exprs)
     assert any("min by (timeframe) (pklpo_data_quality_score" in expr for expr in exprs)

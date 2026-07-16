@@ -2,6 +2,7 @@
   "symbols": [
     "BTC-USDT-SWAP",
     "ETH-USDT-SWAP",
+    "GRAM-USDT-SWAP",
     "AAVE-USDT-SWAP",
     "ADA-USDT-SWAP",
     "ASTER-USDT-SWAP",
@@ -23,7 +24,6 @@
     "SOL-USDT-SWAP",
     "SUI-USDT-SWAP",
     "TAO-USDT-SWAP",
-    "TON-USDT-SWAP",
     "TRX-USDT-SWAP",
     "UNI-USDT-SWAP",
     "WLFI-USDT-SWAP",
@@ -38,6 +38,7 @@
     "LEO-USDT-SWAP",
     "MNT-USDT-SWAP",
     "PAXG-USDT-SWAP",
+    "TON-USDT-SWAP",
     "USD1-USDT-SWAP",
     "XAUT-USDT-SWAP",
     "XMR-USDT-SWAP"

@@ -130,12 +130,14 @@ class SettingsValidator:
                 if tp_level <= 0 or tp_level > 1:
                     return False, ValidationError(
                         "default_tp_levels_pct",
-                        f"Уровень {i+1} должен быть от 0 до 1 (0% до 100%)",
+                        f"Уровень {i + 1} должен быть от 0 до 1 (0% до 100%)",
                         value,
                     )
             except (ValueError, TypeError):
                 return False, ValidationError(
-                    "default_tp_levels_pct", f"Уровень {i+1} должен быть числом", value
+                    "default_tp_levels_pct",
+                    f"Уровень {i + 1} должен быть числом",
+                    value,
                 )
 
         return True, None

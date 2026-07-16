@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from src.logging.context import get_current_context, get_current_run_id, set_log_context
 
 
@@ -27,6 +25,8 @@ def test_set_log_context_restores_nested_context() -> None:
                 "symbol": "ETH-USDT-SWAP",
                 "timeframe": "5m",
                 "component": "features",
+                "trace_id": None,
+                "span_id": None,
                 "task_id": "inner-task",
             }
 
@@ -35,6 +35,8 @@ def test_set_log_context_restores_nested_context() -> None:
             "symbol": "BTC-USDT-SWAP",
             "timeframe": "1m",
             "component": "swap_sync",
+            "trace_id": None,
+            "span_id": None,
             "task_id": "outer-task",
         }
 

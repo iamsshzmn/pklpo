@@ -100,7 +100,9 @@ def trace_event(event: str, **kwargs: Any) -> None:
     """Emit a structured trace event at INFO level."""
     context = get_current_context()
     run_id = _correlation_id.get() or context.get("run_id") or generate_run_id()
-    component = str(kwargs.pop("component", None) or context.get("component") or "trace")
+    component = str(
+        kwargs.pop("component", None) or context.get("component") or "trace"
+    )
     symbol = kwargs.pop("symbol", None) or context.get("symbol")
     timeframe = kwargs.pop("timeframe", None) or context.get("timeframe")
     task_id = kwargs.pop("task_id", None) or context.get("task_id")

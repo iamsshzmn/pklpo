@@ -192,7 +192,9 @@ async def _is_effectively_applied(migration_id: str) -> bool:
         "320_instruments_metadata_refreshed_at_ms": lambda: _column_exists(
             "instruments", "metadata_refreshed_at_ms"
         ),
-        "290_swap_ohlcv_timestamptz": lambda: _swap_ohlcv_timestamp_columns_are_timestamptz(),
+        "290_swap_ohlcv_timestamptz": lambda: (
+            _swap_ohlcv_timestamp_columns_are_timestamptz()
+        ),
         "340_swap_ohlcv_retention_policy": lambda: _table_exists(
             "swap_ohlcv_retention_policy"
         ),

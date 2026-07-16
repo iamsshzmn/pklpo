@@ -21,7 +21,11 @@ logger = logging.getLogger(__name__)
 
 def _can_push() -> tuple[bool, str]:
     try:
-        from prometheus_client import CollectorRegistry, Gauge, push_to_gateway  # noqa: F401
+        from prometheus_client import (  # noqa: F401
+            CollectorRegistry,
+            Gauge,
+            push_to_gateway,
+        )
     except ImportError:
         return False, ""
 
@@ -60,7 +64,9 @@ def push_signal_metrics(
     """
     can_push, pushgateway_url = _can_push()
     if not can_push:
-        logger.debug("Signal metrics push skipped (Prometheus disabled or unconfigured)")
+        logger.debug(
+            "Signal metrics push skipped (Prometheus disabled or unconfigured)"
+        )
         return False
 
     try:

@@ -205,7 +205,7 @@ def _build_market_adapter(config: dict[str, Any]) -> Any:
 
 
 def _build_runtime_config(
-    config: dict[str, Any] | SyncConfig | None
+    config: dict[str, Any] | SyncConfig | None,
 ) -> tuple[SyncConfig, dict[str, Any]]:
     if isinstance(config, SyncConfig):
         validated = config

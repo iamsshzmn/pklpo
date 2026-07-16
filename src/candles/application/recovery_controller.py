@@ -64,6 +64,11 @@ REASON_REPAIR_CORRUPTED_RECENT_CLOSED_BARS = "repair_corrupted_recent_closed_bar
 REASON_PRECHECK_GUARDRAIL_RISK = "precheck_guardrail_risk"
 REASON_TRIGGER_FAILED = "trigger_failed"
 REASON_TRIGGERED = "triggered"
+REASON_INSTRUMENT_NOT_LIVE = "instrument_not_live"
+REASON_INSTRUMENT_STATE_UNKNOWN = "instrument_state_unknown"
+
+RECOVERABLE_INSTRUMENT_STATES: frozenset[str] = frozenset({"live"})
+UNKNOWN_INSTRUMENT_STATE = "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +102,7 @@ class BootstrapCandidateInfo:
     symbol: str
     timeframe: str
     status: str  # "missing" | "incomplete" | "stuck" | "failed" | "completed" | ...
+    state: str = "live"
     missing_bars: int = 0
     coverage_pct: float = 100.0
     bootstrap_completed: bool = False
@@ -110,6 +116,7 @@ class RepairCandidateInfo:
 
     symbol: str
     timeframe: str
+    state: str = "live"
     gap_tasks: int = 0
     requested_bars: int = 0
     corrupted_bars: int = 0
@@ -141,7 +148,8 @@ class PipelineSnapshot:
 class RecoveryDecision:
     """Result of the decision service for one (symbol, timeframe) or a global skip."""
 
-    decision_status: str  # skip | precheck_failed | triggered | trigger_failed
+    # skip | precheck_failed | candidate | triggered | trigger_failed
+    decision_status: str
     action_kind: str  # none | repair | bootstrap
     reason: str
     symbol: str | None = None
@@ -218,6 +226,30 @@ def _cooldown_until_ts(config: RecoveryConfig) -> datetime:
     return datetime.now(UTC) + timedelta(minutes=config.cooldown_minutes)
 
 
+def _instrument_state_skip_decision(
+    *,
+    action_kind: str,
+    symbol: str,
+    timeframe: str,
+    state: str,
+) -> RecoveryDecision | None:
+    if state in RECOVERABLE_INSTRUMENT_STATES:
+        return None
+
+    state_found = state != UNKNOWN_INSTRUMENT_STATE
+    reason = (
+        REASON_INSTRUMENT_NOT_LIVE if state_found else REASON_INSTRUMENT_STATE_UNKNOWN
+    )
+    return RecoveryDecision(
+        decision_status="skip",
+        action_kind=action_kind,
+        reason=reason,
+        symbol=symbol,
+        timeframe=timeframe,
+        safety_payload={"instrument_state": state, "state_found": state_found},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Main decision function
 # ---------------------------------------------------------------------------
@@ -257,10 +289,31 @@ def choose_recovery_actions(
         ]
 
     # ── Collect bootstrap candidates needing action ──────────────────────────
+    for candidate in snapshot.bootstrap_candidates:
+        state_skip = _instrument_state_skip_decision(
+            action_kind="bootstrap",
+            symbol=candidate.symbol,
+            timeframe=candidate.timeframe,
+            state=candidate.state,
+        )
+        if state_skip is not None:
+            decisions.append(state_skip)
+
+    for repair_candidate in snapshot.repair_candidates:
+        state_skip = _instrument_state_skip_decision(
+            action_kind="repair",
+            symbol=repair_candidate.symbol,
+            timeframe=repair_candidate.timeframe,
+            state=repair_candidate.state,
+        )
+        if state_skip is not None:
+            decisions.append(state_skip)
+
     actionable_bootstrap = [
         c
         for c in snapshot.bootstrap_candidates
         if c.status in BOOTSTRAP_NEEDS_ACTION_STATUSES
+        and c.state in RECOVERABLE_INSTRUMENT_STATES
         and (not config.allowed_symbols or c.symbol in config.allowed_symbols)
         and (
             not config.allowed_bootstrap_timeframes
@@ -274,6 +327,7 @@ def choose_recovery_actions(
         c
         for c in snapshot.repair_candidates
         if (c.gap_tasks > 0 or c.corrupted_bars > 0)
+        and c.state in RECOVERABLE_INSTRUMENT_STATES
         and (not config.allowed_symbols or c.symbol in config.allowed_symbols)
         and (
             not config.allowed_repair_timeframes

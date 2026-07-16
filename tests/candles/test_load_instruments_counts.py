@@ -72,14 +72,18 @@ class _FakeInsertFactory:
 
 
 @pytest.mark.asyncio
-async def test_save_instruments_counts_insert_vs_update(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_save_instruments_counts_insert_vs_update(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = _FakeSession()
     session.execute_results = [_FakeResult(rows=[("BTC-USDT-SWAP",)]), _FakeResult()]
 
     def _fake_get_db_session() -> _FakeSessionCM:
         return _FakeSessionCM(session)
 
-    monkeypatch.setattr("src.candles.load_instruments.get_db_session", _fake_get_db_session)
+    monkeypatch.setattr(
+        "src.candles.load_instruments.get_db_session", _fake_get_db_session
+    )
 
     instruments = [
         {"instId": "BTC-USDT-SWAP", "instType": "SWAP", "state": "live"},
@@ -104,7 +108,9 @@ async def test_save_instruments_persists_metadata_refreshed_at_ms(
     def _fake_get_db_session() -> _FakeSessionCM:
         return _FakeSessionCM(session)
 
-    monkeypatch.setattr("src.candles.load_instruments.get_db_session", _fake_get_db_session)
+    monkeypatch.setattr(
+        "src.candles.load_instruments.get_db_session", _fake_get_db_session
+    )
     monkeypatch.setattr("src.candles.load_instruments.pg_insert", fake_insert)
 
     instruments = [
@@ -135,7 +141,9 @@ async def test_mark_missing_instruments_refreshes_metadata_timestamp(
     def _fake_get_db_session() -> _FakeSessionCM:
         return _FakeSessionCM(session)
 
-    monkeypatch.setattr("src.candles.load_instruments.get_db_session", _fake_get_db_session)
+    monkeypatch.setattr(
+        "src.candles.load_instruments.get_db_session", _fake_get_db_session
+    )
 
     updated = await mark_missing_instruments_not_live(
         [{"instId": "BTC-USDT-SWAP"}],

@@ -430,9 +430,9 @@ class RedisSettings(BaseSettings):
     lock_retry_delay_ms: int = 100
     lock_retry_attempts: int = 3
     # Cache TTLs
-    cache_ttl_exchange_metadata_seconds: int = 3600   # 1 hour
-    cache_ttl_instrument_list_seconds: int = 300       # 5 min
-    cache_ttl_last_timestamp_seconds: int = 60         # 1 min
+    cache_ttl_exchange_metadata_seconds: int = 3600  # 1 hour
+    cache_ttl_instrument_list_seconds: int = 300  # 5 min
+    cache_ttl_last_timestamp_seconds: int = 60  # 1 min
 
 
 class AirflowSettings(BaseSettings):

@@ -23,8 +23,7 @@ from src.market_selection.infrastructure.persistence import (
 @pytest.fixture
 def mock_session():
     """Фикстура мок-сессии БД."""
-    session = AsyncMock()
-    return session
+    return AsyncMock()
 
 
 @pytest.fixture

@@ -85,7 +85,7 @@ class WeightOptimizer:
 
         # Выполняем итерации оптимизации
         for i in range(iterations):
-            print(f"\n📈 Итерация {i+1}/{iterations}")
+            print(f"\n📈 Итерация {i + 1}/{iterations}")
 
             try:
                 # Генерируем случайные веса
@@ -121,7 +121,7 @@ class WeightOptimizer:
                             )
 
             except Exception as e:
-                print(f"❌ Ошибка при итерации {i+1}: {e}")
+                print(f"❌ Ошибка при итерации {i + 1}: {e}")
                 continue
 
         # Сохраняем результаты

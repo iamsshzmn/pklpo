@@ -23,7 +23,7 @@ filter ``error_type != "-"``):
 from __future__ import annotations
 
 import socket
-from enum import Enum
+from enum import StrEnum
 
 try:
     import asyncpg as _asyncpg  # type: ignore[import]
@@ -36,7 +36,7 @@ except ImportError:  # pragma: no cover
     _sa_exc = None
 
 
-class ErrorType(str, Enum):
+class ErrorType(StrEnum):
     """Low-cardinality error-type values for structured telemetry fields.
 
     Inherits from ``str`` so values compare equal to their string literals and
@@ -163,7 +163,9 @@ def classify_error_type(error: BaseException) -> str:
             return ErrorType.DB_ERROR
 
         # ── OKX / exchange rate-limit ────────────────────────────────────────
-        if name in _RATE_LIMIT_CLASS_NAMES or any(m in msg for m in _RATE_LIMIT_MARKERS):
+        if name in _RATE_LIMIT_CLASS_NAMES or any(
+            m in msg for m in _RATE_LIMIT_MARKERS
+        ):
             return ErrorType.RATE_LIMIT_ERROR
 
         # ── Timeout ──────────────────────────────────────────────────────────

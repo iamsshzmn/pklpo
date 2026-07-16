@@ -67,9 +67,20 @@ _COOLDOWN_SQL = text(
       AND target_dag_id   = :target_dag_id
       AND symbol          = :symbol
       AND timeframe       = :timeframe
+      AND decision_status = 'triggered'
       AND created_at     >= :since
     ORDER BY created_at DESC
     LIMIT :limit
+    """
+)
+
+_UPDATE_TRIGGER_RESULT_SQL = text(
+    """
+    UPDATE ops.pipeline_recovery_decisions
+    SET decision_status = :decision_status,
+        target_run_id = :target_run_id,
+        error = :error
+    WHERE id = :id
     """
 )
 
@@ -189,6 +200,32 @@ class RecoveryDecisionRepository:
             }
             for r in rows
         ]
+
+    async def mark_trigger_result(
+        self,
+        *,
+        decision_id: int,
+        decision_status: str,
+        target_run_id: str | None,
+        error: str | None,
+    ) -> None:
+        """Update the selected candidate after downstream trigger execution."""
+        params = {
+            "id": decision_id,
+            "decision_status": decision_status,
+            "target_run_id": target_run_id,
+            "error": error,
+        }
+        async with get_db_session() as session:
+            await session.execute(_UPDATE_TRIGGER_RESULT_SQL, params)
+            await session.commit()
+
+        logger.info(
+            "recovery_decision trigger result id=%d status=%s target_run_id=%s",
+            decision_id,
+            decision_status,
+            target_run_id,
+        )
 
     async def get_recent_decisions(
         self,

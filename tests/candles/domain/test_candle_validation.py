@@ -34,7 +34,9 @@ def _candle(ts: int = 0, **overrides: Any) -> dict[str, Any]:
     return row
 
 
-def _assert_code(exc_info: pytest.ExceptionInfo[CandleValidationError], code: str) -> None:
+def _assert_code(
+    exc_info: pytest.ExceptionInfo[CandleValidationError], code: str
+) -> None:
     assert exc_info.value.code == code
 
 
@@ -248,8 +250,7 @@ def test_duplicate_ts_inside_chunk_rejected() -> None:
 
 def test_chunk_valid_passes_with_normalized_timestamp_key() -> None:
     candles = [
-        _candle(i * TF_TO_MS["5m"], timestamp=i * TF_TO_MS["5m"])
-        for i in range(100)
+        _candle(i * TF_TO_MS["5m"], timestamp=i * TF_TO_MS["5m"]) for i in range(100)
     ]
     for candle in candles:
         del candle["ts"]

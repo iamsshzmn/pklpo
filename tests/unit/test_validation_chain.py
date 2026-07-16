@@ -138,13 +138,15 @@ class TestOHLCVValidator:
 
     def test_high_null_ratio_error(self):
         """More than 50% null values causes error."""
-        df = pd.DataFrame({
-            "open": [100.0, np.nan, np.nan, np.nan, np.nan],  # 80% null
-            "high": [105.0, 106.0, 107.0, 108.0, 109.0],
-            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
-            "close": [104.0, 105.0, 106.0, 107.0, 108.0],
-            "volume": [1000.0, 1100.0, 1200.0, 1300.0, 1400.0],
-        })
+        df = pd.DataFrame(
+            {
+                "open": [100.0, np.nan, np.nan, np.nan, np.nan],  # 80% null
+                "high": [105.0, 106.0, 107.0, 108.0, 109.0],
+                "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+                "close": [104.0, 105.0, 106.0, 107.0, 108.0],
+                "volume": [1000.0, 1100.0, 1200.0, 1300.0, 1400.0],
+            }
+        )
 
         validator = OHLCVValidator()
         result = validator.validate(df)
@@ -154,13 +156,15 @@ class TestOHLCVValidator:
 
     def test_medium_null_ratio_warning(self):
         """Between 10% and 50% null values causes warning."""
-        df = pd.DataFrame({
-            "open": [100.0, np.nan, 102.0, 103.0, 104.0],  # 20% null
-            "high": [105.0, 106.0, 107.0, 108.0, 109.0],
-            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
-            "close": [104.0, 105.0, 106.0, 107.0, 108.0],
-            "volume": [1000.0, 1100.0, 1200.0, 1300.0, 1400.0],
-        })
+        df = pd.DataFrame(
+            {
+                "open": [100.0, np.nan, 102.0, 103.0, 104.0],  # 20% null
+                "high": [105.0, 106.0, 107.0, 108.0, 109.0],
+                "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+                "close": [104.0, 105.0, 106.0, 107.0, 108.0],
+                "volume": [1000.0, 1100.0, 1200.0, 1300.0, 1400.0],
+            }
+        )
 
         validator = OHLCVValidator()
         result = validator.validate(df)
@@ -255,10 +259,12 @@ class TestTimestampValidator:
 
     def test_duplicate_timestamps(self):
         """Duplicate timestamps cause warning."""
-        df = pd.DataFrame({
-            "ts": [1000, 1000, 3000],  # Duplicate
-            "close": [1, 2, 3],
-        })
+        df = pd.DataFrame(
+            {
+                "ts": [1000, 1000, 3000],  # Duplicate
+                "close": [1, 2, 3],
+            }
+        )
 
         validator = TimestampValidator()
         result = validator.validate(df)
@@ -269,10 +275,12 @@ class TestTimestampValidator:
 
     def test_non_monotonic_timestamps(self):
         """Non-monotonic timestamps cause warning."""
-        df = pd.DataFrame({
-            "ts": [3000, 1000, 2000],  # Not increasing
-            "close": [1, 2, 3],
-        })
+        df = pd.DataFrame(
+            {
+                "ts": [3000, 1000, 2000],  # Not increasing
+                "close": [1, 2, 3],
+            }
+        )
 
         validator = TimestampValidator()
         result = validator.validate(df)
@@ -282,10 +290,12 @@ class TestTimestampValidator:
 
     def test_timestamp_column_alternative(self):
         """'timestamp' column is also accepted."""
-        df = pd.DataFrame({
-            "timestamp": [1000, 2000, 3000],
-            "close": [1, 2, 3],
-        })
+        df = pd.DataFrame(
+            {
+                "timestamp": [1000, 2000, 3000],
+                "close": [1, 2, 3],
+            }
+        )
 
         validator = TimestampValidator()
         result = validator.validate(df)
@@ -305,15 +315,17 @@ class TestNaNRatioValidator:
 
     def test_low_nan_ratio(self):
         """Low NaN ratio passes."""
-        df = pd.DataFrame({
-            "open": [100, 101, 102],
-            "high": [105, 106, 107],
-            "low": [99, 100, 101],
-            "close": [104, 105, 106],
-            "volume": [1000, 1100, 1200],
-            "rsi_14": [50.0, 60.0, 70.0],
-            "ema_21": [100.0, 101.0, 102.0],
-        })
+        df = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [99, 100, 101],
+                "close": [104, 105, 106],
+                "volume": [1000, 1100, 1200],
+                "rsi_14": [50.0, 60.0, 70.0],
+                "ema_21": [100.0, 101.0, 102.0],
+            }
+        )
 
         validator = NaNRatioValidator(max_nan_ratio=0.3)
         result = validator.validate(df)
@@ -322,14 +334,16 @@ class TestNaNRatioValidator:
 
     def test_high_nan_ratio_warning(self):
         """High NaN ratio causes warning."""
-        df = pd.DataFrame({
-            "open": [100, 101, 102, 103, 104],
-            "high": [105, 106, 107, 108, 109],
-            "low": [99, 100, 101, 102, 103],
-            "close": [104, 105, 106, 107, 108],
-            "volume": [1000, 1100, 1200, 1300, 1400],
-            "rsi_14": [np.nan, np.nan, np.nan, 60.0, 70.0],  # 60% NaN
-        })
+        df = pd.DataFrame(
+            {
+                "open": [100, 101, 102, 103, 104],
+                "high": [105, 106, 107, 108, 109],
+                "low": [99, 100, 101, 102, 103],
+                "close": [104, 105, 106, 107, 108],
+                "volume": [1000, 1100, 1200, 1300, 1400],
+                "rsi_14": [np.nan, np.nan, np.nan, 60.0, 70.0],  # 60% NaN
+            }
+        )
 
         validator = NaNRatioValidator(max_nan_ratio=0.3)
         result = validator.validate(df)
@@ -339,10 +353,12 @@ class TestNaNRatioValidator:
 
     def test_custom_threshold(self):
         """Custom max_nan_ratio is respected."""
-        df = pd.DataFrame({
-            "close": [100, 101, 102, 103, 104],
-            "indicator": [np.nan, 60.0, 70.0, 80.0, 90.0],  # 20% NaN
-        })
+        df = pd.DataFrame(
+            {
+                "close": [100, 101, 102, 103, 104],
+                "indicator": [np.nan, 60.0, 70.0, 80.0, 90.0],  # 20% NaN
+            }
+        )
 
         validator = NaNRatioValidator(max_nan_ratio=0.1)  # 10% threshold
         result = validator.validate(df)
@@ -369,21 +385,13 @@ class TestValidationChain:
 
     def test_fluent_add(self):
         """add() returns chain for fluent interface."""
-        chain = (
-            ValidationChain()
-            .add(OHLCVValidator())
-            .add(MinRowsValidator())
-        )
+        chain = ValidationChain().add(OHLCVValidator()).add(MinRowsValidator())
 
         assert len(chain) == 2
 
     def test_remove_validator(self):
         """remove() removes validator by name."""
-        chain = (
-            ValidationChain()
-            .add(OHLCVValidator())
-            .add(MinRowsValidator())
-        )
+        chain = ValidationChain().add(OHLCVValidator()).add(MinRowsValidator())
 
         chain.remove("min_rows")
 
@@ -391,11 +399,7 @@ class TestValidationChain:
 
     def test_clear(self):
         """clear() removes all validators."""
-        chain = (
-            ValidationChain()
-            .add(OHLCVValidator())
-            .add(MinRowsValidator())
-        )
+        chain = ValidationChain().add(OHLCVValidator()).add(MinRowsValidator())
 
         chain.clear()
 
@@ -440,14 +444,16 @@ class TestValidationChain:
 
     def test_chain_continues_on_non_critical(self):
         """Chain continues after non-critical failures."""
-        df = pd.DataFrame({
-            "ts": [3000, 1000, 2000],  # Non-monotonic - warning only
-            "open": [100, 101, 102],
-            "high": [105, 106, 107],
-            "low": [99, 100, 101],
-            "close": [104, 105, 106],
-            "volume": [1000, 1100, 1200],
-        })
+        df = pd.DataFrame(
+            {
+                "ts": [3000, 1000, 2000],  # Non-monotonic - warning only
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [99, 100, 101],
+                "close": [104, 105, 106],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
         validators_run = []
 
@@ -466,16 +472,14 @@ class TestValidationChain:
             .add(TrackingValidator())  # Should run
         )
 
-        result = chain.validate(df)
+        chain.validate(df)
 
         assert "tracking" in validators_run
 
     def test_chain_combines_results(self, ohlcv_50_bars):
         """Chain combines results from all validators."""
         chain = (
-            ValidationChain()
-            .add(OHLCVValidator())
-            .add(MinRowsValidator(min_rows=20))
+            ValidationChain().add(OHLCVValidator()).add(MinRowsValidator(min_rows=20))
         )
 
         result = chain.validate(ohlcv_50_bars)
@@ -485,11 +489,7 @@ class TestValidationChain:
 
     def test_iteration(self):
         """Chain supports iteration."""
-        chain = (
-            ValidationChain()
-            .add(OHLCVValidator())
-            .add(MinRowsValidator())
-        )
+        chain = ValidationChain().add(OHLCVValidator()).add(MinRowsValidator())
 
         names = [v.name for v in chain]
 
@@ -522,14 +522,16 @@ class TestFactoryFunctions:
         """Strict chain requires more rows."""
         chain = create_strict_chain()
 
-        df = pd.DataFrame({
-            "ts": list(range(30)),
-            "open": [100] * 30,
-            "high": [105] * 30,
-            "low": [99] * 30,
-            "close": [104] * 30,
-            "volume": [1000] * 30,
-        })
+        df = pd.DataFrame(
+            {
+                "ts": list(range(30)),
+                "open": [100] * 30,
+                "high": [105] * 30,
+                "low": [99] * 30,
+                "close": [104] * 30,
+                "volume": [1000] * 30,
+            }
+        )
 
         result = chain.validate(df)
 

@@ -104,9 +104,7 @@ def test_dsr_known_values_zero_sr() -> None:
     SR=0, n_trials=1, var_sr=1.0, T=100.
     DSR = Φ(0) = 0.5; p_value = 0.5.
     """
-    dsr, p_value = deflated_sharpe_ratio(
-        sr_observed=0.0, n_trials=1, var_sr=1.0, T=100
-    )
+    dsr, p_value = deflated_sharpe_ratio(sr_observed=0.0, n_trials=1, var_sr=1.0, T=100)
     np.testing.assert_allclose(dsr, 0.5, atol=1e-9)
     np.testing.assert_allclose(p_value, 0.5, atol=1e-9)
 
@@ -118,9 +116,7 @@ def test_dsr_known_values_positive_sr_no_trials() -> None:
     """
     from scipy.stats import norm
 
-    dsr, p_value = deflated_sharpe_ratio(
-        sr_observed=1.0, n_trials=1, var_sr=1.0, T=252
-    )
+    dsr, p_value = deflated_sharpe_ratio(sr_observed=1.0, n_trials=1, var_sr=1.0, T=252)
     expected = norm.cdf(1.0)
     np.testing.assert_allclose(dsr, expected, atol=1e-9)
     np.testing.assert_allclose(p_value, 1.0 - expected, atol=1e-9)
@@ -173,7 +169,7 @@ def test_dsr_sum_to_one() -> None:
 def test_dsr_range() -> None:
     """DSR всегда в диапазоне [0, 1]."""
     test_cases = [
-        (10.0, 100, 1.0, 1000),   # очень высокий SR
+        (10.0, 100, 1.0, 1000),  # очень высокий SR
         (-10.0, 100, 1.0, 1000),  # очень низкий SR
         (0.1, 1, 0.01, 50),
     ]
@@ -198,7 +194,7 @@ def test_dsr_invalid_n_trials() -> None:
         deflated_sharpe_ratio(1.0, n_trials=0, var_sr=1.0, T=252)
 
 
-def test_dsr_invalid_T() -> None:
+def test_dsr_invalid_t() -> None:
     """T < 2 вызывает ValueError."""
     with pytest.raises(ValueError, match="T must"):
         deflated_sharpe_ratio(1.0, n_trials=1, var_sr=1.0, T=1)

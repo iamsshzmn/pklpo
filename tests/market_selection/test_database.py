@@ -20,8 +20,7 @@ def config():
 @pytest.fixture
 def mock_session():
     """Фикстура мок-сессии БД."""
-    session = AsyncMock()
-    return session
+    return AsyncMock()
 
 
 @pytest.fixture
@@ -123,7 +122,7 @@ async def test_validate_short_features_missing(db, mock_session):
     mock_result = create_mock_result(mock_rows)
     mock_session.execute = AsyncMock(return_value=mock_result)
 
-    is_valid, missing = await db.validate_short_features()
+    _is_valid, missing = await db.validate_short_features()
 
     # Должно быть валидно, если missing <= max_missing_features (2)
     assert len(missing) == 2

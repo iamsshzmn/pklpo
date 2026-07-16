@@ -21,7 +21,7 @@ def _skip_if_local_postgres_unavailable() -> None:
 def test_swap_repair_detect_only_cli_smoke() -> None:
     _skip_if_local_postgres_unavailable()
 
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [
             sys.executable,
             "-m",

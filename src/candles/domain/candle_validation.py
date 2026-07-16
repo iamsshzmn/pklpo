@@ -23,9 +23,7 @@ class CandleValidationError(ValueError):
         self.code = code
         self.timestamp_ms = timestamp_ms
         self.row_index = row_index
-        super().__init__(
-            f"{code}: row_index={row_index} timestamp_ms={timestamp_ms}"
-        )
+        super().__init__(f"{code}: row_index={row_index} timestamp_ms={timestamp_ms}")
 
 
 def validate_candle_for_write(

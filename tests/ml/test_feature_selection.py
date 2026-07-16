@@ -273,5 +273,5 @@ def test_select_features_invalid_method() -> None:
     """Неизвестный метод вызывает ValueError."""
     X, y = _make_dataset(n=50, n_noise=2)
 
-    with pytest.raises(ValueError, match="Неизвестный метод"):
+    with pytest.raises(ValueError, match="Unknown method"):
         select_features(X, y, method="unknown")  # type: ignore[arg-type]

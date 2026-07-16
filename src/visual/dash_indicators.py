@@ -140,7 +140,7 @@ def update_graph(symbol, timeframe, table):
         for col in value_cols:
             data.append(go.Scatter(x=df["ts"], y=df[col], name=col))
         layout = go.Layout(
-            title=f'{symbol} {timeframe} Combination: {df.iloc[0]["combination"]}',
+            title=f"{symbol} {timeframe} Combination: {df.iloc[0]['combination']}",
             xaxis={"title": "Time"},
             yaxis={"title": "Value"},
             height=700,

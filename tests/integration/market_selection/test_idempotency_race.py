@@ -16,7 +16,9 @@ from src.market_selection.infrastructure.persistence import MarketSelectionPersi
 
 
 def _resolve_test_db_url() -> str | None:
-    db_url = os.getenv("MARKET_SELECTION_TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+    db_url = os.getenv("MARKET_SELECTION_TEST_DATABASE_URL") or os.getenv(
+        "DATABASE_URL"
+    )
     if not db_url:
         return None
     if db_url.startswith("postgresql+asyncpg://"):
@@ -98,9 +100,10 @@ async def test_fallback_copy_parallel_same_ts_version_is_serialized() -> None:
         first_task = asyncio.create_task(_worker(hold_lock=True))
         await asyncio.sleep(0.1)
         second_task = asyncio.create_task(_worker(hold_lock=False))
-        (first_metrics, first_duration), (second_metrics, second_duration) = await asyncio.gather(
-            first_task, second_task
-        )
+        (
+            (first_metrics, _first_duration),
+            (second_metrics, second_duration),
+        ) = await asyncio.gather(first_task, second_task)
 
         inserted_counts = sorted(
             [first_metrics["inserted_count"], second_metrics["inserted_count"]]

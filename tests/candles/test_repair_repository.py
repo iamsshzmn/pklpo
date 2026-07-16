@@ -73,7 +73,7 @@ async def test_list_timestamps_returns_sorted_values(
 async def test_selective_upsert_updates_only_canonical_candle_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    session = _FakeSession([_Result(rowcount=2)])
+    session = _FakeSession([_Result(), _Result(), _Result(rowcount=2)])
     monkeypatch.setattr(
         "src.candles.infrastructure.repair_repository.get_db_session",
         lambda: _FakeSessionContext(session),
@@ -84,7 +84,7 @@ async def test_selective_upsert_updates_only_canonical_candle_fields(
         timeframe="1m",
         candles=[
             {
-                "timestamp": 1000,
+                "timestamp": 60_000,
                 "open": 1.0,
                 "high": 2.0,
                 "low": 0.5,
@@ -95,7 +95,7 @@ async def test_selective_upsert_updates_only_canonical_candle_fields(
                 "fetched_at": datetime(2026, 4, 11, tzinfo=UTC),
             },
             {
-                "timestamp": 2000,
+                "timestamp": 120_000,
                 "open": 2.0,
                 "high": 3.0,
                 "low": 1.5,
@@ -110,7 +110,7 @@ async def test_selective_upsert_updates_only_canonical_candle_fields(
 
     assert written == 2
     assert session.committed is True
-    stmt, rows = session.execute_calls[0]
+    stmt, rows = session.execute_calls[-1]
     sql = str(stmt)
     assert "funding_rate" not in sql
     assert "open_interest" not in sql

@@ -159,7 +159,9 @@ class TestFeaturesBackfillManager:
                 "estimated_duration_hours": 1.0,
             }
 
-            with patch("src.features.backfill.get_current_version") as mock_version:
+            with patch(
+                "src.features.application.backfill.get_current_feature_version"
+            ) as mock_version:
                 mock_version.return_value = MagicMock()
 
                 with patch.object(manager.logger, "info"):

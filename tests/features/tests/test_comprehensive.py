@@ -130,7 +130,6 @@ class TestUnitTests(TestFeaturesModule):
         assert any("infinite values" in error for error in result["errors"])
 
 
-
 class TestIntegrationTests(TestFeaturesModule):
     """Integration tests as specified in the plan."""
 

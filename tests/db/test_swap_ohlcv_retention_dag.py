@@ -78,7 +78,7 @@ def _load_retention_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleT
     )
     monkeypatch.setitem(sys.modules, "src.candles.bootstrap", candles_bootstrap)
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/swap_ohlcv_retention.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/swap_ohlcv_retention.py"
     module_name = "tests.db._swap_ohlcv_retention_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
@@ -103,7 +103,9 @@ def test_retention_dag_runs_daily_at_quiet_slot(
 def test_cleanup_task_uses_ohlcv_write_pool(
     retention_dag_module: types.ModuleType,
 ) -> None:
-    cleanup_task = next(t for t in retention_dag_module.dag.tasks if t.task_id == "cleanup_swap_ohlcv")
+    cleanup_task = next(
+        t for t in retention_dag_module.dag.tasks if t.task_id == "cleanup_swap_ohlcv"
+    )
     assert cleanup_task.kwargs["pool"] == "ohlcv_write_pool"
     assert cleanup_task.kwargs["pool_slots"] == 1
 

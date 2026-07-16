@@ -194,10 +194,10 @@ def test_streaming_processing():
             )
         ):
             results.append(result_chunk)
-            print(f"  Processed chunk {i+1}: {result_chunk.shape}")
+            print(f"  Processed chunk {i + 1}: {result_chunk.shape}")
 
             # Log memory usage
-            mem_log.log_dataframe_memory(result_chunk, f"Result chunk {i+1}")
+            mem_log.log_dataframe_memory(result_chunk, f"Result chunk {i + 1}")
 
     # Combine results
     if results:
@@ -276,7 +276,7 @@ def test_memory_usage_comparison():
             current_memory = process.memory_info().rss / 1024 / 1024  # MB
             max_streaming_memory = max(max_streaming_memory, current_memory)
 
-            print(f"    Chunk {i+1}: {current_memory:.2f} MB")
+            print(f"    Chunk {i + 1}: {current_memory:.2f} MB")
 
             # Clean up after each chunk
             force_cleanup(result_chunk)
@@ -301,14 +301,14 @@ def test_memory_usage_comparison():
     # Allow 0.1 MB tolerance (100 KB) or 5% of baseline, whichever is larger
     tolerance_mb = max(0.1, non_streaming_increase * 0.05)
 
-    assert (
-        streaming_increase <= non_streaming_increase + tolerance_mb
-    ), f"Streaming should use less memory (tolerance: {tolerance_mb:.2f} MB). "
+    assert streaming_increase <= non_streaming_increase + tolerance_mb, (
+        f"Streaming should use less memory (tolerance: {tolerance_mb:.2f} MB). "
+    )
     f"Non-streaming: {non_streaming_increase:.2f} MB, Streaming: {streaming_increase:.2f} MB"
 
-    assert (
-        streaming_peak_increase <= non_streaming_increase + tolerance_mb
-    ), f"Streaming peak should be lower (tolerance: {tolerance_mb:.2f} MB). "
+    assert streaming_peak_increase <= non_streaming_increase + tolerance_mb, (
+        f"Streaming peak should be lower (tolerance: {tolerance_mb:.2f} MB). "
+    )
     f"Non-streaming: {non_streaming_increase:.2f} MB, Streaming peak: {streaming_peak_increase:.2f} MB"
 
     print("✅ Memory usage comparison test passed!")

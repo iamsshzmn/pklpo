@@ -111,8 +111,6 @@ class TestSmokeImports:
         try:
             from src.features import (
                 FEATURE_SPECS,
-                FeatureResult,
-                FeatureSpec,
                 compute_features,
                 validate_feature_specs_integrity,
                 validate_ohlcv_data,

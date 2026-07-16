@@ -13,7 +13,9 @@ def test_resolve_adapter_name_defaults_to_ccxt() -> None:
     assert mod.resolve_adapter_name({"use_ccxt": False}) == "ccxt"
 
 
-def test_resolve_adapter_name_prefers_explicit_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_adapter_name_prefers_explicit_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("CANDLES_ADAPTER", "unsupported")
     assert mod.resolve_adapter_name({"adapter": "ccxt"}) == "ccxt"
 
@@ -29,7 +31,9 @@ def test_build_market_data_adapter_passes_timeout_seconds(
     captured: dict[str, float | int] = {}
 
     class _AdapterStub:
-        def __init__(self, *, max_requests_per_second: int, timeout_seconds: float) -> None:
+        def __init__(
+            self, *, max_requests_per_second: int, timeout_seconds: float
+        ) -> None:
             captured["max_requests_per_second"] = max_requests_per_second
             captured["timeout_seconds"] = timeout_seconds
 

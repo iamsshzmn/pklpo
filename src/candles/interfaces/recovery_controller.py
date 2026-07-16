@@ -35,6 +35,7 @@ from src.candles.instruments_service import (
     load_symbols_from_file,
     resolve_repo_instruments_file,
 )
+from src.candles.repository import SwapCandlesRepository
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,18 @@ DEFAULT_CONFIG = RecoveryConfig(
 )
 
 _REPAIR_BOOTSTRAP_TIMEFRAMES = ("1H", "4H", "1D", "1W", "1M")
+
+
+def _apply_instrument_states(
+    *,
+    bootstrap_candidates: list[BootstrapCandidateInfo],
+    repair_candidates: list[RepairCandidateInfo],
+    states: dict[str, str],
+) -> None:
+    for candidate in bootstrap_candidates:
+        candidate.state = states.get(candidate.symbol, "unknown")
+    for repair_candidate in repair_candidates:
+        repair_candidate.state = states.get(repair_candidate.symbol, "unknown")
 
 
 # ---------------------------------------------------------------------------
@@ -290,11 +303,16 @@ async def _persist_decisions(
     """Write all decisions to the DB and return list of inserted rows."""
     persisted: list[dict[str, Any]] = []
     for decision in decisions:
+        persisted_status = (
+            "candidate"
+            if decision.decision_status == "triggered"
+            else decision.decision_status
+        )
         row = await repository.insert_decision(
             controller_dag_id=controller_dag_id,
             controller_dag_run_id=controller_dag_run_id,
             logical_date=logical_date,
-            decision_status=decision.decision_status,
+            decision_status=persisted_status,
             action_kind=decision.action_kind,
             target_dag_id=decision.target_dag_id,
             target_run_id=None,
@@ -302,13 +320,17 @@ async def _persist_decisions(
             symbol=decision.symbol,
             timeframe=decision.timeframe,
             priority=decision.priority,
-            cooldown_until=decision.cooldown_until,
+            cooldown_until=(
+                None if persisted_status == "candidate" else decision.cooldown_until
+            ),
             precheck_payload=decision.precheck_payload,
             trigger_conf=decision.trigger_conf,
             safety_payload=decision.safety_payload,
             error=None,
         )
-        persisted.append({**row, "decision": decision})
+        persisted.append(
+            {**row, "decision": decision, "decision_status": persisted_status}
+        )
     return persisted
 
 
@@ -347,19 +369,36 @@ async def collect_and_decide(
         symbols = load_symbols_from_file(resolve_repo_instruments_file(), logger=logger)
     if not symbols:
         logger.warning("recovery_controller: curated symbol list is empty")
+    curated_symbols = list(symbols)
 
     repair_tfs = repair_timeframes or cfg.allowed_repair_timeframes
     bootstrap_tfs = bootstrap_timeframes or cfg.allowed_bootstrap_timeframes
 
+    # в”Ђв”Ђ 1. Dependency health в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+    postgres_ok, okx_ok = await _check_dependencies()
+
+    candles_repository = SwapCandlesRepository()
+    instrument_states: dict[str, str] = {}
+
+    if postgres_ok:
+        try:
+            instrument_states = await candles_repository.get_instrument_states(
+                curated_symbols
+            )
+        except Exception as exc:
+            instrument_states = {}
+            logger.warning(
+                "recovery_controller instrument state fetch failed error=%s",
+                exc,
+                exc_info=True,
+            )
+
     logger.info(
         "recovery_controller collect_and_decide start symbols=%d repair_tfs=%s bootstrap_tfs=%s",
-        len(symbols),
+        len(curated_symbols),
         repair_tfs,
         bootstrap_tfs,
     )
-
-    # ── 1. Dependency health ────────────────────────────────────────────────
-    postgres_ok, okx_ok = await _check_dependencies()
 
     # ── 2. Active DagRun states ─────────────────────────────────────────────
     active_states = await _get_active_dagrun_states([REPAIR_DAG_ID, BOOTSTRAP_DAG_ID])
@@ -369,7 +408,7 @@ async def collect_and_decide(
     if postgres_ok:
         try:
             bootstrap_candidates = await _collect_bootstrap_candidates(
-                symbols=symbols,
+                symbols=curated_symbols,
                 timeframes=bootstrap_tfs,
                 lookback_days=cfg.bootstrap_lookback_days,
             )
@@ -383,13 +422,19 @@ async def collect_and_decide(
     if postgres_ok and okx_ok and not skip_repair_precheck:
         try:
             repair_candidates = await _collect_repair_candidates(
-                symbols=symbols,
+                symbols=curated_symbols,
                 timeframes=repair_tfs,
             )
         except Exception as exc:
             logger.error(
                 "recovery_controller repair candidate collection failed: %s", exc
             )
+
+    _apply_instrument_states(
+        bootstrap_candidates=bootstrap_candidates,
+        repair_candidates=repair_candidates,
+        states=instrument_states,
+    )
 
     snapshot = PipelineSnapshot(
         postgres_healthy=postgres_ok,
@@ -441,6 +486,7 @@ async def collect_and_decide(
             "okx_healthy": okx_ok,
             "bootstrap_candidates": len(bootstrap_candidates),
             "repair_candidates": len(repair_candidates),
+            "universe": {"curated": len(curated_symbols)},
             "active_dagruns": {k: v for k, v in active_states.items() if v},
         },
     }

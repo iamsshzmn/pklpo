@@ -4,6 +4,7 @@ Wires concrete infrastructure implementations into RunBootstrapUseCase.
 All public coroutines accept ``config: dict[str, Any] | None = None``
 for OKX credential injection — same pattern as interfaces/repair.py.
 """
+
 from __future__ import annotations
 
 import time as _time
@@ -94,12 +95,16 @@ async def init_bootstrap_state(
                 calendar=calendar,
             )
             expected_bars = count_expected_bars(
-                window=RepairWindow(start_ts_ms=target_start_ts, end_ts_ms=target_end_ts),
+                window=RepairWindow(
+                    start_ts_ms=target_start_ts, end_ts_ms=target_end_ts
+                ),
                 timeframe=timeframe,
                 calendar=calendar,
             )
 
-            existing = await repository.get_bootstrap_state(symbol=symbol, timeframe=timeframe)
+            existing = await repository.get_bootstrap_state(
+                symbol=symbol, timeframe=timeframe
+            )
             if existing is not None and existing.bootstrap_completed:
                 # Reconcile: verify live DB before trusting the completed flag.
                 rec = await repository.count_valid_candles(
@@ -191,20 +196,30 @@ async def build_coverage_report(
     rows: list[dict[str, Any]] = []
     for symbol in symbols:
         for timeframe in timeframes:
-            state = await repository.get_bootstrap_state(symbol=symbol, timeframe=timeframe)
+            state = await repository.get_bootstrap_state(
+                symbol=symbol, timeframe=timeframe
+            )
             if state is None:
-                rows.append({"symbol": symbol, "timeframe": timeframe, "status": "not_initialized"})
+                rows.append(
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "status": "not_initialized",
+                    }
+                )
             else:
-                rows.append({
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "status": state.status,
-                    "coverage_pct": state.coverage_pct,
-                    "missing_bars": state.missing_bars,
-                    "expected_bars": state.expected_bars,
-                    "actual_bars": state.actual_bars,
-                    "bootstrap_completed": state.bootstrap_completed,
-                })
+                rows.append(
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "status": state.status,
+                        "coverage_pct": state.coverage_pct,
+                        "missing_bars": state.missing_bars,
+                        "expected_bars": state.expected_bars,
+                        "actual_bars": state.actual_bars,
+                        "bootstrap_completed": state.bootstrap_completed,
+                    }
+                )
     return rows
 
 
@@ -237,13 +252,17 @@ async def reconcile_bootstrap_state(
             if tf_ms is None:
                 continue
 
-            state = await repository.get_bootstrap_state(symbol=symbol, timeframe=timeframe)
+            state = await repository.get_bootstrap_state(
+                symbol=symbol, timeframe=timeframe
+            )
             if state is None:
-                report.append({
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "action": "no_state",
-                })
+                report.append(
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "action": "no_state",
+                    }
+                )
                 continue
 
             target_start_ts, target_end_ts = compute_target_window(
@@ -261,26 +280,30 @@ async def reconcile_bootstrap_state(
             )
 
             if not state.bootstrap_completed:
-                report.append({
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "action": "skipped_not_completed",
-                    "status": state.status,
-                    "live_actual": rec.valid_bars,
-                    "expected_bars": rec.expected_bars,
-                    "invalid_extra_rows": rec.invalid_extra_rows,
-                })
+                report.append(
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "action": "skipped_not_completed",
+                        "status": state.status,
+                        "live_actual": rec.valid_bars,
+                        "expected_bars": rec.expected_bars,
+                        "invalid_extra_rows": rec.invalid_extra_rows,
+                    }
+                )
                 continue
 
             if rec.missing_bars == 0 and rec.invalid_extra_rows == 0:
-                report.append({
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "action": "ok",
-                    "live_actual": rec.valid_bars,
-                    "expected_bars": rec.expected_bars,
-                    "invalid_extra_rows": rec.invalid_extra_rows,
-                })
+                report.append(
+                    {
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "action": "ok",
+                        "live_actual": rec.valid_bars,
+                        "expected_bars": rec.expected_bars,
+                        "invalid_extra_rows": rec.invalid_extra_rows,
+                    }
+                )
                 continue
 
             # Invariant violated: completed=True but live count < expected.
@@ -300,14 +323,16 @@ async def reconcile_bootstrap_state(
                 bootstrap_completed=False,
                 checkpoint_ts=target_end_ts,
             )
-            report.append({
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "action": "downgraded",
-                "live_actual": rec.valid_bars,
-                "expected_bars": rec.expected_bars,
-                "missing_bars": rec.missing_bars,
-                "invalid_extra_rows": rec.invalid_extra_rows,
-            })
+            report.append(
+                {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "action": "downgraded",
+                    "live_actual": rec.valid_bars,
+                    "expected_bars": rec.expected_bars,
+                    "missing_bars": rec.missing_bars,
+                    "invalid_extra_rows": rec.invalid_extra_rows,
+                }
+            )
 
     return report

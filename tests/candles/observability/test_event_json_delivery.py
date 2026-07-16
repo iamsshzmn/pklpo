@@ -9,7 +9,9 @@ from pathlib import Path
 from src.logging.context import ContextFilter
 from src.logging.formatters import JsonFormatter
 
-_TRACER_PATH = Path(__file__).parents[3] / "src" / "candles" / "observability" / "tracer.py"
+_TRACER_PATH = (
+    Path(__file__).parents[3] / "src" / "candles" / "observability" / "tracer.py"
+)
 _TRACER_SPEC = importlib.util.spec_from_file_location(
     "test_event_json_delivery_tracer",
     _TRACER_PATH,
@@ -78,7 +80,9 @@ def test_telemetry_event_reaches_pklpo_json_handler_with_top_level_fields() -> N
         pklpo_logger.propagate = original_propagate
 
     records = [json.loads(line) for line in stream.getvalue().splitlines()]
-    sync_started = [record for record in records if record.get("event") == "sync_started"]
+    sync_started = [
+        record for record in records if record.get("event") == "sync_started"
+    ]
 
     assert sync_started == [
         {
@@ -129,7 +133,9 @@ def test_failure_event_json_has_error_type_and_traceback() -> None:
         pklpo_logger.propagate = original_propagate
 
     records = [json.loads(line) for line in stream.getvalue().splitlines()]
-    upsert_failed = [record for record in records if record.get("event") == "upsert_failed"]
+    upsert_failed = [
+        record for record in records if record.get("event") == "upsert_failed"
+    ]
 
     assert len(upsert_failed) == 1
     assert upsert_failed[0]["level"] == "ERROR"

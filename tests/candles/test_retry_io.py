@@ -62,7 +62,9 @@ async def test_raises_after_exhausting_retries(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.asyncio
-async def test_non_retriable_exception_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_non_retriable_exception_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def _no_sleep(_):
         return None
 
@@ -75,7 +77,9 @@ async def test_non_retriable_exception_not_retried(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.asyncio
-async def test_circuit_breaker_rejects_when_open(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_circuit_breaker_rejects_when_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def _no_sleep(_):
         return None
 
@@ -90,7 +94,9 @@ async def test_circuit_breaker_rejects_when_open(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_circuit_breaker_records_on_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_circuit_breaker_records_on_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async def _no_sleep(_):
         return None
 

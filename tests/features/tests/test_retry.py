@@ -114,13 +114,15 @@ class TestDatabaseRetry:
         monkeypatch.setattr(
             retry_module.RetryConfig,
             "from_settings",
-            classmethod(lambda cls, settings=None, preset="default": RetryConfig(
-                max_attempts=3,
-                base_delay=0.0,
-                max_delay=0.0,
-                jitter=False,
-                exceptions=Exception,
-            )),
+            classmethod(
+                lambda cls, settings=None, preset="default": RetryConfig(
+                    max_attempts=3,
+                    base_delay=0.0,
+                    max_delay=0.0,
+                    jitter=False,
+                    exceptions=Exception,
+                )
+            ),
         )
 
         @database_retry(
@@ -146,13 +148,15 @@ class TestDatabaseRetry:
         monkeypatch.setattr(
             retry_module.RetryConfig,
             "from_settings",
-            classmethod(lambda cls, settings=None, preset="default": RetryConfig(
-                max_attempts=3,
-                base_delay=0.0,
-                max_delay=0.0,
-                jitter=False,
-                exceptions=Exception,
-            )),
+            classmethod(
+                lambda cls, settings=None, preset="default": RetryConfig(
+                    max_attempts=3,
+                    base_delay=0.0,
+                    max_delay=0.0,
+                    jitter=False,
+                    exceptions=Exception,
+                )
+            ),
         )
 
         @database_retry(
@@ -182,13 +186,15 @@ class TestApiRetry:
         monkeypatch.setattr(
             retry_module.RetryConfig,
             "from_settings",
-            classmethod(lambda cls, settings=None, preset="default": RetryConfig(
-                max_attempts=3,
-                base_delay=0.0,
-                max_delay=0.0,
-                jitter=False,
-                exceptions=Exception,
-            )),
+            classmethod(
+                lambda cls, settings=None, preset="default": RetryConfig(
+                    max_attempts=3,
+                    base_delay=0.0,
+                    max_delay=0.0,
+                    jitter=False,
+                    exceptions=Exception,
+                )
+            ),
         )
 
         @api_retry(

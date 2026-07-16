@@ -137,9 +137,7 @@ def test_lookahead_with_dollar_bars() -> None:
     result = check_lookahead(dollar_bar_close, df, n_trim=200)
 
     # Dollar bars не должны иметь look-ahead: ранние бары стабильны
-    assert result.passed, (
-        f"Dollar bars pipeline не прошёл look-ahead тест: {result}"
-    )
+    assert result.passed, f"Dollar bars pipeline не прошёл look-ahead тест: {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -167,9 +165,7 @@ def test_lookahead_with_triple_barrier() -> None:
 
     # Усекаем больше max_horizon, чтобы "безопасная" зона гарантированно совпала
     result = check_lookahead(tb_pipeline, df, n_trim=50)
-    assert result.passed, (
-        f"Triple-barrier labels имеют look-ahead bias: {result}"
-    )
+    assert result.passed, f"Triple-barrier labels имеют look-ahead bias: {result}"
 
 
 # ---------------------------------------------------------------------------
@@ -223,9 +219,7 @@ def test_lookahead_stochastic_model() -> None:
         return pd.Series(proba, index=df_.index)
 
     result = check_lookahead(rf_fixed_split, df, n_trim=50, atol=1e-9)
-    assert result.passed, (
-        f"RF с фиксированным random_state не прошёл: {result}"
-    )
+    assert result.passed, f"RF с фиксированным random_state не прошёл: {result}"
 
 
 # ---------------------------------------------------------------------------

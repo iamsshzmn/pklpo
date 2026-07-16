@@ -194,7 +194,9 @@ async def test_repair_repository_strict_validation_false_bypasses_validator(
 
 
 @pytest.mark.asyncio
-async def test_count_valid_candles_counts_malformed_expected_rows_as_invalid_extra() -> None:
+async def test_count_valid_candles_counts_malformed_expected_rows_as_invalid_extra() -> (
+    None
+):
     class _Repository(RepairCandlesRepository):
         async def list_existing_valid_timestamps(self, **kwargs: Any) -> list[int]:
             return [0, 120_000]
@@ -216,7 +218,9 @@ async def test_count_valid_candles_counts_malformed_expected_rows_as_invalid_ext
 
 
 @pytest.mark.asyncio
-async def test_count_valid_candles_counts_misaligned_raw_rows_as_invalid_extra() -> None:
+async def test_count_valid_candles_counts_misaligned_raw_rows_as_invalid_extra() -> (
+    None
+):
     class _Repository(RepairCandlesRepository):
         async def list_existing_valid_timestamps(self, **kwargs: Any) -> list[int]:
             return [0, 60_000, 120_000]

@@ -147,13 +147,25 @@ class BootstrapCandlesRepository(RepairCandlesRepository):
                 lookback_days=int(row.lookback_days),
                 target_start_ts=int(row.target_start_ts),
                 target_end_ts=int(row.target_end_ts),
-                checkpoint_ts=int(row.checkpoint_ts) if row.checkpoint_ts is not None else None,
-                current_min_ts=int(row.current_min_ts) if row.current_min_ts is not None else None,
-                current_max_ts=int(row.current_max_ts) if row.current_max_ts is not None else None,
+                checkpoint_ts=int(row.checkpoint_ts)
+                if row.checkpoint_ts is not None
+                else None,
+                current_min_ts=int(row.current_min_ts)
+                if row.current_min_ts is not None
+                else None,
+                current_max_ts=int(row.current_max_ts)
+                if row.current_max_ts is not None
+                else None,
                 expected_bars=int(row.expected_bars),
-                actual_bars=int(row.actual_bars) if row.actual_bars is not None else None,
-                missing_bars=int(row.missing_bars) if row.missing_bars is not None else None,
-                coverage_pct=float(row.coverage_pct) if row.coverage_pct is not None else None,
+                actual_bars=int(row.actual_bars)
+                if row.actual_bars is not None
+                else None,
+                missing_bars=int(row.missing_bars)
+                if row.missing_bars is not None
+                else None,
+                coverage_pct=float(row.coverage_pct)
+                if row.coverage_pct is not None
+                else None,
                 status=str(row.status),
                 bootstrap_completed=bool(row.bootstrap_completed),
                 error_streak=int(row.error_streak),

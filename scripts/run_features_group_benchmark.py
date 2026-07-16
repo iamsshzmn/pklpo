@@ -10,8 +10,13 @@ import argparse
 import datetime
 import json
 import os
+import sys
 import time
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def _make_ohlcv(rows: int, seed: int = 0):
@@ -39,7 +44,9 @@ def _make_ohlcv(rows: int, seed: int = 0):
     )
 
 
-def _benchmark_group(calculator, df, group: str, available: set[str], runs: int) -> dict:
+def _benchmark_group(
+    calculator, df, group: str, available: set[str], runs: int
+) -> dict:
     import tracemalloc
 
     times: list[float] = []
@@ -48,7 +55,7 @@ def _benchmark_group(calculator, df, group: str, available: set[str], runs: int)
         t0 = time.perf_counter()
         calculator.calculate_group(df.copy(), group, available=available)
         elapsed = time.perf_counter() - t0
-        _, peak = tracemalloc.get_traced_memory()
+        _, _peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
         times.append(elapsed)
 
@@ -75,7 +82,9 @@ GROUP_AVAILABLE = {
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Features group benchmark")
-    parser.add_argument("--rows", type=int, default=int(os.environ.get("FEATURES_BENCH_ROWS", "10000")))
+    parser.add_argument(
+        "--rows", type=int, default=int(os.environ.get("FEATURES_BENCH_ROWS", "10000"))
+    )
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument(
         "--out",
@@ -84,8 +93,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    from src.features.core.group_calculation import CALCULATION_ORDER
     from src.features.core.group_calculator import GroupFeatureCalculator
+    from src.features.core.group_orchestrator import CALCULATION_ORDER
 
     calculator = GroupFeatureCalculator()
     df = _make_ohlcv(args.rows)
@@ -119,7 +128,7 @@ def main() -> None:
     }
 
     out_file.write_text(json.dumps(result, indent=2))
-    print(f"[benchmark] Saved → {out_file}")
+    print(f"[benchmark] Saved -> {out_file}")
 
 
 if __name__ == "__main__":

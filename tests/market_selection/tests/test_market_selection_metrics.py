@@ -33,13 +33,15 @@ def make_ohlcv_indicators_df(
     atr_14 = close * atr_pct
     adx_14 = np.full(n_bars, adx)
     ema_21 = close + ts * ema_slope * close_base
-    return pd.DataFrame({
-        "close": close,
-        "volume": volume,
-        "atr_14": atr_14,
-        "adx_14": adx_14,
-        "ema_21": ema_21,
-    })
+    return pd.DataFrame(
+        {
+            "close": close,
+            "volume": volume,
+            "atr_14": atr_14,
+            "adx_14": adx_14,
+            "ema_21": ema_21,
+        }
+    )
 
 
 class TestVolatility:
@@ -97,13 +99,15 @@ class TestNoise:
         metrics_calculator: PairMetricsCalculator,
     ) -> None:
         """Single bar or no close -> noise_raw None."""
-        df = pd.DataFrame({
-            "close": [100],
-            "volume": [1000],
-            "atr_14": [2],
-            "adx_14": [25],
-            "ema_21": [100],
-        })
+        df = pd.DataFrame(
+            {
+                "close": [100],
+                "volume": [1000],
+                "atr_14": [2],
+                "adx_14": [25],
+                "ema_21": [100],
+            }
+        )
         m = metrics_calculator.calculate_all(df, "X", "5m", expected_bars=1)
         assert m.noise_raw is None
 
@@ -140,12 +144,14 @@ class TestLiquidity:
         metrics_calculator: PairMetricsCalculator,
     ) -> None:
         """No volume column -> liq_raw None."""
-        df = pd.DataFrame({
-            "close": [100, 101],
-            "atr_14": [2, 2],
-            "adx_14": [25, 25],
-            "ema_21": [100, 100.5],
-        })
+        df = pd.DataFrame(
+            {
+                "close": [100, 101],
+                "atr_14": [2, 2],
+                "adx_14": [25, 25],
+                "ema_21": [100, 100.5],
+            }
+        )
         m = metrics_calculator.calculate_all(df, "X", "5m", expected_bars=2)
         assert m.liq_raw is None
 

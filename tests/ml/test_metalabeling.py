@@ -35,7 +35,9 @@ def _make_dataset(
     idx = pd.date_range("2026-01-01", periods=n, freq="1min", tz="UTC")
     signal = rng.standard_normal((n, 2))
     noise = rng.standard_normal((n, max(0, n_features - 2)))
-    cols = ["signal_0", "signal_1"] + [f"noise_{i}" for i in range(max(0, n_features - 2))]
+    cols = ["signal_0", "signal_1"] + [
+        f"noise_{i}" for i in range(max(0, n_features - 2))
+    ]
     X = pd.DataFrame(np.hstack([signal, noise]), index=idx, columns=cols)
     y = pd.Series((signal[:, 0] + signal[:, 1] > 0).astype(int), index=idx)
     return X, y

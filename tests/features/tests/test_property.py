@@ -170,9 +170,9 @@ class TestNoLookaheadProperty:
         Property test: ensure timestamps are monotonic and features respect this.
         """
         # Check that timestamps are monotonic
-        assert sample_data[
-            "ts"
-        ].is_monotonic_increasing, "Timestamps should be monotonic"
+        assert sample_data["ts"].is_monotonic_increasing, (
+            "Timestamps should be monotonic"
+        )
 
         # Calculate features
         features = compute_features(
@@ -182,9 +182,9 @@ class TestNoLookaheadProperty:
         )
 
         # Check that features respect timestamp ordering
-        assert features[
-            "ts"
-        ].is_monotonic_increasing, "Feature timestamps should be monotonic"
+        assert features["ts"].is_monotonic_increasing, (
+            "Feature timestamps should be monotonic"
+        )
 
         # Check look-ahead safety
         assert ensure_no_lookahead(features), "Look-ahead safety check should pass"
@@ -389,9 +389,9 @@ class TestPerformanceProperties:
         actual_ratio = large_time / small_time
 
         # Should not scale worse than quadratic
-        assert (
-            actual_ratio <= expected_ratio * 2
-        ), f"Performance scaling is poor: {actual_ratio:.2f}x vs expected ~{expected_ratio}x"
+        assert actual_ratio <= expected_ratio * 2, (
+            f"Performance scaling is poor: {actual_ratio:.2f}x vs expected ~{expected_ratio}x"
+        )
 
         # Both calculations should complete successfully
         assert isinstance(small_features, pd.DataFrame)

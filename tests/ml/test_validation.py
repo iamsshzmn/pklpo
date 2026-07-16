@@ -90,7 +90,6 @@ def test_purged_kfold_no_leakage() -> None:
             continue
 
         test_start_ts = X.index[test_idx[0]]
-        test_end_ts = X.index[test_idx[-1]]
 
         # Тренировочные образцы ДО тестовой выборки не должны иметь t1 >= test_start
         before_test = train_idx[train_idx < test_idx[0]]
@@ -234,9 +233,7 @@ def test_cpcv_all_data_covered() -> None:
         covered.update(test_idx.tolist())
 
     # Все индексы должны быть покрыты
-    assert len(covered) == n, (
-        f"Не все индексы покрыты: {n - len(covered)} пропущено"
-    )
+    assert len(covered) == n, f"Не все индексы покрыты: {n - len(covered)} пропущено"
 
 
 def test_cpcv_invalid_n_test_groups() -> None:

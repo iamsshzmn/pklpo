@@ -15,10 +15,14 @@ class _TelemetryRecorder:
         self.events: list[tuple[str, dict[str, object]]] = []
 
     def increment(self, metric: str, value: int | float = 1, **tags: str) -> None:
-        self.events.append(("metric.increment", {"metric": metric, "value": value, **tags}))
+        self.events.append(
+            ("metric.increment", {"metric": metric, "value": value, **tags})
+        )
 
     def observe(self, metric: str, value: int | float, **tags: str) -> None:
-        self.events.append(("metric.observe", {"metric": metric, "value": value, **tags}))
+        self.events.append(
+            ("metric.observe", {"metric": metric, "value": value, **tags})
+        )
 
     def event(self, name: str, **payload: object) -> None:
         self.events.append((name, payload))

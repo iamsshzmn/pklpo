@@ -3,6 +3,7 @@
 import pandas as pd
 
 from src.features.application.calc import *  # noqa: F403
+
 from ..core import compute_features as _legacy_compute_features
 
 
@@ -12,7 +13,10 @@ def process_chunks(*args, **kwargs):
     available_indicators = kwargs.get("available_indicators")
     base_columns = ["ts", "open", "high", "low", "close", "volume"]
 
-    chunks = [chunk.loc[:, [c for c in base_columns if c in chunk.columns]].copy() for chunk in reader]
+    chunks = [
+        chunk.loc[:, [c for c in base_columns if c in chunk.columns]].copy()
+        for chunk in reader
+    ]
     if not chunks:
         return
 

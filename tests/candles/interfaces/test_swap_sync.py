@@ -23,7 +23,9 @@ class DummyMarketAdapter:
 
 
 @pytest.mark.asyncio
-async def test_sync_swap_candles_builds_expected_request(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_sync_swap_candles_builds_expected_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, Any] = {}
 
     async def fake_run_candle_sync(request: Any, **kwargs: Any) -> SyncJobResult:
@@ -46,9 +48,15 @@ async def test_sync_swap_candles_builds_expected_request(monkeypatch: pytest.Mon
             db_write={},
         )
 
-    monkeypatch.setattr(swap_sync_module, "build_market_data_adapter", lambda config: DummyMarketAdapter())
+    monkeypatch.setattr(
+        swap_sync_module,
+        "build_market_data_adapter",
+        lambda config: DummyMarketAdapter(),
+    )
     monkeypatch.setattr(swap_sync_module, "run_candle_sync", fake_run_candle_sync)
-    monkeypatch.setattr(swap_sync_module, "trace_sync_run", lambda **kwargs: nullcontext("cid"))
+    monkeypatch.setattr(
+        swap_sync_module, "trace_sync_run", lambda **kwargs: nullcontext("cid")
+    )
 
     stats = await swap_sync_module.sync_swap_candles(
         symbols=["BTC-USDT-SWAP"],

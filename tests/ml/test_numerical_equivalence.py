@@ -17,11 +17,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.ml.labeling.sample_weights import _build_concurrency, get_uniqueness_weights
 from src.ml.labeling.triple_barrier import _triple_barrier_scan
-
 
 # ---------------------------------------------------------------------------
 # Triple-barrier: hand-computed reference
@@ -47,12 +45,12 @@ from src.ml.labeling.triple_barrier import _triple_barrier_scan
 #   range(5,5) empty → vertical → label=0, t1_idx=4
 
 _CLOSE = np.array([100.0, 100.0, 100.0, 100.0, 100.0])
-_HIGH  = np.array([100.0, 103.0, 100.0, 100.0, 100.0])
-_LOW   = np.array([100.0, 100.0,  98.0, 100.0, 100.0])
+_HIGH = np.array([100.0, 103.0, 100.0, 100.0, 100.0])
+_LOW = np.array([100.0, 100.0, 98.0, 100.0, 100.0])
 
-_EXPECTED_LABELS       = np.array([ 1, -1, 0, 0, 0], dtype=np.int64)
-_EXPECTED_T1_IDX       = np.array([ 1,  2, 4, 4, 4], dtype=np.int64)
-_EXPECTED_BARRIER_CODE = np.array([ 1, -1, 0, 0, 0], dtype=np.int64)
+_EXPECTED_LABELS = np.array([1, -1, 0, 0, 0], dtype=np.int64)
+_EXPECTED_T1_IDX = np.array([1, 2, 4, 4, 4], dtype=np.int64)
+_EXPECTED_BARRIER_CODE = np.array([1, -1, 0, 0, 0], dtype=np.int64)
 
 
 def test_triple_barrier_labels_reference() -> None:
@@ -77,10 +75,10 @@ def test_triple_barrier_pt_triggers_before_sl() -> None:
     Ожидание: label=+1 (PT выигрывает).
     """
     close = np.array([100.0, 100.0])
-    high  = np.array([100.0, 103.0])  # bar1 high >= 102 → PT
-    low   = np.array([100.0,  98.0])  # bar1 low  <= 99  → SL (тот же бар)
+    high = np.array([100.0, 103.0])  # bar1 high >= 102 → PT
+    low = np.array([100.0, 98.0])  # bar1 low  <= 99  → SL (тот же бар)
 
-    labels, t1_idx, barrier_code = _triple_barrier_scan(
+    labels, _t1_idx, barrier_code = _triple_barrier_scan(
         close, high, low, pt=0.02, sl=0.01, max_h=1
     )
 
@@ -93,10 +91,10 @@ def test_triple_barrier_vertical_when_no_barrier_hit() -> None:
     Если ни PT, ни SL не достигнуты в горизонте — вертикальный барьер (label=0).
     """
     close = np.array([100.0, 100.0, 100.0, 100.0])
-    high  = np.array([100.0, 100.5, 100.5, 100.5])  # < 102
-    low   = np.array([100.0,  99.5,  99.5,  99.5])  # > 99
+    high = np.array([100.0, 100.5, 100.5, 100.5])  # < 102
+    low = np.array([100.0, 99.5, 99.5, 99.5])  # > 99
 
-    labels, t1_idx, barrier_code = _triple_barrier_scan(
+    labels, _t1_idx, barrier_code = _triple_barrier_scan(
         close, high, low, pt=0.02, sl=0.01, max_h=3
     )
 
@@ -109,12 +107,10 @@ def test_triple_barrier_exact_boundary_pt() -> None:
     high[j] == pt_level (точно на границе) — PT должен сработать.
     """
     close = np.array([100.0, 100.0])
-    high  = np.array([100.0, 102.0])  # точно на 2% (pt_level = 100*1.02 = 102)
-    low   = np.array([100.0, 100.0])
+    high = np.array([100.0, 102.0])  # точно на 2% (pt_level = 100*1.02 = 102)
+    low = np.array([100.0, 100.0])
 
-    labels, _, _ = _triple_barrier_scan(
-        close, high, low, pt=0.02, sl=0.01, max_h=1
-    )
+    labels, _, _ = _triple_barrier_scan(close, high, low, pt=0.02, sl=0.01, max_h=1)
     assert labels[0] == 1, "Граничное значение high == pt_level должно давать PT"
 
 
@@ -123,12 +119,10 @@ def test_triple_barrier_exact_boundary_sl() -> None:
     low[j] == sl_level (точно на границе) — SL должен сработать.
     """
     close = np.array([100.0, 100.0])
-    high  = np.array([100.0, 100.0])
-    low   = np.array([100.0,  99.0])  # точно на 1% (sl_level = 100*0.99 = 99)
+    high = np.array([100.0, 100.0])
+    low = np.array([100.0, 99.0])  # точно на 1% (sl_level = 100*0.99 = 99)
 
-    labels, _, _ = _triple_barrier_scan(
-        close, high, low, pt=0.02, sl=0.01, max_h=1
-    )
+    labels, _, _ = _triple_barrier_scan(close, high, low, pt=0.02, sl=0.01, max_h=1)
     assert labels[0] == -1, "Граничное значение low == sl_level должно давать SL"
 
 
@@ -243,6 +237,8 @@ def test_uniqueness_weights_time_decay_exact() -> None:
     weights = get_uniqueness_weights(t1, close, decay_factor=0.5)
 
     np.testing.assert_allclose(
-        weights.values, [0.5, 0.75, 1.0], rtol=1e-10,
+        weights.values,
+        [0.5, 0.75, 1.0],
+        rtol=1e-10,
         err_msg="Decay=0.5 для 3 непересекающихся меток → linspace(0.5,1.0,3)",
     )

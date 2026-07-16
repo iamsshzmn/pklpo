@@ -240,9 +240,9 @@ class TestSchemaUniqueness:
             if target not in all_columns:
                 invalid_targets.append((alias, target))
 
-        assert (
-            len(invalid_targets) == 0
-        ), f"Aliases point to non-existent fields: {invalid_targets}"
+        assert len(invalid_targets) == 0, (
+            f"Aliases point to non-existent fields: {invalid_targets}"
+        )
 
     def test_no_circular_aliases(self, schema_manager):
         """Test that aliases don't create circular references."""
@@ -296,9 +296,9 @@ class TestSchemaIntegration:
 
         # At least most common indicators should be present
         present_count = len(common_indicators) - len(missing)
-        assert (
-            present_count >= len(common_indicators) * 0.8
-        ), f"Less than 80% of common indicators present. Missing: {missing}"
+        assert present_count >= len(common_indicators) * 0.8, (
+            f"Less than 80% of common indicators present. Missing: {missing}"
+        )
 
 
 def test_schema_file_exists():

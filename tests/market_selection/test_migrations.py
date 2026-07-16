@@ -29,7 +29,9 @@ class _AsyncTxContext:
 
 
 @pytest.mark.asyncio
-async def test_run_market_selection_migrations_executes_all_sql_in_transaction() -> None:
+async def test_run_market_selection_migrations_executes_all_sql_in_transaction() -> (
+    None
+):
     class _DummyFile:
         def __init__(self, name: str, content: str) -> None:
             self.name = name

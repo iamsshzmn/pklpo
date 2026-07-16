@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from src.candles.application.recovery_controller import (
     BOOTSTRAP_DAG_ID,
     REPAIR_DAG_ID,
@@ -213,6 +215,220 @@ def test_bootstrap_reconcile_downgraded_triggers_with_correct_reason() -> None:
     assert triggered[0].reason == "bootstrap_state_reconciled_incomplete"
 
 
+def test_expired_bootstrap_candidate_skipped_not_live() -> None:
+    snapshot = _healthy_snapshot(
+        bootstrap_candidates=[
+            BootstrapCandidateInfo(
+                symbol="TON-USDT-SWAP",
+                timeframe="1H",
+                status="not_initialized",
+                state="expired",
+            )
+        ],
+    )
+
+    decisions = choose_recovery_actions(
+        snapshot=snapshot, config=_config(), cooldown_rows=[]
+    )
+
+    assert [d.decision_status for d in decisions] == ["skip", "skip"]
+    assert decisions[0].action_kind == "bootstrap"
+    assert decisions[0].reason == "instrument_not_live"
+    assert decisions[0].symbol == "TON-USDT-SWAP"
+    assert decisions[0].timeframe == "1H"
+    assert decisions[0].safety_payload == {
+        "instrument_state": "expired",
+        "state_found": True,
+    }
+    assert decisions[1].reason == "no_recovery_needed"
+
+
+def test_new_live_not_initialized_triggers_bootstrap() -> None:
+    snapshot = _healthy_snapshot(
+        bootstrap_candidates=[
+            BootstrapCandidateInfo(
+                symbol="GRAM-USDT-SWAP",
+                timeframe="1H",
+                status="not_initialized",
+                state="live",
+            )
+        ],
+    )
+
+    decisions = choose_recovery_actions(
+        snapshot=snapshot, config=_config(), cooldown_rows=[]
+    )
+
+    triggered = [d for d in decisions if d.decision_status == "triggered"]
+    assert len(triggered) == 1
+    assert triggered[0].action_kind == "bootstrap"
+    assert triggered[0].reason == "bootstrap_state_missing"
+    assert triggered[0].symbol == "GRAM-USDT-SWAP"
+
+
+@pytest.mark.parametrize("state", ["suspended", "preopen", "rebase"])
+def test_known_non_live_skipped_instrument_not_live(state: str) -> None:
+    snapshot = _healthy_snapshot(
+        bootstrap_candidates=[
+            BootstrapCandidateInfo(
+                symbol="ALT-USDT-SWAP",
+                timeframe="1H",
+                status="not_initialized",
+                state=state,
+            )
+        ],
+    )
+
+    decisions = choose_recovery_actions(
+        snapshot=snapshot, config=_config(), cooldown_rows=[]
+    )
+
+    assert decisions[0].decision_status == "skip"
+    assert decisions[0].reason == "instrument_not_live"
+    assert decisions[0].safety_payload == {
+        "instrument_state": state,
+        "state_found": True,
+    }
+    assert not any(d.decision_status == "triggered" for d in decisions)
+
+
+def test_unknown_state_skipped_fail_closed() -> None:
+    snapshot = _healthy_snapshot(
+        bootstrap_candidates=[
+            BootstrapCandidateInfo(
+                symbol="NEW-USDT-SWAP",
+                timeframe="1H",
+                status="not_initialized",
+                state="unknown",
+            )
+        ],
+    )
+
+    decisions = choose_recovery_actions(
+        snapshot=snapshot, config=_config(), cooldown_rows=[]
+    )
+
+    assert decisions[0].decision_status == "skip"
+    assert decisions[0].reason == "instrument_state_unknown"
+    assert not any(d.decision_status == "triggered" for d in decisions)
+
+
+def test_unknown_state_emits_observable_skip() -> None:
+    snapshot = _healthy_snapshot(
+        bootstrap_candidates=[
+            BootstrapCandidateInfo(
+                symbol="NEW-USDT-SWAP",
+                timeframe="4H",
+                status="incomplete",
+                state="unknown",
+            )
+        ],
+    )
+
+    decisions = choose_recovery_actions(
+        snapshot=snapshot, config=_config(), cooldown_rows=[]
+    )
+
+    unknown_skips = [d for d in decisions if d.reason == "instrument_state_unknown"]
+    assert len(unknown_skips) == 1
+    assert unknown_skips[0].decision_status == "skip"
+    assert unknown_skips[0].action_kind == "bootstrap"
+    assert unknown_skips[0].symbol == "NEW-USDT-SWAP"
+    assert unknown_skips[0].timeframe == "4H"
+    assert unknown_skips[0].safety_payload == {
+        "instrument_state": "unknown",
+        "state_found": False,
+    }
+
+
+def test_state_defaults_do_not_mask_unknown() -> None:
+    snapshot = _healthy_snapshot(
+        bootstrap_candidates=[
+            BootstrapCandidateInfo(
+                symbol="KNOWN-USDT-SWAP",
+                timeframe="1H",
+                status="not_initialized",
+            ),
+            BootstrapCandidateInfo(
+                symbol="MISSING-METADATA-USDT-SWAP",
+                timeframe="1H",
+                status="not_initialized",
+                state="unknown",
+            ),
+        ],
+    )
+
+    decisions = choose_recovery_actions(
+        snapshot=snapshot, config=_config(), cooldown_rows=[]
+    )
+
+    triggered_symbols = {
+        d.symbol for d in decisions if d.decision_status == "triggered"
+    }
+    assert triggered_symbols == {"KNOWN-USDT-SWAP"}
+    unknown_skips = [d for d in decisions if d.reason == "instrument_state_unknown"]
+    assert len(unknown_skips) == 1
+    assert unknown_skips[0].symbol == "MISSING-METADATA-USDT-SWAP"
+
+
+def test_expired_candidate_does_not_consume_rate_budget() -> None:
+    snapshot = _healthy_snapshot(
+        bootstrap_candidates=[
+            BootstrapCandidateInfo(
+                symbol="TON-USDT-SWAP",
+                timeframe="1H",
+                status="not_initialized",
+                state="expired",
+            ),
+            BootstrapCandidateInfo(
+                symbol="GRAM-USDT-SWAP",
+                timeframe="1H",
+                status="not_initialized",
+                state="live",
+            ),
+        ],
+    )
+
+    decisions = choose_recovery_actions(
+        snapshot=snapshot,
+        config=_config(
+            max_symbols_per_run=1,
+            max_timeframes_per_run=1,
+            max_total_pairs_per_run=1,
+        ),
+        cooldown_rows=[],
+    )
+
+    triggered = [d for d in decisions if d.decision_status == "triggered"]
+    assert len(triggered) == 1
+    assert triggered[0].symbol == "GRAM-USDT-SWAP"
+    assert triggered[0].action_kind == "bootstrap"
+    assert any(d.reason == "instrument_not_live" for d in decisions)
+
+
+def test_expired_repair_candidate_not_triggered() -> None:
+    snapshot = _healthy_snapshot(
+        repair_candidates=[
+            RepairCandidateInfo(
+                symbol="TON-USDT-SWAP",
+                timeframe="1H",
+                gap_tasks=2,
+                requested_bars=20,
+                state="expired",
+            )
+        ],
+    )
+
+    decisions = choose_recovery_actions(
+        snapshot=snapshot, config=_config(), cooldown_rows=[]
+    )
+
+    assert decisions[0].decision_status == "skip"
+    assert decisions[0].action_kind == "repair"
+    assert decisions[0].reason == "instrument_not_live"
+    assert not any(d.decision_status == "triggered" for d in decisions)
+
+
 # ---------------------------------------------------------------------------
 # Gate 4: repair
 # ---------------------------------------------------------------------------
@@ -235,6 +451,29 @@ def test_repair_triggered_for_gap_candidate() -> None:
     assert triggered[0].reason == "repair_gap_detected"
     assert triggered[0].target_dag_id == REPAIR_DAG_ID
     assert triggered[0].trigger_conf["symbols"] == ["BTC-USDT-SWAP"]
+
+
+def test_repair_path_selected_for_gap_candidate_without_live_environment() -> None:
+    """Pure decision-service proof: gap candidate selects trigger_repair inputs."""
+    snapshot = _healthy_snapshot(
+        active_dagrun_states={REPAIR_DAG_ID: [], BOOTSTRAP_DAG_ID: []},
+        bootstrap_candidates=[],
+        repair_candidates=[
+            RepairCandidateInfo(
+                symbol="ETC-USDT-SWAP", timeframe="1H", gap_tasks=2, requested_bars=20
+            )
+        ],
+    )
+
+    decisions = choose_recovery_actions(
+        snapshot=snapshot, config=_config(), cooldown_rows=[]
+    )
+
+    triggered = [d for d in decisions if d.decision_status == "triggered"]
+    assert len(triggered) == 1
+    assert triggered[0].action_kind == "repair"
+    assert triggered[0].target_dag_id == REPAIR_DAG_ID
+    assert triggered[0].trigger_conf["trigger"] == "controller-gap-repair"
 
 
 def test_repair_triggered_for_corrupted_bars() -> None:

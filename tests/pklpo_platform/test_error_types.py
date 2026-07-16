@@ -13,7 +13,10 @@ from __future__ import annotations
 import importlib.util
 import socket
 from pathlib import Path
-from types import ModuleType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -21,11 +24,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 def _load_error_types() -> ModuleType:
     """Load error_types.py directly, bypassing the facade __init__."""
     module_path = (
-        _PROJECT_ROOT
-        / "src"
-        / "pklpo_platform"
-        / "observability"
-        / "error_types.py"
+        _PROJECT_ROOT / "src" / "pklpo_platform" / "observability" / "error_types.py"
     )
     spec = importlib.util.spec_from_file_location(
         "tests.pklpo_platform._error_types", module_path
@@ -39,9 +38,16 @@ def _load_error_types() -> ModuleType:
 def test_error_type_enum_members_are_strings() -> None:
     m = _load_error_types()
     expected = {
-        "db_error", "api_error", "timeout_error", "rate_limit_error",
-        "validation_error", "eligibility_error", "data_quality_error",
-        "permission_error", "lock_conflict", "unexpected_error",
+        "db_error",
+        "api_error",
+        "timeout_error",
+        "rate_limit_error",
+        "validation_error",
+        "eligibility_error",
+        "data_quality_error",
+        "permission_error",
+        "lock_conflict",
+        "unexpected_error",
     }
     assert {str(e) for e in m.ErrorType} == expected
     assert m.ErrorType.DB_ERROR == "db_error"
@@ -59,7 +65,10 @@ def test_error_type_exported_from_facade_init() -> None:
 
 def test_classify_db_error_via_connection_refused() -> None:
     m = _load_error_types()
-    assert m.classify_error_type(ConnectionRefusedError("connection refused")) == "db_error"
+    assert (
+        m.classify_error_type(ConnectionRefusedError("connection refused"))
+        == "db_error"
+    )
 
 
 def test_classify_db_error_via_message_marker() -> None:
@@ -69,22 +78,34 @@ def test_classify_db_error_via_message_marker() -> None:
 
 def test_classify_db_error_via_gaierror() -> None:
     m = _load_error_types()
-    assert m.classify_error_type(socket.gaierror("name or service not known")) == "db_error"
+    assert (
+        m.classify_error_type(socket.gaierror("name or service not known"))
+        == "db_error"
+    )
 
 
 def test_classify_rate_limit_via_429_message() -> None:
     m = _load_error_types()
-    assert m.classify_error_type(Exception("HTTP 429 Too Many Requests")) == "rate_limit_error"
+    assert (
+        m.classify_error_type(Exception("HTTP 429 Too Many Requests"))
+        == "rate_limit_error"
+    )
 
 
 def test_classify_rate_limit_via_okx_code_50011() -> None:
     m = _load_error_types()
-    assert m.classify_error_type(Exception("OKX error code 50011: rate limit")) == "rate_limit_error"
+    assert (
+        m.classify_error_type(Exception("OKX error code 50011: rate limit"))
+        == "rate_limit_error"
+    )
 
 
 def test_classify_timeout_via_message() -> None:
     m = _load_error_types()
-    assert m.classify_error_type(TimeoutError("request timed out after 30s")) == "timeout_error"
+    assert (
+        m.classify_error_type(TimeoutError("request timed out after 30s"))
+        == "timeout_error"
+    )
 
 
 def test_classify_timeout_via_class_name() -> None:
@@ -148,7 +169,12 @@ def test_no_hardcoded_unexpected_error_string_in_use_cases() -> None:
     files = [
         _PROJECT_ROOT / "src" / "candles" / "application" / "sync" / "use_cases.py",
         _PROJECT_ROOT / "src" / "candles" / "application" / "repair" / "use_cases.py",
-        _PROJECT_ROOT / "src" / "candles" / "application" / "bootstrap" / "use_cases.py",
+        _PROJECT_ROOT
+        / "src"
+        / "candles"
+        / "application"
+        / "bootstrap"
+        / "use_cases.py",
     ]
     for path in files:
         text = path.read_text(encoding="utf-8")

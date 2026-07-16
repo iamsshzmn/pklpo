@@ -388,9 +388,9 @@ class CodeValidator:
 
                     if total_count > 0:
                         valid_fraction = valid_count / total_count
-                        result["stats"][
-                            f"{feature_name}_warmup_valid_fraction"
-                        ] = valid_fraction
+                        result["stats"][f"{feature_name}_warmup_valid_fraction"] = (
+                            valid_fraction
+                        )
 
                         if valid_fraction < 0.8:  # 80% valid after warm-up
                             result["warnings"].append(
@@ -416,9 +416,9 @@ class CodeValidator:
 
                     if total_count > 0:
                         valid_fraction = valid_count / total_count
-                        result["stats"][
-                            f"{feature_name}_warmup_valid_fraction"
-                        ] = valid_fraction
+                        result["stats"][f"{feature_name}_warmup_valid_fraction"] = (
+                            valid_fraction
+                        )
 
                         if valid_fraction < 0.8:  # 80% valid after warm-up
                             result["warnings"].append(

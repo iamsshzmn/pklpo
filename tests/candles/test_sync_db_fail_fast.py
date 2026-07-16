@@ -114,11 +114,15 @@ async def test_run_fails_fast_when_db_probe_fails(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
     use_case = _build_use_case(["BTC-USDT-SWAP"], _CandleStoreProbeFailure())
 
     with pytest.raises(DatabaseUnavailableError, match="database_unavailable"):
-        await use_case.run(SyncJobRequest(mode=ExecutionMode.FAST, max_concurrent_symbols=1))
+        await use_case.run(
+            SyncJobRequest(mode=ExecutionMode.FAST, max_concurrent_symbols=1)
+        )
 
 
 @pytest.mark.asyncio
@@ -129,11 +133,15 @@ async def test_run_stops_processing_new_symbols_after_db_outage(
         return None
 
     candle_store = _CandleStoreFailFirstSymbol()
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
     use_case = _build_use_case(["BTC-USDT-SWAP", "ETH-USDT-SWAP"], candle_store)
 
     with pytest.raises(DatabaseUnavailableError, match="database_unavailable"):
-        await use_case.run(SyncJobRequest(mode=ExecutionMode.FAST, max_concurrent_symbols=1))
+        await use_case.run(
+            SyncJobRequest(mode=ExecutionMode.FAST, max_concurrent_symbols=1)
+        )
 
     assert candle_store.seen_symbols == ["BTC-USDT-SWAP"]
 
@@ -146,11 +154,15 @@ async def test_non_db_symbol_error_does_not_abort_entire_run(
         return None
 
     candle_store = _CandleStoreNonDbFailure()
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
     use_case = _build_use_case(["BTC-USDT-SWAP", "ETH-USDT-SWAP"], candle_store)
 
     result = await use_case.run(
-        SyncJobRequest(mode=ExecutionMode.FAST, timeframes=("1m",), max_concurrent_symbols=1)
+        SyncJobRequest(
+            mode=ExecutionMode.FAST, timeframes=("1m",), max_concurrent_symbols=1
+        )
     )
 
     assert result.errors_count == 1

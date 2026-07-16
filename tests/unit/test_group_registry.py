@@ -58,6 +58,7 @@ class TestGroupRegistryRegister:
 
     def test_register_basic(self):
         """Basic registration via decorator."""
+
         @GroupRegistry.register("test_group", order=1)
         def calc_test(df, available):
             return {"test_indicator": df["close"]}
@@ -71,6 +72,7 @@ class TestGroupRegistryRegister:
 
     def test_register_with_dependencies(self):
         """Registration with dependencies."""
+
         @GroupRegistry.register("child", order=2, dependencies=["parent"])
         def calc_child(df, available):
             return {}
@@ -81,10 +83,9 @@ class TestGroupRegistryRegister:
 
     def test_register_with_description(self):
         """Registration with custom description."""
+
         @GroupRegistry.register(
-            "described",
-            order=1,
-            description="This is a described group"
+            "described", order=1, description="This is a described group"
         )
         def calc_described(df, available):
             return {}
@@ -95,6 +96,7 @@ class TestGroupRegistryRegister:
 
     def test_register_preserves_function(self):
         """Decorator preserves original function."""
+
         @GroupRegistry.register("preserved", order=1)
         def my_calculator(df, available):
             return {"result": 42}
@@ -112,6 +114,7 @@ class TestGroupRegistryGet:
 
     def test_get_existing(self):
         """Get existing group."""
+
         @GroupRegistry.register("existing", order=1)
         def calc(df, available):
             return {}
@@ -127,6 +130,7 @@ class TestGroupRegistryGet:
 
     def test_get_calculator_existing(self):
         """Get calculator for existing group."""
+
         @GroupRegistry.register("with_calc", order=1)
         def calc_func(df, available):
             return {"val": 123}
@@ -153,6 +157,7 @@ class TestGroupRegistryOrdering:
         Note: after clear(), __ensure_initialized() loads production groups too.
         We verify the relative ordering of our test groups among all groups.
         """
+
         @GroupRegistry.register("c", order=300)
         def calc_c(df, available):
             return {}
@@ -174,6 +179,7 @@ class TestGroupRegistryOrdering:
 
     def test_get_ordered_items(self):
         """get_ordered_items returns list of tuples including test groups."""
+
         @GroupRegistry.register("x_test", order=200)
         def calc_x(df, available):
             return {}
@@ -185,7 +191,9 @@ class TestGroupRegistryOrdering:
         items = GroupRegistry.get_ordered_items()
 
         # Extract our test groups (production groups may also be present)
-        test_items = [(name, calc) for name, calc in items if name in {"x_test", "y_test"}]
+        test_items = [
+            (name, calc) for name, calc in items if name in {"x_test", "y_test"}
+        ]
         assert len(test_items) == 2
         assert test_items[0][0] == "y_test"  # First by order (100)
         assert test_items[1][0] == "x_test"  # Second by order (200)
@@ -200,6 +208,7 @@ class TestGroupRegistryUtilities:
 
     def test_get_all_names(self):
         """get_all_names returns list of names."""
+
         @GroupRegistry.register("g1", order=1)
         def calc_g1(df, available):
             return {}
@@ -215,6 +224,7 @@ class TestGroupRegistryUtilities:
 
     def test_get_dependencies(self):
         """get_dependencies returns dependency list."""
+
         @GroupRegistry.register("with_deps", order=1, dependencies=["dep1", "dep2"])
         def calc(df, available):
             return {}
@@ -230,11 +240,12 @@ class TestGroupRegistryUtilities:
 
     def test_get_metadata(self):
         """get_metadata returns group info."""
+
         @GroupRegistry.register(
             "meta_group",
             order=5,
             dependencies=["dep1", "dep2"],
-            description="Test description"
+            description="Test description",
         )
         def calc_meta(df, available):
             return {}
@@ -253,6 +264,7 @@ class TestGroupRegistryUtilities:
 
     def test_get_all_metadata(self):
         """get_all_metadata returns metadata for all groups."""
+
         @GroupRegistry.register("g1", order=1)
         def calc_g1(df, available):
             return {}
@@ -270,6 +282,7 @@ class TestGroupRegistryUtilities:
 
     def test_clear(self):
         """clear removes all registrations."""
+
         @GroupRegistry.register("temp", order=1)
         def calc_temp(df, available):
             return {}
@@ -289,6 +302,7 @@ class TestConvenienceFunctions:
 
     def test_get_ordered_groups(self):
         """get_ordered_groups returns list of (name, calculator) including test group."""
+
         @GroupRegistry.register("x_unique_test", order=1)
         def calc_x(df, available):
             return {"x": 1}
@@ -303,6 +317,7 @@ class TestConvenienceFunctions:
 
     def test_get_group_calculator_function(self):
         """get_group_calculator is shortcut for GroupRegistry."""
+
         @GroupRegistry.register("y", order=1)
         def calc_y(df, available):
             return {"val": 1}
@@ -314,6 +329,7 @@ class TestConvenienceFunctions:
 
     def test_get_group_order(self):
         """get_group_order returns group's order."""
+
         @GroupRegistry.register("ordered", order=42)
         def calc(df, available):
             return {}

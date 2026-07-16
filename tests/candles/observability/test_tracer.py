@@ -9,8 +9,12 @@ from pathlib import Path
 from src.logging.context import ContextFilter, get_current_run_id
 from src.logging.formatters import JsonFormatter
 
-_TRACER_PATH = Path(__file__).parents[3] / "src" / "candles" / "observability" / "tracer.py"
-_TRACER_SPEC = importlib.util.spec_from_file_location("test_candles_tracer", _TRACER_PATH)
+_TRACER_PATH = (
+    Path(__file__).parents[3] / "src" / "candles" / "observability" / "tracer.py"
+)
+_TRACER_SPEC = importlib.util.spec_from_file_location(
+    "test_candles_tracer", _TRACER_PATH
+)
 assert _TRACER_SPEC is not None
 assert _TRACER_SPEC.loader is not None
 tracer = importlib.util.module_from_spec(_TRACER_SPEC)

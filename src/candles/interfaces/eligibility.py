@@ -32,7 +32,9 @@ class EligibilityRecord:
 
 async def refresh_eligibility(*, evaluator_run_id: str | None = None) -> dict[str, int]:
     run_id = evaluator_run_id or f"feature-eligibility-{uuid4()}"
-    policies = build_timeframe_policies(get_settings().features.warmup_bars_by_timeframe)
+    policies = build_timeframe_policies(
+        get_settings().features.warmup_bars_by_timeframe
+    )
     async with get_db_session() as session:
         repository = EligibilitySqlRepository(session, policies=policies)
         summary = await RefreshEligibilityUseCase(
@@ -47,39 +49,51 @@ async def refresh_eligibility(*, evaluator_run_id: str | None = None) -> dict[st
 async def _push_refresh_metrics(session: Any) -> None:
     try:
         state_rows = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT timeframe, state, COUNT(*) AS count
                     FROM ops.feature_eligibility
                     GROUP BY timeframe, state
                     """
+                    )
                 )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         eligible_rows = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT timeframe, COUNT(*) AS count
                     FROM ops.feature_eligibility
                     WHERE can_compute_features = TRUE
                     GROUP BY timeframe
                     """
+                    )
                 )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         transition_rows = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT timeframe, from_state, to_state
                     FROM ops.feature_eligibility_transitions
                     WHERE occurred_at >= now() - interval '1 day'
                     """
+                    )
                 )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         invalid_total = (
             await session.execute(
                 text(
@@ -102,9 +116,10 @@ async def _push_refresh_metrics(session: Any) -> None:
             )
         ).scalar()
         warmup_rows = (
-            await session.execute(
-                text(
-                    """
+            (
+                await session.execute(
+                    text(
+                        """
                     SELECT
                         symbol,
                         timeframe,
@@ -112,9 +127,12 @@ async def _push_refresh_metrics(session: Any) -> None:
                     FROM ops.feature_eligibility
                     WHERE required_bars > 0
                     """
+                    )
                 )
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         push_feature_eligibility_metrics(
             {
                 "state_counts": {

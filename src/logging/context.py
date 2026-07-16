@@ -125,7 +125,9 @@ class ContextFilter(logging.Filter):
         record.run_id = context.run_id or "-"
         record.symbol = context.symbol or "-"
         record.timeframe = context.timeframe or "-"
-        record.component = getattr(record, "component", None) or context.component or "-"
+        record.component = (
+            getattr(record, "component", None) or context.component or "-"
+        )
         trace_id, span_id = _get_active_trace_ids()
         record.trace_id = (
             getattr(record, "trace_id", None) or context.trace_id or trace_id

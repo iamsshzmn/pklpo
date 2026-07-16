@@ -29,14 +29,20 @@ class SyncMarketDataStub:
             return self.candles_batches.pop(0)
         return []
 
-    async def fetch_instruments(self, instrument_type: str = "SWAP") -> list[dict[str, Any]]:
+    async def fetch_instruments(
+        self, instrument_type: str = "SWAP"
+    ) -> list[dict[str, Any]]:
         self.fetch_instruments_calls.append(instrument_type)
         return self.instrument_rows
 
-    async def fetch_funding_rates(self, instrument_ids: list[str]) -> dict[str, dict[str, Any]]:
+    async def fetch_funding_rates(
+        self, instrument_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
         return {}
 
-    async def fetch_open_interest(self, instrument_ids: list[str]) -> dict[str, dict[str, Any]]:
+    async def fetch_open_interest(
+        self, instrument_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
         return {}
 
 
@@ -83,7 +89,9 @@ class InstrumentCatalogStub:
 
 
 def _retry_policy() -> RetryPolicy:
-    return RetryPolicy(max_retries=1, retry_delay=0.1, batch_size=3, random_uniform=lambda a, b: 0.0)
+    return RetryPolicy(
+        max_retries=1, retry_delay=0.1, batch_size=3, random_uniform=lambda a, b: 0.0
+    )
 
 
 @pytest.mark.asyncio
@@ -102,7 +110,9 @@ async def test_resolve_symbols_prefers_explicit_request() -> None:
 
 @pytest.mark.asyncio
 async def test_resolve_symbols_falls_back_to_curated_then_stops() -> None:
-    catalog = InstrumentCatalogStub(curated=["BTC-USDT-SWAP"], cached=["CACHED"], refreshed=["REFRESHED"])
+    catalog = InstrumentCatalogStub(
+        curated=["BTC-USDT-SWAP"], cached=["CACHED"], refreshed=["REFRESHED"]
+    )
     use_case = RunCandleSyncUseCase(
         market_data=SyncMarketDataStub(),
         candle_store=SyncStoreStub(),
@@ -152,7 +162,9 @@ async def test_sync_bar_filters_already_stored_rows_before_upsert() -> None:
 @pytest.mark.asyncio
 async def test_filter_supported_symbols_keeps_input_on_market_adapter_failure() -> None:
     class FailingMarketData(SyncMarketDataStub):
-        async def fetch_instruments(self, instrument_type: str = "SWAP") -> list[dict[str, Any]]:
+        async def fetch_instruments(
+            self, instrument_type: str = "SWAP"
+        ) -> list[dict[str, Any]]:
             raise RuntimeError("temporary failure")
 
     use_case = RunCandleSyncUseCase(
@@ -162,7 +174,9 @@ async def test_filter_supported_symbols_keeps_input_on_market_adapter_failure() 
         retry_policy=_retry_policy(),
     )
 
-    result = await use_case._filter_supported_symbols(["BTC-USDT-SWAP", "ETH-USDT-SWAP"])
+    result = await use_case._filter_supported_symbols(
+        ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
+    )
 
     assert result == ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
 

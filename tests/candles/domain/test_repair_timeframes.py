@@ -19,7 +19,9 @@ from src.candles.domain.repair_timeframes import (
 )
 from src.candles.domain.timeframes import TF_TO_MS
 
-FIXED_STEP_TIMEFRAMES = [timeframe for timeframe in TF_TO_MS if is_fixed_step_timeframe(timeframe)]
+FIXED_STEP_TIMEFRAMES = [
+    timeframe for timeframe in TF_TO_MS if is_fixed_step_timeframe(timeframe)
+]
 
 UTC_CAL = StorageCalendar()
 
@@ -42,7 +44,9 @@ def test_fixed_step_floor_and_next_open_invariant(
 
 
 def test_monthly_floor_and_next_open_across_year_boundary() -> None:
-    timestamp_ms = int(datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC).timestamp() * 1000)
+    timestamp_ms = int(
+        datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC).timestamp() * 1000
+    )
 
     floored = floor_to_timeframe(timestamp_ms, "1M")
     next_open = expected_next_open(floored, "1M")
@@ -64,12 +68,8 @@ def test_window_padding_fixed_step(timeframe: str, bars: int, expected_ms: int) 
     assert window_padding(timeframe, bars) == expected_ms
 
 
-def test_window_padding_monthly_uses_calendar_steps() -> None:
-    jan = datetime(2026, 1, 1, tzinfo=UTC)
-    feb = datetime(2026, 2, 1, tzinfo=UTC)
-    mar = datetime(2026, 3, 1, tzinfo=UTC)
-
-    assert window_padding("1M", 2) == int((feb - jan + (mar - feb)).total_seconds() * 1000)
+def test_window_padding_monthly_uses_conservative_31_day_steps() -> None:
+    assert window_padding("1M", 2) == 62 * 86_400_000
 
 
 def test_build_last_n_closed_window_excludes_current_open_bar_for_fixed_step() -> None:

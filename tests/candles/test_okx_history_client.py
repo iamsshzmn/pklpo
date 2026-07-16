@@ -43,14 +43,20 @@ async def test_history_client_paginates_backward_deduplicates_and_sorts() -> Non
         end_ts_ms=300_000,
     )
 
-    assert [candle["ts"] for candle in candles] == [0, 60_000, 120_000, 180_000, 240_000]
+    assert [candle["ts"] for candle in candles] == [
+        0,
+        60_000,
+        120_000,
+        180_000,
+        240_000,
+    ]
     assert calls == [
         {
             "path": "/api/v5/market/history-candles",
             "params": {
                 "instId": "BTC-USDT-SWAP",
                 "bar": "1m",
-                "before": "180000",
+                "before": "120000",
                 "after": "300000",
                 "limit": "2",
             },
@@ -60,7 +66,7 @@ async def test_history_client_paginates_backward_deduplicates_and_sorts() -> Non
             "params": {
                 "instId": "BTC-USDT-SWAP",
                 "bar": "1m",
-                "before": "60000",
+                "before": "0",
                 "after": "180000",
                 "limit": "2",
             },
@@ -109,6 +115,7 @@ async def test_history_client_stops_on_empty_page() -> None:
                 "endpoint": "history-candles",
                 "symbol": "BTC-USDT-SWAP",
                 "timeframe": "1m",
+                "okx_bar": "1m",
                 "requested_start_ts_ms": 0,
                 "requested_end_ts_ms": 180_000,
                 "received_rows": 0,
@@ -158,6 +165,7 @@ async def test_history_client_retries_partial_pages_before_emitting_partial() ->
             "endpoint": "history-candles",
             "symbol": "BTC-USDT-SWAP",
             "timeframe": "1m",
+            "okx_bar": "1m",
             "requested_start_ts_ms": 0,
             "requested_end_ts_ms": 180_000,
             "received_rows": 2,
@@ -232,7 +240,7 @@ async def test_history_client_uses_okx_history_candles_parameter_direction() -> 
             "params": {
                 "instId": "BTC-USDT-SWAP",
                 "bar": "1m",
-                "before": "180000",
+                "before": "120000",
                 "after": "300000",
                 "limit": "2",
             },

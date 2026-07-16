@@ -363,6 +363,48 @@ groups:
           summary: "Instrument warm-up did not progress to zero remaining bars"
           description: "pklpo_feature_warmup_bars_remaining stayed above zero for at least 6h. Check ingestion gaps and feature eligibility state for {{ $labels.symbol }} {{ $labels.timeframe }}."
 
+      - uid: pklpo-recovery-instrument-state-unknown
+        title: "Recovery Instrument State Unknown"
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: PostgresPKLPO
+            model:
+              rawQuery: true
+              rawSql: |
+                SELECT count(*)::double precision AS unknown_state_decisions
+                FROM ops.pipeline_recovery_decisions
+                WHERE controller_dag_id = 'pipeline_recovery_controller'
+                  AND reason = 'instrument_state_unknown'
+                  AND created_at >= now() - interval '15 minutes'
+              format: table
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+              refId: C
+        for: 5m
+        labels:
+          severity: warning
+          team: data
+          downstream: "true"
+        annotations:
+          summary: "Recovery skipped an instrument because metadata state is unknown"
+          description: "At least one pipeline_recovery_controller run_id emitted reason=instrument_state_unknown in ops.pipeline_recovery_decisions during the last 15m. Refresh instrument metadata before assuming the symbol is non-recoverable."
+          runbook: "Check ops.pipeline_recovery_decisions by run_id, then run update-list and retry pipeline_recovery_controller."
+
       # -----------------------------------------------------------------------
       # Pipeline alerts counter (critical)
       # -----------------------------------------------------------------------

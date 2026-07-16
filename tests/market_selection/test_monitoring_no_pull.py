@@ -110,7 +110,10 @@ def test_push_function_emits_key_gauges() -> None:
     assert "run_success" in fn_body
     assert "duration_seconds" in fn_body
     assert "eligible_count" in fn_body
-    assert "job_name=\"market_selection\"" in fn_body or 'job_name="market_selection"' in fn_body
+    assert (
+        'job_name="market_selection"' in fn_body
+        or 'job_name="market_selection"' in fn_body
+    )
 
 
 def test_no_start_http_server_in_factory() -> None:

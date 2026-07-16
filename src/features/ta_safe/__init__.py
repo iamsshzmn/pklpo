@@ -130,6 +130,66 @@ def safe_ta_with_status(
     return _normalize_to_df(out, name, df, **kwargs), CalculationStatus.FALLBACK_USED
 
 
+_LEGACY_NAME_TO_INDICATOR = {
+    "rsi_val": "rsi",
+    "macd_df": "macd",
+    "bbands_df": "bbands",
+    "kc_df": "kc",
+    "atr_val": "atr",
+    "stoch_df": "stoch",
+    "adx_df": "adx",
+    "ema_val": "ema",
+    "sma_val": "sma",
+    "stochrsi_df": "stochrsi",
+    "ao_val": "ao",
+    "apo_val": "apo",
+    "bop_val": "bop",
+    "kdj_df": "kdj",
+    "rsx_val": "rsx",
+    "tsi_df": "tsi",
+    "fisher_df": "fisher",
+    "slope_val": "slope",
+    "bias_val": "bias",
+    "brar_df": "brar",
+    "cfo_val": "cfo",
+    "cg_val": "cg",
+    "coppock_val": "coppock",
+    "er_val": "er",
+    "eri_df": "eri",
+    "inertia_val": "inertia",
+    "pgo_val": "pgo",
+    "psl_val": "psl",
+    "pvo_df": "pvo",
+    "qqe_df": "qqe",
+    "rvgi_df": "rvgi",
+    "smi_df": "smi",
+    "uo_val": "uo",
+    "obv_val": "obv",
+    "ad_val": "ad",
+    "adosc_val": "adosc",
+    "cmf_val": "cmf",
+    "efi_val": "efi",
+    "eom_val": "eom",
+    "mfi_val": "mfi",
+    "nvi_val": "nvi",
+    "pvi_val": "pvi",
+    "pvt_val": "pvt",
+    "vwap_val": "vwap",
+}
+
+
+def _make_legacy_indicator_function(indicator_name: str):
+    def _legacy_indicator(df: pd.DataFrame, /, **kwargs: object) -> pd.DataFrame:
+        return safe_ta_with_fallback(df, indicator_name, **kwargs)
+
+    _legacy_indicator.__name__ = indicator_name
+    return _legacy_indicator
+
+
+for _legacy_name, _indicator_name in _LEGACY_NAME_TO_INDICATOR.items():
+    globals()[_legacy_name] = _make_legacy_indicator_function(_indicator_name)
+
+
 __all__ = [
     "CalculationStatus",
     "FeatureCalcError",
@@ -138,3 +198,4 @@ __all__ = [
     "safe_ta_with_fallback",
     "safe_ta_with_status",
 ]
+__all__.extend(_LEGACY_NAME_TO_INDICATOR)

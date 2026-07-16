@@ -118,7 +118,9 @@ class TestFeaturesIntegration:
                     # Check that values are different (not identical)
                     assert not np.allclose(
                         original_subset.values, normalized_subset.values, rtol=1e-10
-                    ), f"Feature {feature} values should be different after normalization"
+                    ), (
+                        f"Feature {feature} values should be different after normalization"
+                    )
 
     def test_phase_2_required_features(self, sample_ohlcv_data):
         """Test that all required features for Phase 2 are available and working."""
@@ -155,9 +157,9 @@ class TestFeaturesIntegration:
             elif feature in ["atr_14", "parkinson_vol"]:
                 assert feature_values.min() >= 0, f"{feature} should be >= 0"
             elif feature in ["ema_12", "ema_26"]:
-                assert (
-                    feature_values.min() >= 0
-                ), f"{feature} should be >= 0 for positive prices"
+                assert feature_values.min() >= 0, (
+                    f"{feature} should be >= 0 for positive prices"
+                )
 
     def test_online_offline_parity(self, sample_ohlcv_data):
         """Online и офлайн расчёты дают одинаковые результаты в пределах ε."""
@@ -248,20 +250,20 @@ class TestFeaturesIntegration:
         normalized_time = time.time() - start_time
 
         # Performance assertions (adjust thresholds as needed)
-        assert (
-            single_feature_time < 1.0
-        ), f"Single feature calculation too slow: {single_feature_time:.2f}s"
-        assert (
-            multiple_features_time < 2.0
-        ), f"Multiple features calculation too slow: {multiple_features_time:.2f}s"
-        assert (
-            normalized_time < 2.0
-        ), f"Normalized calculation too slow: {normalized_time:.2f}s"
+        assert single_feature_time < 1.0, (
+            f"Single feature calculation too slow: {single_feature_time:.2f}s"
+        )
+        assert multiple_features_time < 2.0, (
+            f"Multiple features calculation too slow: {multiple_features_time:.2f}s"
+        )
+        assert normalized_time < 2.0, (
+            f"Normalized calculation too slow: {normalized_time:.2f}s"
+        )
 
         # Multiple features should not be much slower than single feature
-        assert (
-            multiple_features_time < single_feature_time * 3
-        ), f"Multiple features scaling poorly: {multiple_features_time:.2f}s vs {single_feature_time:.2f}s"
+        assert multiple_features_time < single_feature_time * 3, (
+            f"Multiple features scaling poorly: {multiple_features_time:.2f}s vs {single_feature_time:.2f}s"
+        )
 
     def test_memory_usage(self, sample_ohlcv_data):
         """Test memory usage of feature calculations."""
@@ -286,9 +288,9 @@ class TestFeaturesIntegration:
         memory_increase = final_memory - initial_memory
 
         # Memory increase should be reasonable (less than 100MB for 200 rows)
-        assert (
-            memory_increase < 100
-        ), f"Memory usage too high: {memory_increase:.1f}MB increase"
+        assert memory_increase < 100, (
+            f"Memory usage too high: {memory_increase:.1f}MB increase"
+        )
 
         # Clean up
         del features

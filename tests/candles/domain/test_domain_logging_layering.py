@@ -15,10 +15,13 @@ import sys
 import pytest
 
 
-def _purge(prefixes: list[str]) -> None:
-    for name in list(sys.modules):
-        if any(name == p or name.startswith(p + ".") for p in prefixes):
-            del sys.modules[name]
+def _purge_modules(names: list[str]) -> None:
+    for name in names:
+        sys.modules.pop(name, None)
+        parent_name, _, child_name = name.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        if parent is not None and hasattr(parent, child_name):
+            delattr(parent, child_name)
 
 
 def test_risk_limits_loads_without_pulling_infrastructure() -> None:
@@ -29,7 +32,8 @@ def test_risk_limits_loads_without_pulling_infrastructure() -> None:
     ``from ..infrastructure...`` raised (adapters → ccxt), so the module never
     finished loading. With the fix it loads cleanly and keeps its logger name.
     """
-    _purge(["src.candles.domain", "src.candles.infrastructure"])
+    _purge_modules(["src.candles.domain.risk_limits"])
+    before_modules = set(sys.modules)
 
     # Tolerate unrelated optional deps pulled by *other* domain modules during
     # package __init__ (e.g. pydantic via sync_config); only the layering
@@ -47,23 +51,31 @@ def test_risk_limits_loads_without_pulling_infrastructure() -> None:
     # get_logger("risk_limits") -> src.logging.get_logger("market_meta.risk_limits"),
     # which the project logger namespaces under "pklpo.".
     assert module.logger.name == "pklpo.market_meta.risk_limits"
-    assert "src.candles.infrastructure" not in sys.modules
-    assert "src.candles.infrastructure.logging_config" not in sys.modules
+    imported_modules = set(sys.modules) - before_modules
+    assert "src.candles.infrastructure" not in imported_modules
+    assert "src.candles.infrastructure.logging_config" not in imported_modules
 
 
 def test_domain_modules_avoid_infrastructure_and_keep_logger_names() -> None:
     """Full acceptance check; needs the project dependency set (CI)."""
     pytest.importorskip("pydantic")
 
-    _purge(["src.candles.domain", "src.candles.infrastructure"])
+    _purge_modules(
+        [
+            "src.candles.domain.risk_limits",
+            "src.candles.domain.validators",
+        ]
+    )
+    before_modules = set(sys.modules)
 
     import src.candles.domain.risk_limits as risk_limits
     import src.candles.domain.validators as validators
 
     assert validators.logger.name == "pklpo.market_meta.validators"
     assert risk_limits.logger.name == "pklpo.market_meta.risk_limits"
-    assert "src.candles.infrastructure" not in sys.modules
-    assert "src.candles.infrastructure.logging_config" not in sys.modules
+    imported_modules = set(sys.modules) - before_modules
+    assert "src.candles.infrastructure" not in imported_modules
+    assert "src.candles.infrastructure.logging_config" not in imported_modules
     assert not any(
-        m.endswith("candles.observability.prometheus") for m in sys.modules
+        m.endswith("candles.observability.prometheus") for m in imported_modules
     )

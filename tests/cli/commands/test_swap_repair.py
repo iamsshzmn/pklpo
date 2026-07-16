@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from argparse import ArgumentParser
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -82,12 +83,20 @@ async def test_handle_calls_run_swap_repair_for_each_timeframe_and_prints_json(
             "verification_method": "plan-only",
         }
 
+    @asynccontextmanager
+    async def fake_job_lock(*args: object, **kwargs: object):
+        del args, kwargs
+        yield
+
+    monkeypatch.setattr(swap_repair, "job_lock", fake_job_lock)
     monkeypatch.setattr(swap_repair, "run_swap_repair", fake_run_swap_repair)
     monkeypatch.setattr(
         swap_repair,
         "datetime",
         SimpleNamespace(
-            now=lambda tz=None: __import__("datetime").datetime(2026, 4, 1, 0, 30, tzinfo=tz),
+            now=lambda tz=None: __import__("datetime").datetime(
+                2026, 4, 1, 0, 30, tzinfo=tz
+            ),
             fromisoformat=__import__("datetime").datetime.fromisoformat,
         ),
     )

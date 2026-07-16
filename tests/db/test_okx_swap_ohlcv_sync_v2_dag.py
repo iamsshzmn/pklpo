@@ -42,7 +42,9 @@ def _load_okx_swap_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleTy
 
     airflow_operators_python = types.ModuleType("airflow.operators.python")
     airflow_operators_python.PythonOperator = _DummyOperator
-    monkeypatch.setitem(sys.modules, "airflow.operators.python", airflow_operators_python)
+    monkeypatch.setitem(
+        sys.modules, "airflow.operators.python", airflow_operators_python
+    )
 
     common = types.ModuleType("_common")
     common.airflow_log_context = lambda context, **kwargs: nullcontext("run-id")
@@ -63,7 +65,9 @@ def _load_okx_swap_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleTy
     candles_interfaces.run_swap_sync = object()
     monkeypatch.setitem(sys.modules, "src.candles.interfaces", candles_interfaces)
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/okx_swap_ohlcv_sync_v2.py")
+    module_path = (
+        Path(__file__).parents[2] / "ops/airflow/dags/okx_swap_ohlcv_sync_v2.py"
+    )
     module_name = "tests.db._okx_swap_ohlcv_sync_v2_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None

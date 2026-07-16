@@ -45,7 +45,14 @@ class _MarketDataStub:
 
     async def fetch_candles(self, **kwargs):
         return [
-            {"ts": 123, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10},
+            {
+                "ts": 60_000,
+                "open": 1,
+                "high": 2,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 10,
+            },
         ]
 
     async def fetch_instruments(self, instrument_type: str = "SWAP"):
@@ -148,13 +155,13 @@ async def test_repository_upsert_candles_uses_aware_utc_fetched_at(
         symbol="BTC-USDT-SWAP",
         timeframe="1m",
         candles=[
-            {"ts": 123, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}
+            {"ts": 60_000, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}
         ],
         additional_data={},
     )
 
     assert saved == 1
     assert session.committed is True
-    _, params = session.execute_calls[0]
+    _, params = session.execute_calls[-1]
     payload = params[0]
     assert payload["fetched_at"].tzinfo is UTC

@@ -58,10 +58,15 @@ def _raw_requirement_from_spec(name: str, params: dict[str, object]) -> int:
 
 
 def _is_period_key(key: str) -> bool:
-    return key == "period" or key.endswith("_period") or key in {
-        "length",
-        "window",
-        "fast",
-        "slow",
-        "signal",
-    }
+    return (
+        key == "period"
+        or key.endswith("_period")
+        or key
+        in {
+            "length",
+            "window",
+            "fast",
+            "slow",
+            "signal",
+        }
+    )

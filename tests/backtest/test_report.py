@@ -54,7 +54,11 @@ def _make_config(
     )
 
     model_params = (
-        {"base_model": "RandomForestClassifier", "n_estimators": 100, "cv": "PurgedKFold(5)"}
+        {
+            "base_model": "RandomForestClassifier",
+            "n_estimators": 100,
+            "cv": "PurgedKFold(5)",
+        }
         if with_model_params
         else None
     )
@@ -211,7 +215,7 @@ def test_report_empty_config() -> None:
 
     assert isinstance(report, str)
     assert ctx.run_id in report
-    assert "не заданы" in report  # Placeholder для отсутствующих данных
+    assert "Model parameters not set" in report
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +241,7 @@ def test_metrics_cli_format_table() -> None:
     assert "DSR" in table
     assert "0.8100" in table
     assert "-15.00%" in table  # max_drawdown as %
-    assert "58.00%" in table   # hit_rate as %
+    assert "58.00%" in table  # hit_rate as %
 
 
 def test_metrics_cli_none_values() -> None:

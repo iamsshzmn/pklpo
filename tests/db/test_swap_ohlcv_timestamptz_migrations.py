@@ -17,8 +17,14 @@ def test_create_swap_ohlcv_migration_uses_timestamptz() -> None:
 
 
 def test_recreate_swap_ohlcv_parent_uses_timestamptz() -> None:
-    assert "fetched_at TIMESTAMPTZ DEFAULT NOW()" in CREATE_PARTITIONED_SWAP_OHLCV_PARENT_SQL
-    assert "created_at TIMESTAMPTZ DEFAULT NOW()" in CREATE_PARTITIONED_SWAP_OHLCV_PARENT_SQL
+    assert (
+        "fetched_at TIMESTAMPTZ DEFAULT NOW()"
+        in CREATE_PARTITIONED_SWAP_OHLCV_PARENT_SQL
+    )
+    assert (
+        "created_at TIMESTAMPTZ DEFAULT NOW()"
+        in CREATE_PARTITIONED_SWAP_OHLCV_PARENT_SQL
+    )
 
 
 def test_timestamptz_fix_migration_treats_existing_values_as_utc() -> None:

@@ -104,7 +104,7 @@ def _build(symbols, candle_store, max_concurrent=1):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("n_symbols,max_concurrent", [(5, 5), (10, 5), (50, 10)])
+@pytest.mark.parametrize(("n_symbols", "max_concurrent"), [(5, 5), (10, 5), (50, 10)])
 async def test_concurrent_sync_all_symbols_processed(
     monkeypatch: pytest.MonkeyPatch,
     n_symbols: int,
@@ -112,7 +112,7 @@ async def test_concurrent_sync_all_symbols_processed(
 ) -> None:
     symbols = _make_symbols(n_symbols)
     store = _CandleStoreOK()
-    use_case, market = _build(symbols, store, max_concurrent)
+    use_case, _market = _build(symbols, store, max_concurrent)
 
     result = await use_case.run(
         SyncJobRequest(

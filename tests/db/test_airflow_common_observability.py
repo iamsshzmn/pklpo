@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 from src.logging.context import get_current_context, get_current_run_id
 
-_COMMON_DIR = Path("D:/projects/pklpo/ops/airflow/dags/_common")
+_COMMON_DIR = Path(__file__).parents[2] / "ops/airflow/dags/_common"
 
 
 def _load_common_module(module_name: str) -> types.ModuleType:
@@ -28,7 +28,9 @@ def _load_common_module(module_name: str) -> types.ModuleType:
     return module
 
 
-def test_get_dag_env_defaults_enable_pushgateway(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_dag_env_defaults_enable_pushgateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     env_module = _load_common_module("env")
 
     class _BaseHook:

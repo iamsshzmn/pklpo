@@ -13,7 +13,7 @@ REDUNDANT_SWAP_OHLCV_INDEXES = (
     "idx_swap_ohlcv_p_lookup",
 )
 
-DROP_REDUNDANT_SWAP_OHLCV_INDEXES_SQL = """
+VALIDATE_REDUNDANT_SWAP_OHLCV_INDEXES_SQL = """
 DO $$
 DECLARE
     valid_indexes TEXT[] := ARRAY[
@@ -38,7 +38,7 @@ BEGIN
           AND i.indpred IS NULL
           AND i.indexprs IS NULL
           AND ARRAY(
-              SELECT a.attname
+              SELECT a.attname::text
               FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
               JOIN pg_attribute a
                 ON a.attrelid = i.indrelid
@@ -53,11 +53,18 @@ BEGIN
             bad_indexes;
     END IF;
 END
-$$;
-
-DROP INDEX IF EXISTS idx_swap_ohlcv_p_symbol_timeframe_timestamp;
-DROP INDEX IF EXISTS idx_swap_ohlcv_p_lookup
+$$
 """
+
+DROP_REDUNDANT_SWAP_OHLCV_INDEXES_STATEMENTS = (
+    VALIDATE_REDUNDANT_SWAP_OHLCV_INDEXES_SQL,
+    "DROP INDEX IF EXISTS idx_swap_ohlcv_p_symbol_timeframe_timestamp",
+    "DROP INDEX IF EXISTS idx_swap_ohlcv_p_lookup",
+)
+
+DROP_REDUNDANT_SWAP_OHLCV_INDEXES_SQL = ";\n\n".join(
+    DROP_REDUNDANT_SWAP_OHLCV_INDEXES_STATEMENTS
+)
 
 
 async def migrate_drop_redundant_swap_ohlcv_indexes() -> None:
@@ -73,7 +80,8 @@ async def migrate_drop_redundant_swap_ohlcv_indexes() -> None:
     """
     async with get_db_session() as session:
         try:
-            await session.execute(text(DROP_REDUNDANT_SWAP_OHLCV_INDEXES_SQL))
+            for statement in DROP_REDUNDANT_SWAP_OHLCV_INDEXES_STATEMENTS:
+                await session.execute(text(statement))
             await session.commit()
             logger.info("redundant swap_ohlcv_p lookup indexes dropped")
         except Exception:

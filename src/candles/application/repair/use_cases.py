@@ -5,8 +5,6 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from src.pklpo_platform.observability.error_types import classify_error_type
-
 from src.candles.domain.repair import (
     BackfillPlan,
     GapTask,
@@ -25,6 +23,7 @@ from src.candles.domain.repair import (
     validate_repair_candles,
 )
 from src.candles.domain.repair_timeframes import window_padding
+from src.pklpo_platform.observability.error_types import classify_error_type
 
 from .dto import RepairCommand, RepairResult
 from .progress import NoProgressTracker
@@ -135,7 +134,9 @@ class _BaseRepairUseCase:
 
         for task in plan.tasks:
             padding_ms = window_padding(plan.timeframe, command.padding_bars)
-            request_start_ts = max(plan.window.start_ts_ms, task.start_ts_ms - padding_ms)
+            request_start_ts = max(
+                plan.window.start_ts_ms, task.start_ts_ms - padding_ms
+            )
             request_end_ts = min(plan.window.end_ts_ms, task.end_ts_ms + padding_ms)
             fetch_latency_ms = 0
             db_write_latency_ms = 0
@@ -153,9 +154,7 @@ class _BaseRepairUseCase:
                         end_ts_ms=request_end_ts,
                     )
                 finally:
-                    fetch_latency_ms = int(
-                        (time.perf_counter() - fetch_started) * 1000
-                    )
+                    fetch_latency_ms = int((time.perf_counter() - fetch_started) * 1000)
                 fetch_calls += 1
                 fetched_rows = len(candles)
                 total_fetched += fetched_rows
@@ -406,7 +405,10 @@ class RunHistoricalBackfillUseCase(_BaseRepairUseCase):
     async def _build_plan(self, command: RepairCommand) -> RepairPlan:
         window = self._normalized_window(command)
         tasks = detect_gap_tasks(
-            timestamps=[], timeframe=command.timeframe, window=window, calendar=self._calendar
+            timestamps=[],
+            timeframe=command.timeframe,
+            window=window,
+            calendar=self._calendar,
         )
         return BackfillPlan(
             strategy=RepairStrategy.BACKFILL,

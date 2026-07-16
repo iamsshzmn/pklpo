@@ -58,10 +58,21 @@ def _load_controller_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.Module
     # Stub _common (DAG-local package, not importable from test process)
     import asyncio
 
+    def _get_or_create_event_loop() -> asyncio.AbstractEventLoop:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                raise RuntimeError("closed")
+            return loop
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop
+
     _common_mod = types.ModuleType("_common")
     _common_mod.get_dag_env = lambda: "local"  # type: ignore[attr-defined]
     _common_mod.setup_env = lambda env: None  # type: ignore[attr-defined]
-    _common_mod.get_or_create_event_loop = asyncio.get_event_loop  # type: ignore[attr-defined]
+    _common_mod.get_or_create_event_loop = _get_or_create_event_loop  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "_common", _common_mod)
 
     module_path = (
@@ -228,6 +239,7 @@ def test_choose_recovery_action_picks_first_triggered_action(
                         "symbol": "BTC-USDT-SWAP",
                         "timeframe": "1H",
                         "target_dag_id": "okx_swap_ohlcv_bootstrap_v1",
+                        "controller_decision_id": 42,
                         "trigger_conf": {"symbols": ["BTC-USDT-SWAP"]},
                     }
                 ]
@@ -239,3 +251,73 @@ def test_choose_recovery_action_picks_first_triggered_action(
     assert result["branch"] == "trigger_bootstrap"
     assert result["target_dag_id"] == "okx_swap_ohlcv_bootstrap_v1"
     assert result["action_kind"] == "bootstrap"
+    assert result["controller_decision_id"] == 42
+
+
+def test_trigger_repair_updates_selected_decision_with_target_run_id(
+    controller_dag_module: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the selected candidate is marked triggered after downstream start."""
+    triggered_run_id = "manual__2026-06-25T01:02:03+00:00"
+    marked: list[dict[str, Any]] = []
+
+    class _TriggerDagRunOperator:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.kwargs = kwargs
+
+        def execute(self, context: dict[str, Any]) -> dict[str, str]:
+            context["ti"].xcom_push(key="trigger_run_id", value=triggered_run_id)
+            return {"run_id": triggered_run_id}
+
+    airflow_operators_trigger = types.ModuleType("airflow.operators.trigger_dagrun")
+    airflow_operators_trigger.TriggerDagRunOperator = _TriggerDagRunOperator
+    monkeypatch.setitem(
+        sys.modules, "airflow.operators.trigger_dagrun", airflow_operators_trigger
+    )
+
+    class _Repo:
+        async def mark_trigger_result(self, **kwargs: Any) -> None:
+            marked.append(kwargs)
+
+    monkeypatch.setattr(
+        controller_dag_module,
+        "_get_recovery_decision_repository",
+        lambda: _Repo(),
+    )
+
+    class _TI:
+        def __init__(self) -> None:
+            self.pushed: dict[str, Any] = {}
+
+        def xcom_pull(self, task_ids: str, key: str) -> Any:
+            if task_ids == "choose_recovery_action":
+                return {
+                    "target_dag_id": "okx_swap_repair_v1",
+                    "controller_decision_id": 42,
+                    "trigger_conf": {"symbols": ["BTC-USDT-SWAP"]},
+                }
+            if task_ids == "__trigger_repair_inner":
+                return self.pushed.get(key)
+            return None
+
+        def xcom_push(self, key: str, value: Any) -> None:
+            self.pushed[key] = value
+
+    ti = _TI()
+    result = controller_dag_module.task_trigger_repair(
+        ti=ti,
+        dag=controller_dag_module.dag,
+        dag_run=SimpleNamespace(run_id="controller-run"),
+        logical_date=None,
+    )
+
+    assert result["target_run_id"] == triggered_run_id
+    assert marked == [
+        {
+            "decision_id": 42,
+            "decision_status": "triggered",
+            "target_run_id": triggered_run_id,
+            "error": None,
+        }
+    ]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -379,9 +379,9 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
     class _MonthlyRepository:
         def __init__(self) -> None:
             self.timestamps = {
-                int(datetime(2026, 1, 1).timestamp() * 1000),
-                int(datetime(2026, 2, 1).timestamp() * 1000),
-                int(datetime(2026, 3, 1).timestamp() * 1000),
+                int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000),
+                int(datetime(2026, 2, 1, tzinfo=UTC).timestamp() * 1000),
+                int(datetime(2026, 3, 1, tzinfo=UTC).timestamp() * 1000),
             }
 
         async def get_coverage_bounds(
@@ -403,9 +403,7 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
             end_ts_ms: int,
         ) -> list[int]:
             del symbol, timeframe
-            return sorted(
-                ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms
-            )
+            return sorted(ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms)
 
         async def count_missing_timestamps(
             self,
@@ -421,9 +419,7 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
             while cursor < end_ts_ms:
                 expected.append(cursor)
                 cursor = expected_next_open(cursor, timeframe)
-            existing = {
-                ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms
-            }
+            existing = {ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms}
             return sum(1 for ts in expected if ts not in existing)
 
         async def selective_upsert_candles(
@@ -432,8 +428,10 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
             symbol: str,
             timeframe: str,
             candles: list[dict[str, Any]],
+            window: Any = None,
+            calendar: Any = None,
         ) -> int:
-            del symbol, timeframe
+            del symbol, timeframe, window, calendar
             written = 0
             for candle in candles:
                 ts = int(candle["timestamp"])
@@ -502,7 +500,8 @@ async def test_run_swap_repair_auto_apply_allows_calendar_bar_wider_than_planner
     )
 
     assert summary["timeframe"] == "1M"
-    assert summary["rows_written"] == 1
+    assert summary["rows_written"] == 0
+    assert summary["guardrail_violations"] == []
     assert summary["outcome"] == "success"
 
 

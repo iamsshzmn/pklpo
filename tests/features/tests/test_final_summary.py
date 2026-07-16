@@ -52,6 +52,7 @@ def test_memory_optimization_summary():
 
     try:
         from strategy import get_max_lookback_for_strategies
+
         from utils.memlog import force_cleanup, memory_monitor
 
         # Create test data
@@ -171,7 +172,7 @@ def test_memory_optimization_summary():
                 max_streaming_memory = max(max_streaming_memory, current_memory)
 
                 print(
-                    f"    Chunk {i+1}/{len(chunks)}: {current_memory:.2f} MB, shape: {chunk_copy.shape}"
+                    f"    Chunk {i + 1}/{len(chunks)}: {current_memory:.2f} MB, shape: {chunk_copy.shape}"
                 )
 
                 # Clean up after each chunk

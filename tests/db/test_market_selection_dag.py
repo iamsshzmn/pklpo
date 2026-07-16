@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -76,6 +76,7 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
         "OBSERVABILITY_JOB_NAME": job_name_default or "market_selection"
     }
     common.setup_env = lambda env: None  # type: ignore[attr-defined]
+    common.airflow_log_context = lambda context, **kwargs: nullcontext("run-id")  # type: ignore[attr-defined]
 
     class _Loop:
         @staticmethod
@@ -91,7 +92,7 @@ def _load_dag(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
     common.get_or_create_event_loop = lambda: _Loop()  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "_common", common)
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/market_selection.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/market_selection.py"
     module_name = "tests.db._market_selection_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
@@ -104,9 +105,9 @@ def test_market_selection_dag_contract_and_shared_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_dag(monkeypatch)
-    source = Path("D:/projects/pklpo/ops/airflow/dags/market_selection.py").read_text(
-        encoding="utf-8"
-    )
+    source = (
+        Path(__file__).parents[2] / "ops/airflow/dags/market_selection.py"
+    ).read_text(encoding="utf-8")
 
     assert module.dag.kwargs["dag_id"] == "market_selection"
     assert module.dag.kwargs["schedule"] == "0 */4 * * *"

@@ -21,22 +21,30 @@ def _module_imports(relative_path: str) -> list[str]:
     return imports
 
 
-def test_candles_domain_repair_does_not_depend_on_infrastructure_or_interfaces() -> None:
+def test_candles_domain_repair_does_not_depend_on_infrastructure_or_interfaces() -> (
+    None
+):
     imports = _module_imports("src/candles/domain/repair.py")
 
     assert not any("src.candles.infrastructure" in item for item in imports)
     assert not any("src.candles.interfaces" in item for item in imports)
 
 
-def test_candles_application_repair_use_cases_do_not_import_infrastructure_modules() -> None:
+def test_candles_application_repair_use_cases_do_not_import_infrastructure_modules() -> (
+    None
+):
     imports = _module_imports("src/candles/application/repair/use_cases.py")
 
     assert not any("src.candles.infrastructure" in item for item in imports)
     assert not any("src.candles.interfaces" in item for item in imports)
 
 
-def test_candles_interfaces_repair_is_allowed_to_wire_application_and_infrastructure() -> None:
+def test_candles_interfaces_repair_is_allowed_to_wire_application_and_infrastructure() -> (
+    None
+):
     imports = _module_imports("src/candles/interfaces/repair.py")
 
     assert any("src.candles.application.repair" in item for item in imports)
-    assert any("src.candles.infrastructure.repair_repository" in item for item in imports)
+    assert any(
+        "src.candles.infrastructure.repair_repository" in item for item in imports
+    )

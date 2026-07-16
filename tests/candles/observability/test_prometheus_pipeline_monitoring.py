@@ -24,9 +24,7 @@ def test_push_pipeline_monitoring_metrics_emits_readonly_snapshot_series(
             "candle_lag_seconds": {"1H": 120.0},
             "recalc_queue": {"queued": 3, "blocked": 1},
             "bootstrap_state": {"completed": 7},
-            "eligibility_state": [
-                {"timeframe": "1H", "state": "eligible", "count": 5}
-            ],
+            "eligibility_state": [{"timeframe": "1H", "state": "eligible", "count": 5}],
             "alerts": {"critical": 2},
         }
     )

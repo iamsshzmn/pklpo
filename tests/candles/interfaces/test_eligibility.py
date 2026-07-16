@@ -50,7 +50,9 @@ class _PushMetricsSession:
         sql = str(statement)
         self.calls.append(sql)
         if "GROUP BY timeframe, state" in sql:
-            return _Result([{"timeframe": "1H", "state": "insufficient_history", "count": 1}])
+            return _Result(
+                [{"timeframe": "1H", "state": "insufficient_history", "count": 1}]
+            )
         if "WHERE can_compute_features = TRUE" in sql:
             return _Result([])
         if "FROM ops.feature_eligibility_transitions" in sql:
@@ -103,7 +105,9 @@ class _Repo:
 
 
 @pytest.mark.asyncio
-async def test_refresh_eligibility_runs_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_refresh_eligibility_runs_use_case(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from src.candles.interfaces import eligibility
 
     push_calls: list[object] = []
@@ -114,6 +118,7 @@ async def test_refresh_eligibility_runs_use_case(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(eligibility, "get_db_session", _session_scope)
     monkeypatch.setattr(eligibility, "EligibilitySqlRepository", _Repo)
+
     async def _push_refresh_metrics(session: object) -> None:
         push_calls.append(session)
 
@@ -126,7 +131,9 @@ async def test_refresh_eligibility_runs_use_case(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_read_helpers_query_capability_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_read_helpers_query_capability_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from src.candles.interfaces import eligibility
 
     calls: list[tuple[str, dict[str, Any]]] = []

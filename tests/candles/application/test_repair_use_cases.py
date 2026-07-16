@@ -417,7 +417,6 @@ async def test_apply_rejects_guardrail_violation_before_write() -> None:
         calendar=UTC_CAL,
     )
 
-
     with pytest.raises(ValueError, match="apply blocked by guardrails"):
         await use_case.run(command)
 

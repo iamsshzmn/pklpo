@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import subprocess
@@ -46,6 +46,8 @@ def main() -> None:
             "-q",
             "-o",
             "addopts=",
+            "-m",
+            "not integration",
             "--cov=src/candles",
             "--cov-report=term-missing",
             f"--cov-fail-under={args.cov_fail_under}",
@@ -58,3 +60,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

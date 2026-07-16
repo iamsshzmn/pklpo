@@ -53,6 +53,7 @@ def test_parquet_operations():
         import tempfile
 
         from calc import compute_and_dump_parquet
+
         from utils.memlog import memory_monitor
 
         # Create test data
@@ -269,7 +270,7 @@ def test_memory_efficiency():
                 max_streaming_memory = max(max_streaming_memory, current_memory)
 
                 print(
-                    f"    Chunk {i+1}/{len(chunks)}: {current_memory:.2f} MB, shape: {chunk_copy.shape}"
+                    f"    Chunk {i + 1}/{len(chunks)}: {current_memory:.2f} MB, shape: {chunk_copy.shape}"
                 )
 
                 # Clean up after each chunk

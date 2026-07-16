@@ -93,7 +93,8 @@ import re, sys
 content = open("ops/monitoring/alloy/config.alloy").read()
 # Find all stage.labels blocks
 blocks = re.findall(r'stage\.labels\s*\{([^}]*)\}', content, re.DOTALL)
-forbidden = {"run_id", "trace_id", "span_id"}
+forbidden_pattern = "run_id|trace_id|span_id"
+forbidden = set(forbidden_pattern.split("|"))
 found = []
 for block in blocks:
     for key in forbidden:

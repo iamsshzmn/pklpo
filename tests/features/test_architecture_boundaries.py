@@ -33,8 +33,10 @@ def _collect_feature_imports(path: Path) -> set[str]:
             for alias in node.names:
                 if alias.name.startswith("src.features"):
                     imports.add(alias.name)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith(
-            "src.features"
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.module
+            and node.module.startswith("src.features")
         ):
             imports.add(node.module)
 

@@ -10,7 +10,7 @@ import pytest
 @pytest.mark.integration
 @pytest.mark.smoke
 def test_swap_repair_detect_only_cli_smoke() -> None:
-    result = subprocess.run(  # noqa: S603 - fixed local CLI entrypoint under test
+    result = subprocess.run(
         [
             sys.executable,
             "-m",

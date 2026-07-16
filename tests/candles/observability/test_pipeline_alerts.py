@@ -31,6 +31,10 @@ def _expr(rule: dict[str, Any]) -> str:
     return rule["data"][0]["model"]["expr"]
 
 
+def _raw_sql(rule: dict[str, Any]) -> str:
+    return rule["data"][0]["model"]["rawSql"]
+
+
 def test_pushgateway_staleness_alert_covers_pipeline_jobs() -> None:
     expr = _expr(_rule("pklpo-pushgateway-stale"))
 
@@ -57,3 +61,15 @@ def test_onboarding_stall_alerts_are_provisioned() -> None:
         _rule("pklpo-instrument-bootstrap-stalled")["labels"]["severity"] == "warning"
     )
     assert _rule("pklpo-instrument-warmup-stalled")["labels"]["severity"] == "warning"
+
+
+def test_recovery_unknown_instrument_state_alert_is_provisioned() -> None:
+    rule = _rule("pklpo-recovery-instrument-state-unknown")
+    raw_sql = _raw_sql(rule)
+
+    assert rule["labels"]["severity"] == "warning"
+    assert rule["labels"]["team"] == "data"
+    assert "ops.pipeline_recovery_decisions" in raw_sql
+    assert "reason = 'instrument_state_unknown'" in raw_sql
+    assert "controller_dag_id = 'pipeline_recovery_controller'" in raw_sql
+    assert "run_id" in rule["annotations"]["description"]

@@ -33,9 +33,9 @@ class OHLCVAligner:
             engine: SQLAlchemy engine для подключения к БД
         """
         self.engine = engine
-        self._bar_cache: dict[str, list[datetime]] = (
-            {}
-        )  # (symbol, timeframe) -> [timestamps]
+        self._bar_cache: dict[
+            str, list[datetime]
+        ] = {}  # (symbol, timeframe) -> [timestamps]
 
     def load_bar_timestamps(
         self,

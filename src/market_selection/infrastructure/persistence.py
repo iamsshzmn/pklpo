@@ -540,9 +540,7 @@ class MarketSelectionPersistence:
             """
             DELETE FROM market_scores_tf
             WHERE created_at < NOW() - INTERVAL ':days days'
-        """.replace(
-                ":days", str(scores_retention_days)
-            )
+        """.replace(":days", str(scores_retention_days))
         )
 
         scores_result = await self.session.execute(scores_query)
@@ -557,9 +555,7 @@ class MarketSelectionPersistence:
             )
             DELETE FROM market_universe
             WHERE ts_version IN (SELECT ts_version FROM old_versions)
-        """.replace(
-                ":days", str(universe_retention_days)
-            )
+        """.replace(":days", str(universe_retention_days))
         )
 
         universe_result = await self.session.execute(universe_query)
@@ -570,9 +566,7 @@ class MarketSelectionPersistence:
             """
             DELETE FROM market_universe_versions
             WHERE created_at < NOW() - INTERVAL ':days days'
-        """.replace(
-                ":days", str(universe_retention_days)
-            )
+        """.replace(":days", str(universe_retention_days))
         )
 
         await self.session.execute(version_query)

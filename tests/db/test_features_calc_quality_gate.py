@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-ROOT = Path("D:/projects/pklpo")
+ROOT = Path(__file__).parents[2]
 
 
 def test_features_calc_does_not_disable_quality_gate() -> None:

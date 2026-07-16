@@ -92,7 +92,10 @@ def _load_bootstrap_dag_module(monkeypatch: pytest.MonkeyPatch) -> types.ModuleT
     monkeypatch.setitem(sys.modules, "src.candles.bootstrap", candles_bootstrap)
 
     module_path = Path(
-        "D:/projects/pklpo/ops/airflow/dags/okx_swap_ohlcv_bootstrap_v1.py"
+        str(
+            Path(__file__).parents[2]
+            / "ops/airflow/dags/okx_swap_ohlcv_bootstrap_v1.py"
+        )
     )
     module_name = "tests.db._okx_swap_ohlcv_bootstrap_v1_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -268,7 +271,7 @@ def test_init_bootstrap_state_raises_on_unknown_tf() -> None:
         return_value=_FailIfCalled(),
     ):
         with pytest.raises(ValueError, match="1H, 4H"):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 init_bootstrap_state(
                     symbols=["BTC-USDT-SWAP"],
                     timeframes=["1H, 4H"],
@@ -505,9 +508,9 @@ def test_enqueue_indicator_recalc_skips_1m_timeframe(
         {"symbol": "BTC-USDT-SWAP", "timeframe": "1H", "status": "completed"},
     ]
     ti_stub = SimpleNamespace(
-        xcom_pull=lambda task_ids, key: results
-        if task_ids == "validate_bootstrap_xcom"
-        else None
+        xcom_pull=lambda task_ids, key: (
+            results if task_ids == "validate_bootstrap_xcom" else None
+        )
     )
     context = {"ti": ti_stub, "params": {}, "dag_run": SimpleNamespace(conf={})}
 
@@ -520,5 +523,7 @@ def test_enqueue_indicator_recalc_skips_1m_timeframe(
     ) as mock_enqueue:
         bootstrap_dag_module.task_enqueue_indicator_recalc(**context)
 
-    called_timeframes = [call.kwargs["timeframe"] for call in mock_enqueue.call_args_list]
+    called_timeframes = [
+        call.kwargs["timeframe"] for call in mock_enqueue.call_args_list
+    ]
     assert called_timeframes == ["1H"]

@@ -86,12 +86,16 @@ class TestSyncConfigFromEnv:
         assert cfg.max_concurrent_symbols == 10
         assert cfg.timeout_seconds == 45
 
-    def test_from_env_invalid_value_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_from_env_invalid_value_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("CANDLES_BATCH_SIZE", "not_a_number")
         with pytest.raises(ValidationError):
             SyncConfig.from_env()
 
-    def test_from_env_out_of_bounds_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_from_env_out_of_bounds_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("CANDLES_BATCH_SIZE", "9999")
         with pytest.raises(ValidationError):
             SyncConfig.from_env()

@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.candles.application.recovery_controller import (
+    BootstrapCandidateInfo,
     RecoveryDecision,
 )
 
@@ -45,6 +46,18 @@ def _skip_decision(**kwargs: Any) -> RecoveryDecision:
 
 def _persisted_row(idx: int = 1) -> dict[str, Any]:
     return {"id": idx, "created_at": datetime.now(UTC)}
+
+
+@pytest.fixture(autouse=True)
+def _candles_repository_mock():
+    instrument_repo = AsyncMock()
+    instrument_repo.get_instrument_states = AsyncMock(return_value={})
+
+    with patch(
+        "src.candles.interfaces.recovery_controller.SwapCandlesRepository",
+        return_value=instrument_repo,
+    ):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +127,35 @@ def _base_patches(
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_persist_decisions_writes_triggerable_actions_as_candidates() -> None:
+    """Eligible actions are candidates until Airflow actually starts a downstream run."""
+    import src.candles.interfaces.recovery_controller as rc_facade
+
+    triggered = RecoveryDecision(
+        decision_status="triggered",
+        action_kind="repair",
+        reason="repair_gap_detected",
+        symbol="BTC-USDT-SWAP",
+        timeframe="1H",
+        target_dag_id=_REPAIR_DAG,
+    )
+    repo = AsyncMock()
+    repo.insert_decision = AsyncMock(return_value=_persisted_row())
+
+    await rc_facade._persist_decisions(
+        repo,
+        [triggered],
+        controller_dag_id="pipeline_recovery_controller",
+        controller_dag_run_id="controller-run",
+        logical_date=None,
+    )
+
+    params = repo.insert_decision.call_args.kwargs
+    assert params["decision_status"] == "candidate"
+    assert params["cooldown_until"] is None
 
 
 @pytest.mark.asyncio
@@ -553,3 +595,64 @@ async def test_does_not_call_repair_apply_path() -> None:
         await rc_facade.collect_and_decide(symbols=["BTC-USDT-SWAP"])
 
     run_repair_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_universe_equals_curated_no_discovery() -> None:
+    """Universe is always curated_symbols — no auto-discovery, no extra symbols."""
+    import src.candles.interfaces.recovery_controller as rc_facade
+
+    collected_symbols: list[str] = []
+
+    async def _collect_bootstrap(
+        symbols: list[str],
+        timeframes: list[str],
+        lookback_days: int,
+    ) -> list[BootstrapCandidateInfo]:
+        collected_symbols.extend(symbols)
+        return []
+
+    with (
+        patch(
+            "src.candles.interfaces.recovery_controller._check_dependencies",
+            new=AsyncMock(return_value=(True, True)),
+        ),
+        patch(
+            "src.candles.interfaces.recovery_controller._get_active_dagrun_states",
+            new=AsyncMock(return_value=_ACTIVE_STATES_IDLE),
+        ),
+        patch(
+            "src.candles.interfaces.recovery_controller._collect_bootstrap_candidates",
+            new=AsyncMock(side_effect=_collect_bootstrap),
+        ),
+        patch(
+            "src.candles.interfaces.recovery_controller._collect_repair_candidates",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "src.candles.interfaces.recovery_controller._load_cooldown_rows",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "src.candles.interfaces.recovery_controller._persist_decisions",
+            new=AsyncMock(return_value=[_persisted_row()]),
+        ),
+        patch(
+            "src.candles.application.recovery_controller.choose_recovery_actions",
+            return_value=[_skip_decision()],
+        ),
+    ):
+        result = await rc_facade.collect_and_decide(
+            symbols=["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+            bootstrap_timeframes=["1H"],
+            skip_repair_precheck=True,
+        )
+
+    # Only curated symbols were processed — no extras
+    assert collected_symbols == ["BTC-USDT-SWAP", "ETH-USDT-SWAP"]
+    # summary has only "curated", no "discovered" / "total"
+    assert result["snapshot_summary"]["universe"] == {"curated": 2}
+    # RecoveryDiscoveryRepository must not exist in the module namespace
+    import src.candles.interfaces.recovery_controller as rc_mod
+
+    assert not hasattr(rc_mod, "RecoveryDiscoveryRepository")

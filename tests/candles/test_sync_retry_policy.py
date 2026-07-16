@@ -88,7 +88,9 @@ async def test_timeout_failure_is_retried(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     market = _TimeoutThenSuccessMarketData()
     result = await run_candle_sync(
@@ -120,7 +122,9 @@ async def test_rate_limit_failure_still_retries(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     market = _RateLimitThenSuccessMarketData()
     result = await run_candle_sync(
@@ -152,7 +156,9 @@ async def test_non_retriable_failure_fails_fast(
     async def _no_sleep(_seconds: float) -> None:
         return None
 
-    monkeypatch.setattr("src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep)
+    monkeypatch.setattr(
+        "src.candles.application.sync.use_cases.asyncio.sleep", _no_sleep
+    )
 
     market = _FatalMarketData()
     result = await run_candle_sync(

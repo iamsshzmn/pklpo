@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 import pytest
 
 from src.candles.application.repair.planning import plan_tail_first_repair
+from src.candles.domain.okx_calendar import OKXCandleCalendar
+
+UTC_CAL = OKXCandleCalendar(week_anchor_ts_ms=0)
 
 
 @dataclass
@@ -39,9 +42,7 @@ class _CoverageQueryStub:
                 "end_ts_ms": end_ts_ms,
             }
         )
-        return [
-            ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms
-        ]
+        return [ts for ts in self.timestamps if start_ts_ms <= ts < end_ts_ms]
 
 
 @dataclass
@@ -79,6 +80,7 @@ async def test_plan_tail_first_repair_returns_newest_gap_first() -> None:
         max_range_days=1,
         now_ts_ms=601_000,
         chunk_size_bars=2,
+        calendar=UTC_CAL,
     )
 
     assert coverage_query.list_calls == [
@@ -111,6 +113,7 @@ async def test_plan_tail_first_repair_splits_gap_into_descending_chunks() -> Non
         now_ts_ms=481_000,
         chunk_size_bars=2,
         anchor_ts_ms=180_000,
+        calendar=UTC_CAL,
     )
 
     assert len(plan.gaps) == 1
@@ -144,13 +147,13 @@ async def test_plan_tail_first_repair_never_returns_future_or_unclosed_ranges() 
         chunk_size_bars=5000,
         anchor_strategy="listing-date",
         anchor_metadata=anchor_metadata,
+        calendar=UTC_CAL,
     )
 
     assert plan.closed_until_ts_ms == 180_000
     assert [(gap.start_ts_ms, gap.end_ts_ms) for gap in plan.gaps] == [
         (120_000, 180_000),
     ]
-    assert [
-        (chunk.start_ts_ms, chunk.end_ts_ms)
-        for chunk in plan.gaps[0].chunks
-    ] == [(120_000, 180_000)]
+    assert [(chunk.start_ts_ms, chunk.end_ts_ms) for chunk in plan.gaps[0].chunks] == [
+        (120_000, 180_000)
+    ]

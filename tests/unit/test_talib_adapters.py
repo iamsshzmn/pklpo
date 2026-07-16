@@ -30,10 +30,28 @@ class TestExpandedTalibAdapters:
     @pytest.mark.parametrize(
         ("adapter_name", "expected_columns", "talib_method", "kwargs", "method_kwargs"),
         [
-            ("apo", ["apo"], "APO", {"fast": 12, "slow": 26}, {"fastperiod": 12, "slowperiod": 26}),
+            (
+                "apo",
+                ["apo"],
+                "APO",
+                {"fast": 12, "slow": 26},
+                {"fastperiod": 12, "slowperiod": 26},
+            ),
             ("bop", ["bop"], "BOP", {}, {}),
-            ("uo", ["uo"], "ULTOSC", {"fast": 7, "medium": 14, "slow": 28}, {"timeperiod1": 7, "timeperiod2": 14, "timeperiod3": 28}),
-            ("adosc", ["adosc"], "ADOSC", {"fast": 3, "slow": 10}, {"fastperiod": 3, "slowperiod": 10}),
+            (
+                "uo",
+                ["uo"],
+                "ULTOSC",
+                {"fast": 7, "medium": 14, "slow": 28},
+                {"timeperiod1": 7, "timeperiod2": 14, "timeperiod3": 28},
+            ),
+            (
+                "adosc",
+                ["adosc"],
+                "ADOSC",
+                {"fast": 3, "slow": 10},
+                {"fastperiod": 3, "slowperiod": 10},
+            ),
         ],
     )
     def test_new_adapter_output_contract(

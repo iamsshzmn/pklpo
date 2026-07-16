@@ -1,4 +1,5 @@
 """Skipped: src.platform_ops was removed. Delete once equivalent tests exist."""
+
 from __future__ import annotations
 
 import pytest
@@ -48,7 +49,9 @@ async def test_postgres_partition_adapter_creates_window_idempotently(
 ) -> None:
     db_url = _resolve_test_db_url()
     if not db_url:
-        pytest.skip("INDICATORS_PARTITION_TEST_DATABASE_URL or DATABASE_URL is required")
+        pytest.skip(
+            "INDICATORS_PARTITION_TEST_DATABASE_URL or DATABASE_URL is required"
+        )
 
     table_name = f"indicators_p_test_{int(time.time())}_{uuid.uuid4().hex[:8]}"
     engine = create_async_engine(db_url, future=True)
@@ -132,9 +135,7 @@ async def test_postgres_partition_adapter_creates_window_idempotently(
                     {"table_name": partition_name},
                 )
                 rows = indexes.fetchall()
-                assert any(
-                    'USING brin ("timestamp")' in row[1] for row in rows
-                )
+                assert any('USING brin ("timestamp")' in row[1] for row in rows)
                 assert any(
                     'USING btree (symbol, timeframe, "timestamp")' in row[1]
                     or '(symbol, timeframe, "timestamp")' in row[1]

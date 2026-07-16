@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -34,6 +35,13 @@ def _load_market_selection_module(monkeypatch: pytest.MonkeyPatch) -> types.Modu
         def __rrshift__(self, other: Any) -> _DummyOperator:
             return self
 
+    common_module = types.ModuleType("_common")
+    common_module.airflow_log_context = lambda *args, **kwargs: nullcontext()
+    common_module.get_dag_env = lambda: {}
+    common_module.get_or_create_event_loop = lambda: None
+    common_module.setup_env = lambda env: None
+    monkeypatch.setitem(sys.modules, "_common", common_module)
+
     airflow_module = types.ModuleType("airflow")
     airflow_module.DAG = _DummyDAG
     monkeypatch.setitem(sys.modules, "airflow", airflow_module)
@@ -44,7 +52,9 @@ def _load_market_selection_module(monkeypatch: pytest.MonkeyPatch) -> types.Modu
     airflow_operators_python = types.ModuleType("airflow.operators.python")
     airflow_operators_python.PythonOperator = _DummyOperator
     airflow_operators_python.BranchPythonOperator = _DummyOperator
-    monkeypatch.setitem(sys.modules, "airflow.operators.python", airflow_operators_python)
+    monkeypatch.setitem(
+        sys.modules, "airflow.operators.python", airflow_operators_python
+    )
 
     airflow_operators_trigger = types.ModuleType("airflow.operators.trigger_dagrun")
     airflow_operators_trigger.TriggerDagRunOperator = _DummyOperator
@@ -61,9 +71,11 @@ def _load_market_selection_module(monkeypatch: pytest.MonkeyPatch) -> types.Modu
 
     airflow_sensors_external = types.ModuleType("airflow.sensors.external_task")
     airflow_sensors_external.ExternalTaskSensor = _DummyOperator
-    monkeypatch.setitem(sys.modules, "airflow.sensors.external_task", airflow_sensors_external)
+    monkeypatch.setitem(
+        sys.modules, "airflow.sensors.external_task", airflow_sensors_external
+    )
 
-    module_path = Path("D:/projects/pklpo/ops/airflow/dags/market_selection.py")
+    module_path = Path(__file__).parents[2] / "ops/airflow/dags/market_selection.py"
     module_name = "tests.market_selection._market_selection_dag"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     assert spec is not None and spec.loader is not None
@@ -91,9 +103,9 @@ def test_branch_cleanup_daily_selects_cleanup_and_logs(
 
     branch = market_selection_dag_module.branch_cleanup_daily(**context)
 
-    assert branch == "cleanup_old_data"
+    assert branch == "cleanup_old_market_selection_data"
     assert "branch_cleanup_daily decision" in caplog.text
-    assert "selected_branch=cleanup_old_data" in caplog.text
+    assert "selected_branch=cleanup_old_market_selection_data" in caplog.text
 
 
 def test_branch_skip_or_trigger_selects_trigger_and_logs(
@@ -145,10 +157,14 @@ def test_run_pipeline_task_handles_non_numeric_execution_time(
             }
 
     monkeypatch.setattr(
-        market_selection_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+        market_selection_dag_module,
+        "get_dag_env",
+        lambda: {"DATABASE_URL": "db://test"},
     )
     monkeypatch.setattr(market_selection_dag_module, "setup_env", lambda env: None)
-    monkeypatch.setattr(market_selection_dag_module, "get_or_create_event_loop", lambda: _Loop())
+    monkeypatch.setattr(
+        market_selection_dag_module, "get_or_create_event_loop", lambda: _Loop()
+    )
 
     caplog.set_level("INFO")
     context = {
@@ -176,10 +192,14 @@ def test_run_migrations_task_logs_exception_and_reraises(
             raise RuntimeError("migration failed")
 
     monkeypatch.setattr(
-        market_selection_dag_module, "get_dag_env", lambda: {"DATABASE_URL": "db://test"}
+        market_selection_dag_module,
+        "get_dag_env",
+        lambda: {"DATABASE_URL": "db://test"},
     )
     monkeypatch.setattr(market_selection_dag_module, "setup_env", lambda env: None)
-    monkeypatch.setattr(market_selection_dag_module, "get_or_create_event_loop", lambda: _Loop())
+    monkeypatch.setattr(
+        market_selection_dag_module, "get_or_create_event_loop", lambda: _Loop()
+    )
 
     caplog.set_level("INFO")
     context = {

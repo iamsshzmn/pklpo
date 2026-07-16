@@ -3,6 +3,7 @@
 Requires a live DB. Run with:
     pytest tests/candles/infrastructure/test_bootstrap_repository.py -m integration -v
 """
+
 from __future__ import annotations
 
 import pytest

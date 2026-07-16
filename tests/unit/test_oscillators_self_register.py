@@ -137,8 +137,15 @@ class TestGroupCalculatorsLegacyStillWorks:
         names = [name for name, _ in items]
 
         for expected in [
-            "overlap", "ma", "volatility", "volume", "trend",
-            "squeeze", "candles", "statistics", "performance",
+            "overlap",
+            "ma",
+            "volatility",
+            "volume",
+            "trend",
+            "squeeze",
+            "candles",
+            "statistics",
+            "performance",
         ]:
             assert expected in names, f"Expected '{expected}' in registry"
 
@@ -172,6 +179,14 @@ class TestGroupCalculatorsLegacyStillWorks:
 
         assert len(names) == 10
         assert set(names) == {
-            "overlap", "ma", "oscillators", "volatility", "volume",
-            "trend", "squeeze", "candles", "statistics", "performance",
+            "overlap",
+            "ma",
+            "oscillators",
+            "volatility",
+            "volume",
+            "trend",
+            "squeeze",
+            "candles",
+            "statistics",
+            "performance",
         }
