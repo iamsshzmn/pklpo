@@ -54,6 +54,15 @@ async def test_features_pipeline_smoke_btc_1d():
             )
             assert len(features) == len(df)
 
+            legacy_table_check = await session.execute(
+                text("SELECT to_regclass('public.indicators')")
+            )
+            if legacy_table_check.scalar() is None:
+                pytest.skip(
+                    "Legacy 'indicators' table is unavailable - unpartitioned, "
+                    "unused by live code per .claude/rules/analytics.md"
+                )
+
             last_row_ts = int(features["ts"].iloc[-1])
             last_row_ts_ms = last_row_ts if last_row_ts > 10**12 else last_row_ts * 1000
             one_row = features.tail(1)
@@ -92,13 +101,23 @@ async def test_features_pipeline_smoke_btc_1d():
 
 @pytest.mark.integration
 async def test_upsert_full_pipeline_with_validation():
-    """Smoke test for full DB pipeline with type validation before UPSERT."""
+    """Smoke test for full DB pipeline with type validation before UPSERT.
+
+    Reads real OHLCV (read-only) for a realistic indicator vector, but writes
+    under a synthetic `TEST-*` symbol - writing a partial-lookback recompute
+    to a real symbol's row in indicators_p (via ON CONFLICT DO UPDATE) would
+    silently degrade production data with values computed from a truncated
+    window instead of full history.
+    """
     if not (os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DSN")):
         pytest.skip("DATABASE_URL is not set")
 
-    symbol = "BTC-USDT-SWAP"
+    source_symbol = "BTC-USDT-SWAP"
     timeframe = "1m"
     limit = 10
+    from uuid import uuid4
+
+    test_symbol = f"TEST-SMOKE-{uuid4().hex[:8]}"
 
     try:
         async for session in get_async_session():
@@ -112,12 +131,12 @@ async def test_upsert_full_pipeline_with_validation():
                 """
             )
             result = await session.execute(
-                query, {"symbol": symbol, "timeframe": timeframe, "limit": limit}
+                query, {"symbol": source_symbol, "timeframe": timeframe, "limit": limit}
             )
             rows = result.fetchall()
 
             if not rows:
-                pytest.skip(f"No OHLCV data for {symbol} {timeframe}")
+                pytest.skip(f"No OHLCV data for {source_symbol} {timeframe}")
 
             df_ohlcv = pd.DataFrame(
                 [
@@ -147,37 +166,49 @@ async def test_upsert_full_pipeline_with_validation():
             )
 
             await reflect_indicators_table(session)
-            saved_count = await insert_indicators_v2(
-                session=session,
-                ind_df=features_df,
-                symbol=symbol,
-                timeframe=timeframe,
-            )
-            assert saved_count > 0, f"Expected saved_count > 0, got {saved_count}"
+            try:
+                saved_count = await insert_indicators_v2(
+                    session=session,
+                    ind_df=features_df,
+                    symbol=test_symbol,
+                    timeframe=timeframe,
+                )
+                assert saved_count > 0, f"Expected saved_count > 0, got {saved_count}"
 
-            check_query = text(
-                """
-                SELECT ultosc, stochrsi_k, cdl_doji, willr, rsi_14
-                FROM indicators
-                WHERE symbol = :symbol AND timeframe = :timeframe
-                ORDER BY timestamp DESC
-                LIMIT 1
-                """
-            )
-            check_result = await session.execute(
-                check_query, {"symbol": symbol, "timeframe": timeframe}
-            )
-            check_row = check_result.first()
+                check_query = text(
+                    """
+                    SELECT ultosc, stochrsi_k, cdl_doji, willr, rsi_14
+                    FROM indicators_p
+                    WHERE symbol = :symbol AND timeframe = :timeframe
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                    """
+                )
+                check_result = await session.execute(
+                    check_query, {"symbol": test_symbol, "timeframe": timeframe}
+                )
+                check_row = check_result.first()
 
-            if check_row:
-                for i, col_name in enumerate(
-                    ["ultosc", "stochrsi_k", "cdl_doji", "willr", "rsi_14"]
-                ):
-                    val = check_row[i]
-                    if val is not None:
-                        assert isinstance(val, int | float | Decimal), (
-                            f"Column {col_name} has wrong type: {type(val)}"
-                        )
+                if check_row:
+                    for i, col_name in enumerate(
+                        ["ultosc", "stochrsi_k", "cdl_doji", "willr", "rsi_14"]
+                    ):
+                        val = check_row[i]
+                        if val is not None:
+                            assert isinstance(val, int | float | Decimal), (
+                                f"Column {col_name} has wrong type: {type(val)}"
+                            )
+            finally:
+                await session.execute(
+                    text(
+                        """
+                        DELETE FROM indicators_p
+                        WHERE symbol = :symbol AND timeframe = :timeframe
+                        """
+                    ),
+                    {"symbol": test_symbol, "timeframe": timeframe},
+                )
+                await session.commit()
             break
     except Exception as exc:
         _skip_if_db_unavailable(exc)
