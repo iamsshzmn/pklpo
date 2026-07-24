@@ -31,9 +31,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+from src.candles import repository as swap_repository_module
 from src.candles.infrastructure import repair_repository as repair_repository_module
 from src.candles.infrastructure.repair_repository import RepairCandlesRepository
-from src.candles import repository as swap_repository_module
 from src.candles.repository import SwapCandlesRepository
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
