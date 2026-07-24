@@ -38,6 +38,18 @@ class DatabaseSettings(BaseSettings):
     pool_timeout: int = 30
     pool_recycle: int = 1800
 
+    def __init__(
+        self,
+        _env_file: Any = ".env",
+        _env_file_encoding: str | None = "utf-8",
+        **values: Any,
+    ) -> None:
+        super().__init__(
+            _env_file=_env_file,
+            _env_file_encoding=_env_file_encoding,
+            **values,
+        )
+
     @property
     def async_url(self) -> str:
         """Async connection URL for asyncpg."""
